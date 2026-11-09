@@ -96,7 +96,7 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
         </div>
       </div>
 
-      <div class="flex-1 flex items-center justify-center max-w-2xl mx-auto">
+      <div class="flex-1 flex items-center justify-center max-w-2xl mx-auto -translate-y-0.5">
         <form id="global-omnibar-form" class="w-full">
           <div class="w-full h-8 px-3 bg-[#202020] rounded-lg flex items-center gap-2 shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)] border border-transparent focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all">
             <span class="material-symbols-outlined text-[16px] text-[#aa8a80]">search</span>
