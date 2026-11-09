@@ -28,9 +28,8 @@ export function createDock(
       <button
         id="dock-btn-workspaces"
         title="Multi-Thread Workspaces"
-        class="dock-item relative w-11 h-11 rounded-xl flex items-center justify-center transition-all bg-[#f85e2a] text-[#521300] shadow-md group"
+        class="dock-item relative w-11 h-11 rounded-xl flex items-center justify-center transition-all text-[#FFDBD0] hover:bg-[#202020]"
       >
-        <span class="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#ffb59e] rounded-r"></span>
         <span class="material-symbols-outlined text-[22px]">grid_view</span>
       </button>
 
@@ -58,7 +57,7 @@ export function createDock(
 
   const setActive = (activeId: string) => {
     aside.querySelectorAll(".dock-item").forEach((btn) => {
-      btn.classList.remove("bg-[#f85e2a]", "text-[#521300]", "shadow-md");
+      btn.classList.remove("text-[#FFDBD0]", "bg-[#f85e2a]", "text-[#521300]", "shadow-md");
       btn.classList.add("text-[#e2bfb4]", "hover:bg-[#202020]", "hover:text-[#e5e2e1]");
       const indicator = btn.querySelector("span.absolute");
       if (indicator) indicator.remove();
@@ -66,10 +65,10 @@ export function createDock(
 
     const activeBtn = aside.querySelector(`#${activeId}`);
     if (activeBtn) {
-      activeBtn.classList.remove("text-[#e2bfb4]", "hover:bg-[#202020]", "hover:text-[#e5e2e1]");
-      activeBtn.classList.add("bg-[#f85e2a]", "text-[#521300]", "shadow-md");
+      activeBtn.classList.remove("text-[#e2bfb4]", "hover:text-[#e5e2e1]");
+      activeBtn.classList.add("text-[#FFDBD0]");
       const indicator = document.createElement("span");
-      indicator.className = "absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#ffb59e] rounded-r";
+      indicator.className = "absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#FFDBD0] rounded-r";
       activeBtn.prepend(indicator);
     }
   };
