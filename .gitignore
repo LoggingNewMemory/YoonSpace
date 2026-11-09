@@ -1,1 +1,20 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+
+# Rust
+src-tauri/target/
+src-tauri/gen/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Design assets
 Designs/*.png
