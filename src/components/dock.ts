@@ -67,9 +67,6 @@ export function createDock(
     if (activeBtn) {
       activeBtn.classList.remove("text-[#e2bfb4]", "hover:text-[#e5e2e1]");
       activeBtn.classList.add("text-[#FFDBD0]");
-      const indicator = document.createElement("span");
-      indicator.className = "absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#FFDBD0] rounded-r";
-      activeBtn.prepend(indicator);
     }
   };
 
