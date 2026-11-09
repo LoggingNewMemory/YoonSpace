@@ -95,7 +95,7 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
           <div class="w-full h-8 px-3 bg-[#202020] rounded-lg flex items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)] border border-transparent focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all">
             <input
               id="global-omnibar-input"
-              class="w-full bg-transparent border-0 outline-none font-mono text-xs text-[#e5e2e1] placeholder-[#aa8a80] focus:ring-0 selection:bg-[#f85e2a] selection:text-white"
+              class="w-full bg-transparent border-0 outline-none font-mono text-xs text-[#e5e2e1] placeholder-[#ADABAA] focus:ring-0 selection:bg-[#f85e2a] selection:text-white"
               placeholder="Search or enter address..."
               type="text"
               autocomplete="off"
