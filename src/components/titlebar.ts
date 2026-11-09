@@ -31,7 +31,6 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
         </span>
         <div class="h-3 w-px bg-[#353535] mx-1"></div>
         <span id="telemetry-badge" class="pointer-events-auto inline-flex items-center px-2 py-0.5 rounded bg-[#202020] font-mono text-[11px] text-[#ffb59e] border border-[#353535]/50 hover:border-[#f85e2a]/50 transition-colors cursor-help">
-          <span id="telemetry-dot" class="w-1.5 h-1.5 rounded-full bg-[#f85e2a] mr-1.5 animate-pulse"></span>
           <span id="telemetry-ram">42 MB RAM</span>
         </span>
       </div>
