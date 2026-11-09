@@ -15,8 +15,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 export interface MemoryStats {
-  resident_mb: number;
-  virtual_mb: number;
+  resident_mb: number;   // Private Anonymous Memory (RssAnon)
+  total_rss_mb: number;  // Total VmRSS (including shared system libs)
+  shared_mb: number;     // Shared library pages
+  virtual_mb: number;    // Virtual address space
 }
 
 export interface SearchEngine {

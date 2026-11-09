@@ -65,7 +65,7 @@ export const tauriIpc = {
       return await invoke<MemoryStats>("get_telemetry");
     } catch (e) {
       console.warn("get_telemetry failed:", e);
-      return { resident_mb: 42.0, virtual_mb: 120.0 };
+      return { resident_mb: 42.0, total_rss_mb: 180.0, shared_mb: 138.0, virtual_mb: 500.0 };
     }
   },
 

@@ -40,17 +40,14 @@ function normalizeUrl(input: string, activeEngineId: string): string {
   const trimmed = input.trim();
   if (!trimmed) return "https://google.com";
 
-  // If already full url
   if (/^https?:\/\//i.test(trimmed)) {
     return trimmed;
   }
 
-  // If domain-like (e.g. github.com, localhost:3000, sub.domain.org/path)
   if (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(:\d+)?(\/.*)?$/i.test(trimmed) || /^localhost(:\d+)?/i.test(trimmed)) {
     return `https://${trimmed}`;
   }
 
-  // Otherwise, use search engine
   const engine =
     currentConfig.search_engines.find((e) => e.id === activeEngineId) ||
     currentConfig.search_engines[0];
@@ -63,7 +60,6 @@ async function handleSpawnPreset(preset: SplitPreset) {
     await tauriIpc.spawnSplit(preset.left_url, preset.right_url, bounds);
     isSplitViewOpen = true;
 
-    // Update titlebar indicator
     const indicator = document.getElementById("split-active-indicator");
     if (indicator) {
       indicator.classList.remove("hidden");
@@ -77,7 +73,6 @@ async function handleSpawnPreset(preset: SplitPreset) {
 
 async function handleSearch(query: string, engineId: string) {
   const targetUrl = normalizeUrl(query, engineId);
-  // Spawn target url on left, and google search on right or standard split
   const bounds = getSplitBounds();
   await tauriIpc.spawnSplit(targetUrl, "https://google.com", bounds);
   isSplitViewOpen = true;
@@ -104,18 +99,22 @@ async function handleHomeClick() {
 
 async function startTelemetryLoop() {
   const ramBadge = document.getElementById("telemetry-ram");
+  const badgeContainer = document.getElementById("telemetry-badge");
+
   const update = async () => {
     const stats = await tauriIpc.getTelemetry();
     if (ramBadge) {
       ramBadge.textContent = `${stats.resident_mb.toFixed(0)} MB RAM`;
     }
+    if (badgeContainer) {
+      badgeContainer.title = `Private RAM: ${stats.resident_mb} MB\nTotal RSS: ${stats.total_rss_mb} MB (incl. shared OS libs)\nShared Libs: ${stats.shared_mb} MB`;
+    }
   };
 
   await update();
-  setInterval(update, 2500);
+  setInterval(update, 2000);
 }
 
-// Window resize handler for child webviews
 window.addEventListener("resize", () => {
   if (isSplitViewOpen) {
     const bounds = getSplitBounds();
@@ -129,14 +128,12 @@ async function init() {
 
   currentConfig = await tauriIpc.getAppConfig();
 
-  // Create Titlebar
   const titlebar = createTitlebar(
     (url) => handleSearch(url, currentConfig.active_search_engine),
     handleHomeClick
   );
   app.appendChild(titlebar);
 
-  // Create Dock
   const dock = createDock((tabId) => {
     if (tabId === "home") {
       handleHomeClick();
@@ -144,7 +141,6 @@ async function init() {
   });
   app.appendChild(dock);
 
-  // Main Canvas
   const mainWrapper = document.createElement("div");
   mainWrapper.className =
     "pl-16 min-h-screen pt-20 flex flex-col justify-center items-center bg-[#131313] overflow-y-auto";
@@ -154,7 +150,6 @@ async function init() {
   main.className =
     "relative w-full flex-1 flex flex-col items-center justify-center p-6 md:p-10";
 
-  // Welcome Screen
   const welcome = createWelcomeScreen(
     currentConfig,
     handleSearch,
@@ -164,7 +159,6 @@ async function init() {
     }
   );
 
-  // Split Presets
   const presets = createSplitPresetsSection(
     currentConfig.split_presets,
     handleSpawnPreset
@@ -175,7 +169,6 @@ async function init() {
   mainWrapper.appendChild(main);
   app.appendChild(mainWrapper);
 
-  // Start memory telemetry
   startTelemetryLoop();
 }
 

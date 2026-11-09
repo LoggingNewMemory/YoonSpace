@@ -19,27 +19,56 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryStats {
-    pub resident_mb: f64,
-    pub virtual_mb: f64,
+    pub resident_mb: f64,    // Private Anonymous RAM (RssAnon) - uniquely used by YoonSpace
+    pub total_rss_mb: f64,   // Total VmRSS (including shared system libs)
+    pub shared_mb: f64,      // Shared library pages (RssFile + RssShmem)
+    pub virtual_mb: f64,     // Total virtual address space
 }
 
 pub fn get_process_memory() -> MemoryStats {
-    // Linux high performance procfs read
-    if let Ok(statm) = fs::read_to_string("/proc/self/statm") {
-        let parts: Vec<&str> = statm.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let page_size_kb = 4.0;
-            let virt_pages: f64 = parts[0].parse().unwrap_or(0.0);
-            let res_pages: f64 = parts[1].parse().unwrap_or(0.0);
-            return MemoryStats {
-                virtual_mb: ((virt_pages * page_size_kb) / 1024.0 * 10.0).round() / 10.0,
-                resident_mb: ((res_pages * page_size_kb) / 1024.0 * 10.0).round() / 10.0,
-            };
+    if let Ok(status) = fs::read_to_string("/proc/self/status") {
+        let mut anon_kb: f64 = 0.0;
+        let mut total_rss_kb: f64 = 0.0;
+        let mut file_kb: f64 = 0.0;
+        let mut shmem_kb: f64 = 0.0;
+        let mut vm_size_kb: f64 = 0.0;
+
+        for line in status.lines() {
+            if line.starts_with("RssAnon:") {
+                if let Some(val) = line.split_whitespace().nth(1) {
+                    anon_kb = val.parse::<f64>().unwrap_or(0.0);
+                }
+            } else if line.starts_with("VmRSS:") {
+                if let Some(val) = line.split_whitespace().nth(1) {
+                    total_rss_kb = val.parse::<f64>().unwrap_or(0.0);
+                }
+            } else if line.starts_with("RssFile:") {
+                if let Some(val) = line.split_whitespace().nth(1) {
+                    file_kb = val.parse::<f64>().unwrap_or(0.0);
+                }
+            } else if line.starts_with("RssShmem:") {
+                if let Some(val) = line.split_whitespace().nth(1) {
+                    shmem_kb = val.parse::<f64>().unwrap_or(0.0);
+                }
+            } else if line.starts_with("VmSize:") {
+                if let Some(val) = line.split_whitespace().nth(1) {
+                    vm_size_kb = val.parse::<f64>().unwrap_or(0.0);
+                }
+            }
         }
+
+        return MemoryStats {
+            resident_mb: ((anon_kb / 1024.0) * 10.0).round() / 10.0,
+            total_rss_mb: ((total_rss_kb / 1024.0) * 10.0).round() / 10.0,
+            shared_mb: (((file_kb + shmem_kb) / 1024.0) * 10.0).round() / 10.0,
+            virtual_mb: ((vm_size_kb / 1024.0) * 10.0).round() / 10.0,
+        };
     }
 
     MemoryStats {
         resident_mb: 42.0,
-        virtual_mb: 128.0,
+        total_rss_mb: 180.0,
+        shared_mb: 138.0,
+        virtual_mb: 500.0,
     }
 }
