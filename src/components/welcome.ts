@@ -22,22 +22,29 @@ export function createWelcomeScreen(
   onSelectEngine: (engineId: string) => void
 ) {
   const container = document.createElement("div");
-  container.className = "w-full max-w-3xl flex flex-col items-center gap-6 mx-auto";
+  container.className = "w-full max-w-3xl flex flex-col items-center gap-7 mx-auto";
 
   let activeEngine = config.active_search_engine;
 
   container.innerHTML = `
-    <!-- Hero Section -->
-    <section class="flex flex-col items-center text-center">
-      <div class="inline-flex items-center justify-center p-3 rounded-2xl bg-[#2a2a2a] shadow-lg mb-3 border border-[#353535]">
-        <span class="material-symbols-outlined text-[40px] text-[#ffb59e]">terminal</span>
+    <!-- Horizontal Hero Section (No background on logo) -->
+    <section class="w-full flex flex-row items-center justify-start gap-5 text-left select-none">
+      <div class="flex-shrink-0 bg-transparent">
+        <img src="/logo.png" alt="YoonSpace Logo" class="w-14 h-14 object-contain bg-transparent" />
       </div>
-      <h1 class="text-4xl font-extrabold tracking-tight text-[#e5e2e1]">
-        Welcome to <span class="text-[#f85e2a]">YoonSpace</span>
-      </h1>
-      <p class="text-sm text-[#e2bfb4] mt-2 tracking-wide font-mono">
-        A browser for Engineers
-      </p>
+
+      <!-- Vertical Divider -->
+      <div class="w-px h-12 bg-white/20" aria-hidden="true"></div>
+
+      <!-- Left-aligned Title & Subtitle -->
+      <div class="flex flex-col items-start justify-center">
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-[#e5e2e1]">
+          Welcome to <span style="color: #e95420;">YoonSpace</span>
+        </h1>
+        <p class="text-sm text-[#e2bfb4] mt-1 tracking-wide font-mono">
+          A browser for Engineers
+        </p>
+      </div>
     </section>
 
     <!-- Engineer Omni Command Input -->
@@ -72,7 +79,7 @@ export function createWelcomeScreen(
               <button
                 type="button"
                 data-engine-id="${engine.id}"
-                class="engine-chip px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 transition-all ${
+                class="engine-chip px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
                   isActive
                     ? "bg-[#f85e2a] text-[#521300] shadow-sm font-semibold"
                     : "bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50"
@@ -89,7 +96,7 @@ export function createWelcomeScreen(
             id="btn-add-engine"
             type="button"
             title="Configure or add custom search engine"
-            class="px-3 py-1 rounded-full bg-[#202020]/60 hover:bg-[#202020] text-[#aa8a80] hover:text-[#e5e2e1] font-mono text-xs flex items-center gap-1 transition-all border border-dashed border-[#5a4139]"
+            class="px-3 py-1 rounded-full bg-[#202020]/60 hover:bg-[#202020] text-[#aa8a80] hover:text-[#e5e2e1] font-mono text-xs flex items-center gap-1 transition-all border border-dashed border-[#5a4139] cursor-pointer"
           >
             <span class="material-symbols-outlined text-[14px]">add</span>
             <span>Add Search Engine</span>
@@ -107,11 +114,11 @@ export function createWelcomeScreen(
 
       container.querySelectorAll(".engine-chip").forEach((b) => {
         b.className =
-          "engine-chip px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 transition-all bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50";
+          "engine-chip px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 transition-all bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50 cursor-pointer";
       });
 
       btn.className =
-        "engine-chip px-3 py-1 rounded-full text-xs font-mono font-semibold flex items-center gap-1.5 transition-all bg-[#f85e2a] text-[#521300] shadow-sm";
+        "engine-chip px-3 py-1 rounded-full text-xs font-mono font-semibold flex items-center gap-1.5 transition-all bg-[#f85e2a] text-[#521300] shadow-sm cursor-pointer";
 
       onSelectEngine(engineId);
     });

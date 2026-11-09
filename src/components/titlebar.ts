@@ -25,8 +25,8 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
     <!-- Window Drag Title Row -->
     <div id="titlebar-drag-strip" data-tauri-drag-region class="h-8 px-3 flex items-center justify-between select-none cursor-default drag-region">
       <div class="flex items-center gap-2 pointer-events-none">
-        <span class="flex items-center gap-1.5 font-mono text-xs text-[#e2bfb4]">
-          <span class="material-symbols-outlined text-[15px] text-[#f85e2a]">terminal</span>
+        <span class="flex items-center gap-2 font-mono text-xs text-[#e2bfb4]">
+          <img src="/logo.png" alt="YoonSpace" class="w-4 h-4 object-contain bg-transparent" />
           <span class="font-semibold text-[#e5e2e1] tracking-wide">YoonSpace</span>
         </span>
         <div class="h-3 w-px bg-[#353535] mx-1"></div>
@@ -91,7 +91,7 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
     </div>
   `;
 
-  // Window drag handling (both via native startDragging and data-tauri-drag-region)
+  // Window drag handling
   const dragStrip = container.querySelector("#titlebar-drag-strip") as HTMLElement;
   dragStrip?.addEventListener("mousedown", (e) => {
     if (e.button === 0) {
