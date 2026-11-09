@@ -23,14 +23,14 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
 
   container.innerHTML = `
     <!-- Window Drag Title Row -->
-    <div id="titlebar-drag-strip" data-tauri-drag-region class="h-8 px-3 flex items-center justify-between select-none cursor-default drag-region">
+    <div id="titlebar-drag-strip" data-tauri-drag-region class="h-8 pl-3 pr-1.5 flex items-center justify-between select-none cursor-default drag-region">
       <div class="flex items-center gap-2 pointer-events-none">
         <span class="flex items-center gap-2 font-mono text-xs text-[#e2bfb4]">
           <img src="/logo.png" alt="YoonSpace" class="w-4 h-4 object-contain bg-transparent" />
           <span class="font-semibold text-[#e5e2e1] tracking-wide">YoonSpace</span>
         </span>
         <div class="h-3 w-px bg-[#353535] mx-1"></div>
-        <span id="telemetry-badge" class="pointer-events-auto inline-flex items-center px-2 py-0.5 rounded bg-[#202020] font-mono text-[11px] text-[#ffb59e] border border-[#353535]/50">
+        <span id="telemetry-badge" class="pointer-events-auto inline-flex items-center px-2 py-0.5 rounded bg-[#202020] font-mono text-[11px] text-[#ffb59e] border border-[#353535]/50 hover:border-[#f85e2a]/50 transition-colors cursor-help">
           <span id="telemetry-dot" class="w-1.5 h-1.5 rounded-full bg-[#f85e2a] mr-1.5 animate-pulse"></span>
           <span id="telemetry-ram">42 MB RAM</span>
         </span>
@@ -38,16 +38,45 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
 
       <div class="flex-1 h-full drag-region" data-tauri-drag-region></div>
 
-      <!-- Window Controls -->
-      <div class="flex items-center gap-2 no-drag">
-        <button id="btn-win-min" aria-label="Minimize" class="w-3.5 h-3.5 rounded-full bg-[#353535] hover:bg-[#4a4a4a] flex items-center justify-center transition-colors group cursor-pointer" type="button">
-          <span class="material-symbols-outlined text-[9px] text-[#e2bfb4] group-hover:text-white">minimize</span>
+      <!-- Modern Crisp Window Controls (Ubuntu Yaru Ergonomics) -->
+      <div class="flex items-center gap-1.5 no-drag">
+        <!-- Minimize -->
+        <button
+          id="btn-win-min"
+          aria-label="Minimize"
+          title="Minimize"
+          class="w-5 h-5 rounded-full bg-[#222222] hover:bg-[#383838] text-[#8e8a88] hover:text-[#e5e2e1] border border-white/5 flex items-center justify-center transition-all cursor-pointer active:scale-95"
+          type="button"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1.5 5H8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
         </button>
-        <button id="btn-win-max" aria-label="Maximize" class="w-3.5 h-3.5 rounded-full bg-[#353535] hover:bg-[#4a4a4a] flex items-center justify-center transition-colors group cursor-pointer" type="button">
-          <span class="material-symbols-outlined text-[9px] text-[#e2bfb4] group-hover:text-white">crop_square</span>
+
+        <!-- Maximize -->
+        <button
+          id="btn-win-max"
+          aria-label="Maximize"
+          title="Maximize"
+          class="w-5 h-5 rounded-full bg-[#222222] hover:bg-[#383838] text-[#8e8a88] hover:text-[#e5e2e1] border border-white/5 flex items-center justify-center transition-all cursor-pointer active:scale-95"
+          type="button"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1.75" y="1.75" width="6.5" height="6.5" rx="1.2" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
         </button>
-        <button id="btn-win-close" aria-label="Close" class="w-3.5 h-3.5 rounded-full bg-[#93000a] hover:bg-[#ba1a1a] flex items-center justify-center transition-colors group cursor-pointer" type="button">
-          <span class="material-symbols-outlined text-[9px] text-[#ffdad6] group-hover:text-white">close</span>
+
+        <!-- Close / Exit -->
+        <button
+          id="btn-win-close"
+          aria-label="Close"
+          title="Close"
+          class="w-5 h-5 rounded-full bg-[#2d1515] hover:bg-[#e95420] text-[#e06c6c] hover:text-white border border-red-500/10 hover:border-[#e95420] flex items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95"
+          type="button"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2.2 2.2L7.8 7.8M7.8 2.2L2.2 7.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
         </button>
       </div>
     </div>
