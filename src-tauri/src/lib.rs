@@ -35,6 +35,7 @@ pub fn run() {
             commands::window::window_toggle_maximize,
             commands::window::window_close,
             commands::window::window_is_maximized,
+            commands::window::window_start_dragging,
             commands::telemetry::get_telemetry,
             commands::webview::spawn_split,
             commands::webview::update_split_layout,

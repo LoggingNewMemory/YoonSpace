@@ -19,6 +19,14 @@ import type { AppConfig, MemoryStats, SplitBounds } from "../types";
 
 export const tauriIpc = {
   // Window controls
+  async startDragging(): Promise<void> {
+    try {
+      await invoke("window_start_dragging");
+    } catch (e) {
+      console.warn("window_start_dragging failed:", e);
+    }
+  },
+
   async minimizeWindow(): Promise<void> {
     try {
       await invoke("window_minimize");

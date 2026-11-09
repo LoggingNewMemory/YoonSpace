@@ -23,14 +23,14 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
 
   container.innerHTML = `
     <!-- Window Drag Title Row -->
-    <div data-tauri-drag-region class="h-8 px-3 flex items-center justify-between select-none drag-region">
-      <div class="flex items-center gap-2 no-drag">
+    <div id="titlebar-drag-strip" data-tauri-drag-region class="h-8 px-3 flex items-center justify-between select-none cursor-default drag-region">
+      <div class="flex items-center gap-2 pointer-events-none">
         <span class="flex items-center gap-1.5 font-mono text-xs text-[#e2bfb4]">
           <span class="material-symbols-outlined text-[15px] text-[#f85e2a]">terminal</span>
           <span class="font-semibold text-[#e5e2e1] tracking-wide">YoonSpace</span>
         </span>
         <div class="h-3 w-px bg-[#353535] mx-1"></div>
-        <span id="telemetry-badge" class="inline-flex items-center px-2 py-0.5 rounded bg-[#202020] font-mono text-[11px] text-[#ffb59e] border border-[#353535]/50">
+        <span id="telemetry-badge" class="pointer-events-auto inline-flex items-center px-2 py-0.5 rounded bg-[#202020] font-mono text-[11px] text-[#ffb59e] border border-[#353535]/50">
           <span id="telemetry-dot" class="w-1.5 h-1.5 rounded-full bg-[#f85e2a] mr-1.5 animate-pulse"></span>
           <span id="telemetry-ram">42 MB RAM</span>
         </span>
@@ -40,13 +40,13 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
 
       <!-- Window Controls -->
       <div class="flex items-center gap-2 no-drag">
-        <button id="btn-win-min" aria-label="Minimize" class="w-3.5 h-3.5 rounded-full bg-[#353535] hover:bg-[#4a4a4a] flex items-center justify-center transition-colors group" type="button">
+        <button id="btn-win-min" aria-label="Minimize" class="w-3.5 h-3.5 rounded-full bg-[#353535] hover:bg-[#4a4a4a] flex items-center justify-center transition-colors group cursor-pointer" type="button">
           <span class="material-symbols-outlined text-[9px] text-[#e2bfb4] group-hover:text-white">minimize</span>
         </button>
-        <button id="btn-win-max" aria-label="Maximize" class="w-3.5 h-3.5 rounded-full bg-[#353535] hover:bg-[#4a4a4a] flex items-center justify-center transition-colors group" type="button">
+        <button id="btn-win-max" aria-label="Maximize" class="w-3.5 h-3.5 rounded-full bg-[#353535] hover:bg-[#4a4a4a] flex items-center justify-center transition-colors group cursor-pointer" type="button">
           <span class="material-symbols-outlined text-[9px] text-[#e2bfb4] group-hover:text-white">crop_square</span>
         </button>
-        <button id="btn-win-close" aria-label="Close" class="w-3.5 h-3.5 rounded-full bg-[#93000a] hover:bg-[#ba1a1a] flex items-center justify-center transition-colors group" type="button">
+        <button id="btn-win-close" aria-label="Close" class="w-3.5 h-3.5 rounded-full bg-[#93000a] hover:bg-[#ba1a1a] flex items-center justify-center transition-colors group cursor-pointer" type="button">
           <span class="material-symbols-outlined text-[9px] text-[#ffdad6] group-hover:text-white">close</span>
         </button>
       </div>
@@ -55,13 +55,13 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
     <!-- Navigation / Omnibar Row -->
     <div class="h-12 px-4 flex items-center gap-3 bg-[#1b1b1c]/95 border-t border-[#202020]/60 justify-between">
       <div class="flex items-center gap-2">
-        <button id="btn-nav-home" title="Welcome Tab" class="p-1.5 rounded-lg text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#202020] transition-colors">
+        <button id="btn-nav-home" title="Welcome Tab" class="p-1.5 rounded-lg text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#202020] transition-colors cursor-pointer">
           <span class="material-symbols-outlined text-[18px]">home</span>
         </button>
         <div id="split-active-indicator" class="hidden items-center gap-1.5 px-2 py-0.5 rounded bg-[#f85e2a]/20 border border-[#f85e2a]/40 text-[#ffb59e] font-mono text-[11px]">
           <span class="material-symbols-outlined text-[14px]">splitscreen</span>
           <span>Dual Split Active</span>
-          <button id="btn-close-split" class="ml-1 hover:text-white" title="Close Split View">
+          <button id="btn-close-split" class="ml-1 hover:text-white cursor-pointer" title="Close Split View">
             <span class="material-symbols-outlined text-[12px]">close</span>
           </button>
         </div>
@@ -84,14 +84,30 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
       </div>
 
       <div class="w-24 flex items-center justify-end gap-1 text-[#aa8a80]">
-        <button id="btn-split-toggle" title="Toggle Split View" class="p-1.5 rounded-lg hover:text-[#e5e2e1] hover:bg-[#202020] transition-colors">
+        <button id="btn-split-toggle" title="Toggle Split View" class="p-1.5 rounded-lg hover:text-[#e5e2e1] hover:bg-[#202020] transition-colors cursor-pointer">
           <span class="material-symbols-outlined text-[18px]">splitscreen</span>
         </button>
       </div>
     </div>
   `;
 
-  // Attach event handlers
+  // Window drag handling (both via native startDragging and data-tauri-drag-region)
+  const dragStrip = container.querySelector("#titlebar-drag-strip") as HTMLElement;
+  dragStrip?.addEventListener("mousedown", (e) => {
+    if (e.button === 0) {
+      const target = e.target as HTMLElement;
+      if (target.closest("button, input, a, .no-drag, #telemetry-badge")) {
+        return;
+      }
+      if (e.detail === 2) {
+        tauriIpc.toggleMaximizeWindow();
+      } else {
+        tauriIpc.startDragging();
+      }
+    }
+  });
+
+  // Attach button event handlers
   container.querySelector("#btn-win-min")?.addEventListener("click", () => tauriIpc.minimizeWindow());
   container.querySelector("#btn-win-max")?.addEventListener("click", () => tauriIpc.toggleMaximizeWindow());
   container.querySelector("#btn-win-close")?.addEventListener("click", () => tauriIpc.closeWindow());
