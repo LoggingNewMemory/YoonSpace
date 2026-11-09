@@ -34,22 +34,13 @@ export function createDock(
         <span class="material-symbols-outlined text-[22px]">grid_view</span>
       </button>
 
-      <!-- Welcome Home Icon -->
-      <button
-        id="dock-btn-home"
-        title="Welcome Tab"
-        class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all"
-      >
-        <span class="material-symbols-outlined text-[22px]">terminal</span>
-      </button>
-
-      <!-- Developer Bookmarks -->
+      <!-- Add -->
       <button
         id="dock-btn-bookmarks"
-        title="Developer Bookmarks"
+        title="Add"
         class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all"
       >
-        <span class="material-symbols-outlined text-[22px]">bookmark</span>
+        <span class="material-symbols-outlined text-[22px]">add</span>
       </button>
     </nav>
 
@@ -86,11 +77,6 @@ export function createDock(
   aside.querySelector("#dock-btn-workspaces")?.addEventListener("click", () => {
     setActive("dock-btn-workspaces");
     onSelectTab("workspaces");
-  });
-
-  aside.querySelector("#dock-btn-home")?.addEventListener("click", () => {
-    setActive("dock-btn-home");
-    onSelectTab("home");
   });
 
   aside.querySelector("#dock-btn-bookmarks")?.addEventListener("click", () => {
