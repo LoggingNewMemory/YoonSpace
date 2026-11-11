@@ -31,7 +31,7 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
         </span>
         <div class="h-3 w-px bg-[#353535] mx-1"></div>
         <span id="telemetry-badge" class="pointer-events-auto inline-flex items-center px-2 py-0.5 rounded bg-[#202020] font-mono text-[11px] text-[#ffb59e] border border-[#353535]/50 hover:border-[#f85e2a]/50 transition-colors cursor-help">
-          <span id="telemetry-ram">42 MB RAM</span>
+          <span id="telemetry-ram">-- MB RAM</span>
         </span>
       </div>
 
@@ -145,6 +145,23 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
     indicator?.classList.remove("flex");
     onHomeClick();
   });
+
+  // Query actual RAM immediately so it shows real memory usage on startup
+  tauriIpc
+    .getTelemetry()
+    .then((stats) => {
+      const ramBadge = container.querySelector("#telemetry-ram");
+      const badgeContainer = container.querySelector("#telemetry-badge") as HTMLElement | null;
+      if (ramBadge && stats) {
+        ramBadge.textContent = `${stats.resident_mb.toFixed(0)} MB RAM`;
+      }
+      if (badgeContainer && stats) {
+        badgeContainer.title = `Private RAM: ${stats.resident_mb} MB\nTotal RSS: ${stats.total_rss_mb} MB (incl. shared OS libs)\nShared Libs: ${stats.shared_mb} MB`;
+      }
+    })
+    .catch((err) => {
+      console.warn("Failed to get initial RAM telemetry:", err);
+    });
 
   return container;
 }
