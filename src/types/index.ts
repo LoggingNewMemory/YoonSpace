@@ -48,3 +48,13 @@ export interface SplitBounds {
   width: number;
   height: number;
 }
+
+export interface MinimizedTab {
+  id: string;
+  title: string;
+  url: string;
+  query?: string;
+  isSplit?: boolean;
+  leftUrl?: string;
+  rightUrl?: string;
+}

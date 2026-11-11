@@ -15,9 +15,14 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AppConfig, MemoryStats, SplitBounds } from "../types";
 
 export const tauriIpc = {
+  // Event listening
+  listen<T>(event: string, handler: (event: { event: string; payload: T }) => void): Promise<UnlistenFn> {
+    return listen<T>(event, handler);
+  },
   // Window controls
   async startDragging(): Promise<void> {
     try {

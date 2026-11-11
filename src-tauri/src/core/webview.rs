@@ -238,7 +238,12 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
     close_split_views(app)?;
 
     let url: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let builder = WebviewBuilder::new("single_view", WebviewUrl::External(url));
+    let app_title = app.clone();
+    let builder = WebviewBuilder::new("single_view", WebviewUrl::External(url))
+        .on_document_title_changed(move |_webview, title| {
+            use tauri::Emitter;
+            let _ = app_title.emit("webview-title-changed", title);
+        });
 
     window.add_child(
         builder,
@@ -266,8 +271,19 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
     let left_url: url::Url = req.left_url.parse().map_err(|e: url::ParseError| e.to_string())?;
     let right_url: url::Url = req.right_url.parse().map_err(|e: url::ParseError| e.to_string())?;
 
-    let left_builder = WebviewBuilder::new("split_left", WebviewUrl::External(left_url));
-    let right_builder = WebviewBuilder::new("split_right", WebviewUrl::External(right_url));
+    let app_left = app.clone();
+    let left_builder = WebviewBuilder::new("split_left", WebviewUrl::External(left_url))
+        .on_document_title_changed(move |_webview, title| {
+            use tauri::Emitter;
+            let _ = app_left.emit("webview-split-left-title-changed", title);
+        });
+
+    let app_right = app.clone();
+    let right_builder = WebviewBuilder::new("split_right", WebviewUrl::External(right_url))
+        .on_document_title_changed(move |_webview, title| {
+            use tauri::Emitter;
+            let _ = app_right.emit("webview-split-right-title-changed", title);
+        });
 
     window.add_child(
         left_builder,
