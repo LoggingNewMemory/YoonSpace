@@ -57,4 +57,6 @@ export interface MinimizedTab {
   isSplit?: boolean;
   leftUrl?: string;
   rightUrl?: string;
+  leftTitle?: string;
+  rightTitle?: string;
 }

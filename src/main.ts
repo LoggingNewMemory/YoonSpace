@@ -81,6 +81,15 @@ async function handleSpawnPreset(preset: SplitPreset) {
 
   const bounds = getSplitBounds();
   const tabId = "preset-" + preset.id;
+
+  let leftTitle = "Left View";
+  let rightTitle = "Right View";
+  if (preset.title.includes("|")) {
+    const parts = preset.title.split("|").map((p) => p.trim());
+    leftTitle = parts[0] || leftTitle;
+    rightTitle = parts[1] || rightTitle;
+  }
+
   activeTab = {
     id: tabId,
     title: preset.title,
@@ -89,6 +98,8 @@ async function handleSpawnPreset(preset: SplitPreset) {
     isSplit: true,
     leftUrl: preset.left_url,
     rightUrl: preset.right_url,
+    leftTitle,
+    rightTitle,
   };
 
   try {
@@ -100,7 +111,7 @@ async function handleSpawnPreset(preset: SplitPreset) {
       mainCanvas.classList.add("hidden");
     }
 
-    webBar.setTitle(preset.title);
+    webBar.setSplitMode(leftTitle, rightTitle);
     webBar.show();
 
     const indicator = document.getElementById("split-active-indicator");
@@ -142,7 +153,7 @@ async function handleSearch(query: string, engineId: string) {
       mainCanvas.classList.add("hidden");
     }
 
-    webBar.setTitle(displayTitle);
+    webBar.setSingleMode(displayTitle);
     webBar.show();
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
@@ -230,6 +241,142 @@ async function handleCloseWeb() {
   dock.setActiveTab("dock-btn-workspaces");
 }
 
+// User clicked Minimize on Left pane of dual split view
+async function handleMinimizeLeft() {
+  if (!activeTab || !activeTab.isSplit || !activeTab.leftUrl || !activeTab.rightUrl) {
+    await handleMinimizeWeb();
+    return;
+  }
+
+  const leftTab: MinimizedTab = {
+    id: "tab-" + Date.now(),
+    title: activeTab.leftTitle || "Web Tab",
+    url: activeTab.leftUrl,
+    isSplit: false,
+  };
+  dock.addMinimizedTab(leftTab);
+
+  const remainingUrl = activeTab.rightUrl;
+  const remainingTitle = activeTab.rightTitle || "Web View";
+  const bounds = getSplitBounds();
+
+  try {
+    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    activeTab = {
+      id: "tab-" + (Date.now() + 1),
+      title: remainingTitle,
+      url: remainingUrl,
+      isSplit: false,
+    };
+    webBar.setSingleMode(remainingTitle);
+    const indicator = document.getElementById("split-active-indicator");
+    if (indicator) {
+      indicator.classList.add("hidden");
+      indicator.classList.remove("flex");
+    }
+  } catch (e) {
+    console.error("Failed to minimize left tab:", e);
+  }
+}
+
+// User clicked Close on Left pane of dual split view
+async function handleCloseLeft() {
+  if (!activeTab || !activeTab.isSplit || !activeTab.rightUrl) {
+    await handleCloseWeb();
+    return;
+  }
+
+  const remainingUrl = activeTab.rightUrl;
+  const remainingTitle = activeTab.rightTitle || "Web View";
+  const bounds = getSplitBounds();
+
+  try {
+    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    activeTab = {
+      id: "tab-" + Date.now(),
+      title: remainingTitle,
+      url: remainingUrl,
+      isSplit: false,
+    };
+    webBar.setSingleMode(remainingTitle);
+    const indicator = document.getElementById("split-active-indicator");
+    if (indicator) {
+      indicator.classList.add("hidden");
+      indicator.classList.remove("flex");
+    }
+  } catch (e) {
+    console.error("Failed to convert split to single on close left:", e);
+  }
+}
+
+// User clicked Minimize on Right pane of dual split view
+async function handleMinimizeRight() {
+  if (!activeTab || !activeTab.isSplit || !activeTab.leftUrl || !activeTab.rightUrl) {
+    await handleMinimizeWeb();
+    return;
+  }
+
+  const rightTab: MinimizedTab = {
+    id: "tab-" + Date.now(),
+    title: activeTab.rightTitle || "Web Tab",
+    url: activeTab.rightUrl,
+    isSplit: false,
+  };
+  dock.addMinimizedTab(rightTab);
+
+  const remainingUrl = activeTab.leftUrl;
+  const remainingTitle = activeTab.leftTitle || "Web View";
+  const bounds = getSplitBounds();
+
+  try {
+    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    activeTab = {
+      id: "tab-" + (Date.now() + 1),
+      title: remainingTitle,
+      url: remainingUrl,
+      isSplit: false,
+    };
+    webBar.setSingleMode(remainingTitle);
+    const indicator = document.getElementById("split-active-indicator");
+    if (indicator) {
+      indicator.classList.add("hidden");
+      indicator.classList.remove("flex");
+    }
+  } catch (e) {
+    console.error("Failed to minimize right tab:", e);
+  }
+}
+
+// User clicked Close on Right pane of dual split view
+async function handleCloseRight() {
+  if (!activeTab || !activeTab.isSplit || !activeTab.leftUrl) {
+    await handleCloseWeb();
+    return;
+  }
+
+  const remainingUrl = activeTab.leftUrl;
+  const remainingTitle = activeTab.leftTitle || "Web View";
+  const bounds = getSplitBounds();
+
+  try {
+    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    activeTab = {
+      id: "tab-" + Date.now(),
+      title: remainingTitle,
+      url: remainingUrl,
+      isSplit: false,
+    };
+    webBar.setSingleMode(remainingTitle);
+    const indicator = document.getElementById("split-active-indicator");
+    if (indicator) {
+      indicator.classList.add("hidden");
+      indicator.classList.remove("flex");
+    }
+  } catch (e) {
+    console.error("Failed to convert split to single on close right:", e);
+  }
+}
+
 // User clicked on a minimized tab on the sidebar dock -> restores it
 async function handleRestoreTab(tab: MinimizedTab) {
   // If another tab is open, minimize it first
@@ -250,6 +397,15 @@ async function handleRestoreTab(tab: MinimizedTab) {
         indicator.classList.add("flex");
         indicator.querySelector("span:nth-child(2)")!.textContent = tab.title;
       }
+      let leftTitle = tab.leftTitle || "Left Pane";
+      let rightTitle = tab.rightTitle || "Right Pane";
+      if (!tab.leftTitle && tab.title.includes("|")) {
+        const parts = tab.title.split("|").map((p) => p.trim());
+        leftTitle = parts[0] || leftTitle;
+        rightTitle = parts[1] || rightTitle;
+      }
+      webBar.setSplitMode(leftTitle, rightTitle);
+      webBar.show();
     } else {
       await tauriIpc.spawnSingleView(tab.url, bounds);
       const indicator = document.getElementById("split-active-indicator");
@@ -257,6 +413,8 @@ async function handleRestoreTab(tab: MinimizedTab) {
         indicator.classList.add("hidden");
         indicator.classList.remove("flex");
       }
+      webBar.setSingleMode(tab.title);
+      webBar.show();
     }
 
     isViewOpen = true;
@@ -265,9 +423,6 @@ async function handleRestoreTab(tab: MinimizedTab) {
     if (mainCanvas) {
       mainCanvas.classList.add("hidden");
     }
-
-    webBar.setTitle(tab.title);
-    webBar.show();
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
     if (omnibarInput) {
@@ -335,7 +490,14 @@ async function init() {
   app.appendChild(dock.element);
 
   // 3. Web Header Bar (Fixed at top: 80px, left: 64px, right: 0, height: 28px)
-  webBar = createWebBar(handleMinimizeWeb, handleCloseWeb);
+  webBar = createWebBar({
+    onMinimize: handleMinimizeWeb,
+    onClose: handleCloseWeb,
+    onMinimizeLeft: handleMinimizeLeft,
+    onCloseLeft: handleCloseLeft,
+    onMinimizeRight: handleMinimizeRight,
+    onCloseRight: handleCloseRight,
+  });
   app.appendChild(webBar.element);
 
   // 4. Main Canvas & Welcome Screen
@@ -371,7 +533,21 @@ async function init() {
   tauriIpc.listen<string>("webview-title-changed", (event) => {
     if (event.payload && isViewOpen && activeTab && !activeTab.isSplit) {
       activeTab.title = event.payload;
-      webBar.setTitle(event.payload);
+      webBar.setSingleMode(event.payload);
+    }
+  });
+
+  tauriIpc.listen<string>("webview-split-left-title-changed", (event) => {
+    if (event.payload && isViewOpen && activeTab && activeTab.isSplit) {
+      activeTab.leftTitle = event.payload;
+      webBar.setLeftTitle(event.payload);
+    }
+  });
+
+  tauriIpc.listen<string>("webview-split-right-title-changed", (event) => {
+    if (event.payload && isViewOpen && activeTab && activeTab.isSplit) {
+      activeTab.rightTitle = event.payload;
+      webBar.setRightTitle(event.payload);
     }
   });
 
