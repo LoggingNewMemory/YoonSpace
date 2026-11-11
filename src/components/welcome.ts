@@ -41,8 +41,14 @@ export function createWelcomeScreen(
         <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-[#e5e2e1]">
           Welcome to <span style="color: #e95420;">YoonSpace</span>
         </h1>
-        <p class="text-sm text-[#e2bfb4] mt-1 tracking-wide">
-          A browser for Engineers
+        <p class="text-sm text-[#e2bfb4] mt-1 tracking-wide flex items-center">
+          <span>A browser for&nbsp;</span>
+          <span
+            id="role-rotator"
+            class="font-semibold tracking-wide tabular-nums inline-block"
+          >
+            <span class="text-[#ffb59e]">Engineers</span>
+          </span>
         </p>
       </div>
     </section>
@@ -135,6 +141,100 @@ export function createWelcomeScreen(
       onSearch(query, activeEngine);
     }
   });
+
+  // Hacker/Terminal Scramble & Typewriter Decoder Effect
+  const roleRotator = container.querySelector("#role-rotator") as HTMLElement | null;
+  if (roleRotator) {
+    const roles = [
+      "Engineers",
+      "Programmers",
+      "Hackers",
+      "Developers",
+      "Vibe Coders",
+      "Architects",
+      "Builders",
+      "Sysadmins",
+      "DevOps",
+      "Tinkerers",
+      "Terminal Junkies",
+      "Makers",
+      "Code Ninjas",
+      "Founders",
+      "Data Scientists",
+    ];
+
+    const chars = "0123456789!@#$%^&*<>[]{}/*+=~_";
+    const escapeHtml = (str: string) =>
+      str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    let roleIndex = 0;
+    let isAnimating = false;
+
+    const scrambleTransition = (fromWord: string, toWord: string, onComplete: () => void) => {
+      const scrambleFrames = 7;  // Snappy burst of random numbers & symbols (~280ms)
+      const decodeFrames = 18;   // Smooth progressive typewriter decode (~720ms)
+      const totalFrames = scrambleFrames + decodeFrames;
+      const frameDurationMs = 40;
+      let currentFrame = 0;
+
+      const timer = setInterval(() => {
+        if (!container.isConnected) {
+          clearInterval(timer);
+          isAnimating = false;
+          return;
+        }
+
+        currentFrame++;
+
+        if (currentFrame <= scrambleFrames) {
+          // Phase 1: Random numbers & symbols burst
+          const len = Math.max(fromWord.length, toWord.length);
+          let scrambled = "";
+          for (let i = 0; i < len; i++) {
+            scrambled += chars[Math.floor(Math.random() * chars.length)];
+          }
+          roleRotator.innerHTML = `<span class="text-[#f85e2a] opacity-90">${escapeHtml(scrambled)}</span>`;
+        } else if (currentFrame < totalFrames) {
+          // Phase 2: Progressive typewriter decode
+          const progress = (currentFrame - scrambleFrames) / decodeFrames;
+          const resolvedCount = Math.floor(progress * toWord.length);
+          const resolved = toWord.slice(0, resolvedCount);
+          const targetLen = Math.max(
+            toWord.length,
+            Math.round(fromWord.length * (1 - progress) + toWord.length * progress)
+          );
+          const scrambledCount = Math.max(0, targetLen - resolvedCount);
+
+          let scrambled = "";
+          for (let i = 0; i < scrambledCount; i++) {
+            scrambled += chars[Math.floor(Math.random() * chars.length)];
+          }
+
+          roleRotator.innerHTML = `<span class="text-[#ffb59e]">${escapeHtml(resolved)}</span><span class="text-[#f85e2a] opacity-90">${escapeHtml(scrambled)}</span>`;
+        } else {
+          // Phase 3: Final target word settled
+          clearInterval(timer);
+          roleRotator.innerHTML = `<span class="text-[#ffb59e]">${escapeHtml(toWord)}</span>`;
+          isAnimating = false;
+          onComplete();
+        }
+      }, frameDurationMs);
+    };
+
+    const nextWord = () => {
+      if (!container.isConnected || isAnimating) return;
+      isAnimating = true;
+      const currentWord = roles[roleIndex];
+      roleIndex = (roleIndex + 1) % roles.length;
+      const targetWord = roles[roleIndex];
+
+      scrambleTransition(currentWord, targetWord, () => {
+        setTimeout(nextWord, 4000);
+      });
+    };
+
+    setTimeout(nextWord, 4000);
+  }
 
   return container;
 }
