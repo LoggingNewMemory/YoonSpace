@@ -25,12 +25,12 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
     <!-- Window Drag Title Row -->
     <div id="titlebar-drag-strip" data-tauri-drag-region class="h-8 pl-3 pr-1.5 flex items-center justify-between select-none cursor-default drag-region">
       <div class="flex items-center gap-2 pointer-events-none">
-        <span class="flex items-center gap-2 font-mono text-xs text-[#e2bfb4]">
+        <span class="flex items-center gap-2 text-xs text-[#e2bfb4]">
           <img src="/logo.png" alt="YoonSpace" class="w-4 h-4 object-contain bg-transparent" />
           <span class="font-semibold text-[#e5e2e1] tracking-wide">YoonSpace</span>
         </span>
         <div class="h-3 w-px bg-[#353535] mx-1"></div>
-        <span id="telemetry-badge" class="pointer-events-auto inline-flex items-center px-2 py-0.5 rounded bg-[#202020] font-mono text-[11px] text-[#ffb59e] border border-[#353535]/50 hover:border-[#f85e2a]/50 transition-colors cursor-help">
+        <span id="telemetry-badge" class="pointer-events-auto inline-flex items-center px-2 py-0.5 rounded bg-[#202020] text-[11px] font-medium text-[#ffb59e] border border-[#353535]/50 hover:border-[#f85e2a]/50 transition-colors cursor-help">
           <span id="telemetry-ram">-- MB RAM</span>
         </span>
       </div>
@@ -82,7 +82,7 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
 
     <!-- Navigation / Omnibar Row -->
     <div class="h-12 px-4 flex items-center justify-center bg-[#1b1b1c]/95 border-t border-[#202020]/60 relative">
-      <div id="split-active-indicator" class="hidden absolute left-4 items-center gap-1.5 px-2 py-0.5 rounded bg-[#f85e2a]/20 border border-[#f85e2a]/40 text-[#ffb59e] font-mono text-[11px]">
+      <div id="split-active-indicator" class="hidden absolute left-4 items-center gap-1.5 px-2 py-0.5 rounded bg-[#f85e2a]/20 border border-[#f85e2a]/40 text-[#ffb59e] text-[11px] font-medium">
         <span class="material-symbols-outlined text-[14px]">splitscreen</span>
         <span>Dual Split Active</span>
         <button id="btn-close-split" class="ml-1 hover:text-white cursor-pointer" title="Close Split View">
@@ -95,7 +95,7 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
           <div class="w-full h-8 px-3 bg-[#202020] rounded-lg flex items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)] border border-transparent focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all">
             <input
               id="global-omnibar-input"
-              class="w-full bg-transparent border-0 outline-none font-mono text-xs text-[#e5e2e1] placeholder-[#ADABAA] focus:ring-0 selection:bg-[#f85e2a] selection:text-white"
+              class="w-full bg-transparent border-0 outline-none text-xs text-[#e5e2e1] placeholder-[#ADABAA] focus:ring-0 selection:bg-[#f85e2a] selection:text-white"
               placeholder="Search or enter address..."
               type="text"
               autocomplete="off"

@@ -41,7 +41,7 @@ export function createWelcomeScreen(
         <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-[#e5e2e1]">
           Welcome to <span style="color: #e95420;">YoonSpace</span>
         </h1>
-        <p class="text-sm text-[#e2bfb4] mt-1 tracking-wide font-mono">
+        <p class="text-sm text-[#e2bfb4] mt-1 tracking-wide">
           A browser for Engineers
         </p>
       </div>
@@ -53,17 +53,17 @@ export function createWelcomeScreen(
         <form id="omni-search-form" class="w-full">
           <div class="relative w-full rounded-xl bg-[#2a2a2a] p-1.5 shadow-xl border border-[#353535] focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all">
             <div class="flex items-center gap-2.5 px-3 py-1.5">
-              <span class="flex items-center justify-center text-[#ffb59e] font-mono text-base font-bold select-none pr-1">
+              <span class="flex items-center justify-center text-[#ffb59e] text-base font-bold select-none pr-1">
                 &gt;
               </span>
               <input
                 id="engineerOmniInput"
-                class="flex-1 bg-transparent font-mono text-sm text-[#e5e2e1] placeholder-[#aa8a80] outline-none border-none focus:ring-0 selection:bg-[#f85e2a] selection:text-white"
+                class="flex-1 bg-transparent text-sm text-[#e5e2e1] placeholder-[#aa8a80] outline-none border-none focus:ring-0 selection:bg-[#f85e2a] selection:text-white"
                 placeholder="Search the World..."
                 type="text"
                 autocomplete="off"
               />
-              <div class="hidden sm:flex items-center gap-1 bg-[#0e0e0e] px-2 py-1 rounded text-[#aa8a80] font-mono text-[11px] shadow-inner border border-[#353535]">
+              <div class="hidden sm:flex items-center gap-1 bg-[#0e0e0e] px-2 py-1 rounded text-[#aa8a80] text-[11px] font-medium shadow-inner border border-[#353535]">
                 <span class="text-[#e5e2e1] font-bold">ENTER</span>
               </div>
             </div>
@@ -79,7 +79,7 @@ export function createWelcomeScreen(
               <button
                 type="button"
                 data-engine-id="${engine.id}"
-                class="engine-chip px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                class="engine-chip px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
                   isActive
                     ? "bg-[#f85e2a] text-[#521300] shadow-sm font-semibold"
                     : "bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50"
@@ -96,7 +96,7 @@ export function createWelcomeScreen(
             id="btn-add-engine"
             type="button"
             title="Configure or add custom search engine"
-            class="px-3 py-1 rounded-full bg-[#202020]/60 hover:bg-[#202020] text-[#aa8a80] hover:text-[#e5e2e1] font-mono text-xs flex items-center gap-1 transition-all border border-dashed border-[#5a4139] cursor-pointer"
+            class="px-3 py-1 rounded-full bg-[#202020]/60 hover:bg-[#202020] text-[#aa8a80] hover:text-[#e5e2e1] text-xs font-medium flex items-center gap-1 transition-all border border-dashed border-[#5a4139] cursor-pointer"
           >
             <span class="material-symbols-outlined text-[14px]">add</span>
             <span>Add Search Engine</span>
@@ -114,11 +114,11 @@ export function createWelcomeScreen(
 
       container.querySelectorAll(".engine-chip").forEach((b) => {
         b.className =
-          "engine-chip px-3 py-1 rounded-full text-xs font-mono font-medium flex items-center gap-1.5 transition-all bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50 cursor-pointer";
+          "engine-chip px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50 cursor-pointer";
       });
 
       btn.className =
-        "engine-chip px-3 py-1 rounded-full text-xs font-mono font-semibold flex items-center gap-1.5 transition-all bg-[#f85e2a] text-[#521300] shadow-sm cursor-pointer";
+        "engine-chip px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all bg-[#f85e2a] text-[#521300] shadow-sm cursor-pointer";
 
       onSelectEngine(engineId);
     });

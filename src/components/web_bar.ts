@@ -37,7 +37,7 @@ export function createWebBar(
 
     <!-- Center Web Title -->
     <div class="flex-1 flex items-center justify-center text-center px-2 overflow-hidden">
-      <span id="web-bar-title" class="font-mono text-xs font-medium tracking-wide text-[#d1d5db] truncate max-w-md">
+      <span id="web-bar-title" class="text-xs font-medium tracking-wide text-[#d1d5db] truncate max-w-md">
         Web View
       </span>
     </div>

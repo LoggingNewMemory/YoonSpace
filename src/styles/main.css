@@ -48,8 +48,9 @@
   --color-on-error: #690005;
   --color-on-error-container: #ffdad6;
 
-  --font-code: 'JetBrains Mono', 'Roboto Mono', monospace;
-  --font-sans: 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-code: 'Google Sans Text', 'Google Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Google Sans Text', 'Google Sans', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Google Sans', 'Google Sans Text', system-ui, -apple-system, sans-serif;
 }
 
 @layer base {
@@ -58,7 +59,7 @@
     padding: 0;
     background-color: #131313;
     color: #e5e2e1;
-    font-family: 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Google Sans', 'Google Sans Text', system-ui, -apple-system, sans-serif;
     user-select: none;
     overflow: hidden;
     height: 100vh;

@@ -52,7 +52,7 @@ export function createSplitPresetsSection(
                   <span class="text-sm font-semibold text-[#e5e2e1] group-hover:text-white transition-colors">
                     ${preset.title}
                   </span>
-                  <span class="text-[11px] font-mono text-[#aa8a80]">
+                  <span class="text-[11px] text-[#aa8a80]">
                     ${preset.left_url.replace("https://", "")} &nbsp;|&nbsp; ${preset.right_url.replace("https://", "")}
                   </span>
                 </div>
@@ -60,7 +60,7 @@ export function createSplitPresetsSection(
 
               <button
                 type="button"
-                class="btn-spawn px-3.5 py-1.5 rounded-lg bg-[#353535] text-[#e5e2e1] group-hover:bg-[#f85e2a] group-hover:text-[#521300] font-mono text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm"
+                class="btn-spawn px-3.5 py-1.5 rounded-lg bg-[#353535] text-[#e5e2e1] group-hover:bg-[#f85e2a] group-hover:text-[#521300] text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm"
               >
                 <span>Spawn</span>
                 <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
