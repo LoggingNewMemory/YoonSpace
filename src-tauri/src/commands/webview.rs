@@ -16,9 +16,14 @@
 
 use tauri::AppHandle;
 use crate::core::webview::{
-    close_split_views, is_split_active, navigate_split_view, spawn_split_views,
-    update_split_bounds, SplitBounds, SplitViewRequest,
+    close_split_views, is_split_active, navigate_split_view, spawn_single_view as core_spawn_single_view,
+    spawn_split_views, update_split_bounds, SingleViewRequest, SplitBounds, SplitViewRequest,
 };
+
+#[tauri::command]
+pub fn spawn_single_view(app: AppHandle, req: SingleViewRequest) -> Result<(), String> {
+    core_spawn_single_view(&app, req)
+}
 
 #[tauri::command]
 pub fn spawn_split(app: AppHandle, req: SplitViewRequest) -> Result<(), String> {

@@ -4476,6 +4476,7 @@ name = "yoonspace"
 version = "0.1.0"
 dependencies = [
  "dirs 6.0.0",
+ "gtk",
  "log",
  "serde",
  "serde_json",
@@ -4484,6 +4485,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-log",
  "url",
+ "webkit2gtk",
 ]
 
 [[package]]

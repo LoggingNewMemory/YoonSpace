@@ -28,6 +28,12 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            #[cfg(target_os = "linux")]
+            {
+                let _ = crate::core::webview::init_gtk_overlay(&app.handle());
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -37,6 +43,7 @@ pub fn run() {
             commands::window::window_is_maximized,
             commands::window::window_start_dragging,
             commands::telemetry::get_telemetry,
+            commands::webview::spawn_single_view,
             commands::webview::spawn_split,
             commands::webview::update_split_layout,
             commands::webview::navigate_split,

@@ -127,6 +127,20 @@ export const tauriIpc = {
   },
 
   // WebViews
+  async spawnSingleView(url: string, bounds: SplitBounds): Promise<void> {
+    try {
+      await invoke("spawn_single_view", {
+        req: {
+          url,
+          bounds,
+        },
+      });
+    } catch (e) {
+      console.error("spawn_single_view failed:", e);
+      throw e;
+    }
+  },
+
   async spawnSplit(leftUrl: string, rightUrl: string, bounds: SplitBounds): Promise<void> {
     try {
       await invoke("spawn_split", {

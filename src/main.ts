@@ -23,7 +23,7 @@ import { createSplitPresetsSection } from "./components/split_presets";
 import type { AppConfig, SplitBounds, SplitPreset } from "./types";
 
 let currentConfig: AppConfig;
-let isSplitViewOpen = false;
+let isViewOpen = false;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = 64;
@@ -58,7 +58,12 @@ async function handleSpawnPreset(preset: SplitPreset) {
   const bounds = getSplitBounds();
   try {
     await tauriIpc.spawnSplit(preset.left_url, preset.right_url, bounds);
-    isSplitViewOpen = true;
+    isViewOpen = true;
+
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.add("hidden");
+    }
 
     const indicator = document.getElementById("split-active-indicator");
     if (indicator) {
@@ -74,25 +79,48 @@ async function handleSpawnPreset(preset: SplitPreset) {
 async function handleSearch(query: string, engineId: string) {
   const targetUrl = normalizeUrl(query, engineId);
   const bounds = getSplitBounds();
-  await tauriIpc.spawnSplit(targetUrl, "https://google.com", bounds);
-  isSplitViewOpen = true;
+  try {
+    await tauriIpc.spawnSingleView(targetUrl, bounds);
+    isViewOpen = true;
 
-  const indicator = document.getElementById("split-active-indicator");
-  if (indicator) {
-    indicator.classList.remove("hidden");
-    indicator.classList.add("flex");
-    indicator.querySelector("span:nth-child(2)")!.textContent = query;
-  }
-}
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.add("hidden");
+    }
 
-async function handleHomeClick() {
-  if (isSplitViewOpen) {
-    await tauriIpc.closeSplit();
-    isSplitViewOpen = false;
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = query;
+    }
+
     const indicator = document.getElementById("split-active-indicator");
     if (indicator) {
       indicator.classList.add("hidden");
       indicator.classList.remove("flex");
+    }
+  } catch (e) {
+    console.error("Failed to spawn single view:", e);
+  }
+}
+
+async function handleHomeClick() {
+  if (isViewOpen) {
+    await tauriIpc.closeSplit();
+    isViewOpen = false;
+
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.remove("hidden");
+    }
+
+    const indicator = document.getElementById("split-active-indicator");
+    if (indicator) {
+      indicator.classList.add("hidden");
+      indicator.classList.remove("flex");
+    }
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = "";
     }
   }
 }
@@ -116,7 +144,7 @@ async function startTelemetryLoop() {
 }
 
 window.addEventListener("resize", () => {
-  if (isSplitViewOpen) {
+  if (isViewOpen) {
     const bounds = getSplitBounds();
     tauriIpc.updateSplitLayout(bounds);
   }
@@ -135,7 +163,7 @@ async function init() {
   app.appendChild(titlebar);
 
   const dock = createDock((tabId) => {
-    if (tabId === "home") {
+    if (tabId === "home" || tabId === "workspaces") {
       handleHomeClick();
     }
   });
