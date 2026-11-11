@@ -347,6 +347,11 @@ pub fn navigate_split_view(app: &AppHandle, pane: &str, target_url: &str) -> Res
     }
 }
 
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn malloc_trim(pad: usize) -> i32;
+}
+
 pub fn is_split_active(app: &AppHandle) -> bool {
     app.get_webview("single_view").is_some() ||
     app.get_webview("split_left").is_some() ||
@@ -366,5 +371,17 @@ pub fn close_split_views(app: &AppHandle) -> Result<(), String> {
     if let Some(view) = app.get_webview("split_right") {
         let _ = view.close();
     }
+
+    #[cfg(target_os = "linux")]
+    {
+        use webkit2gtk::WebContextExt;
+        if let Some(context) = webkit2gtk::WebContext::default() {
+            context.clear_cache();
+        }
+        unsafe {
+            malloc_trim(0);
+        }
+    }
+
     Ok(())
 }

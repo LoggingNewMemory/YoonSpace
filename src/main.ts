@@ -171,6 +171,22 @@ async function handleSearch(query: string, engineId: string) {
   }
 }
 
+async function refreshTelemetry() {
+  const ramBadge = document.getElementById("telemetry-ram");
+  const badgeContainer = document.getElementById("telemetry-badge");
+  try {
+    const stats = await tauriIpc.getTelemetry();
+    if (ramBadge) {
+      ramBadge.textContent = `${stats.resident_mb.toFixed(0)} MB RAM`;
+    }
+    if (badgeContainer) {
+      badgeContainer.title = `Private RAM: ${stats.resident_mb} MB\nTotal RSS: ${stats.total_rss_mb} MB (incl. shared OS libs)\nShared Libs: ${stats.shared_mb} MB`;
+    }
+  } catch {
+    // ignore
+  }
+}
+
 // User clicked Minimize on top web bar -> goes to the sidebar dock
 async function handleMinimizeWeb() {
   if (activeTab) {
@@ -179,6 +195,8 @@ async function handleMinimizeWeb() {
 
   try {
     await tauriIpc.closeSplit();
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
   } catch (e) {
     console.error("Failed to close webview on minimize:", e);
   }
@@ -214,6 +232,8 @@ async function handleCloseWeb() {
 
   try {
     await tauriIpc.closeSplit();
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
   } catch (e) {
     console.error("Failed to close webview on close:", e);
   }
@@ -269,6 +289,8 @@ async function handleMinimizeLeft() {
       isSplit: false,
     };
     webBar.setSingleMode(remainingTitle);
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
     const indicator = document.getElementById("split-active-indicator");
     if (indicator) {
       indicator.classList.add("hidden");
@@ -299,6 +321,8 @@ async function handleCloseLeft() {
       isSplit: false,
     };
     webBar.setSingleMode(remainingTitle);
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
     const indicator = document.getElementById("split-active-indicator");
     if (indicator) {
       indicator.classList.add("hidden");
@@ -337,6 +361,8 @@ async function handleMinimizeRight() {
       isSplit: false,
     };
     webBar.setSingleMode(remainingTitle);
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
     const indicator = document.getElementById("split-active-indicator");
     if (indicator) {
       indicator.classList.add("hidden");
@@ -367,6 +393,8 @@ async function handleCloseRight() {
       isSplit: false,
     };
     webBar.setSingleMode(remainingTitle);
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
     const indicator = document.getElementById("split-active-indicator");
     if (indicator) {
       indicator.classList.add("hidden");

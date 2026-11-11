@@ -31,12 +31,17 @@ fn get_descendant_pids(root_pid: u32) -> Vec<u32> {
     let mut i = 0;
     while i < pids.len() {
         let current_pid = pids[i];
-        let children_path = format!("/proc/{}/task/{}/children", current_pid, current_pid);
-        if let Ok(content) = fs::read_to_string(&children_path) {
-            for part in content.split_whitespace() {
-                if let Ok(child_pid) = part.parse::<u32>() {
-                    if !pids.contains(&child_pid) {
-                        pids.push(child_pid);
+        let task_dir = format!("/proc/{}/task", current_pid);
+        if let Ok(entries) = fs::read_dir(&task_dir) {
+            for entry in entries.flatten() {
+                let children_path = entry.path().join("children");
+                if let Ok(content) = fs::read_to_string(&children_path) {
+                    for part in content.split_whitespace() {
+                        if let Ok(child_pid) = part.parse::<u32>() {
+                            if !pids.contains(&child_pid) {
+                                pids.push(child_pid);
+                            }
+                        }
                     }
                 }
             }
