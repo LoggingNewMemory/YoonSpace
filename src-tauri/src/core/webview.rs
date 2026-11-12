@@ -354,7 +354,49 @@ pub struct SplitBounds {
     pub height: f64,
 }
 
-pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), String> {
+pub fn normalize_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return raw.to_string();
+    }
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        format!("https://{}", trimmed)
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn attach_load_failed_recovery(webview: &tauri::Webview) {
+    use webkit2gtk::WebViewExt;
+    let _ = webview.with_webview(|platform_webview| {
+        let inner_wv = platform_webview.inner();
+        let last_interrupted = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        inner_wv.connect_load_failed(move |wv, _event, failing_uri, error| {
+            if error.matches(webkit2gtk::PolicyError::FrameLoadInterruptedByPolicyChange)
+                || error.message().contains("interrupted")
+            {
+                if !failing_uri.is_empty() {
+                    let mut last = last_interrupted.lock().unwrap();
+                    if *last != failing_uri {
+                        *last = failing_uri.to_string();
+                        let target_uri = failing_uri.to_string();
+                        let wv_clone = wv.clone();
+                        gtk::glib::idle_add_local(move || {
+                            wv_clone.load_uri(&target_uri);
+                            gtk::glib::ControlFlow::Break
+                        });
+                        return true;
+                    }
+                }
+            }
+            false
+        });
+    });
+}
+
+pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<(), String> {
+    req.url = normalize_url(&req.url);
     let window = app.get_window("main").ok_or("Main window not found")?;
     let tab_id = req.tab_id.unwrap_or_else(|| "single_view".to_string());
 
@@ -393,7 +435,7 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
             });
         });
 
-    window.add_child(
+    let single_view = window.add_child(
         builder,
         LogicalPosition::new(req.bounds.x, req.bounds.y),
         LogicalSize::new(req.bounds.width, req.bounds.height),
@@ -401,6 +443,7 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
 
     #[cfg(target_os = "linux")]
     {
+        attach_load_failed_recovery(&single_view);
         gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
         gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
     }
@@ -408,7 +451,9 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
     Ok(())
 }
 
-pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), String> {
+pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(), String> {
+    req.left_url = normalize_url(&req.left_url);
+    req.right_url = normalize_url(&req.right_url);
     let window = app.get_window("main").ok_or("Main window not found")?;
     let tab_id = req.tab_id.unwrap_or_else(|| "split_view".to_string());
     let left_label = format!("{}_left", tab_id);
@@ -498,13 +543,13 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
             });
         });
 
-    window.add_child(
+    let left_webview = window.add_child(
         left_builder,
         LogicalPosition::new(left_x, top_y),
         LogicalSize::new(half_width, height),
     ).map_err(|e| e.to_string())?;
 
-    window.add_child(
+    let right_webview = window.add_child(
         right_builder,
         LogicalPosition::new(right_x, top_y),
         LogicalSize::new(half_width, height),
@@ -512,6 +557,8 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
 
     #[cfg(target_os = "linux")]
     {
+        attach_load_failed_recovery(&left_webview);
+        attach_load_failed_recovery(&right_webview);
         gtk_overlay::attach_split_views(app, &tab_id, req.bounds)?;
         gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
     }
@@ -546,6 +593,7 @@ pub fn update_split_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(), S
 }
 
 pub fn navigate_split_view(app: &AppHandle, pane: &str, target_url: &str) -> Result<(), String> {
+    let normalized = normalize_url(target_url);
     let label = match pane {
         "single" => "single_view",
         "left" => "split_left",
@@ -554,7 +602,7 @@ pub fn navigate_split_view(app: &AppHandle, pane: &str, target_url: &str) -> Res
     };
 
     if let Some(view) = app.get_webview(label) {
-        let parsed: url::Url = target_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+        let parsed: url::Url = normalized.parse().map_err(|e: url::ParseError| e.to_string())?;
         view.navigate(parsed).map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -563,7 +611,8 @@ pub fn navigate_split_view(app: &AppHandle, pane: &str, target_url: &str) -> Res
 }
 
 pub fn navigate_tab_view(app: &AppHandle, target: &str, target_url: &str) -> Result<(), String> {
-    let parsed: url::Url = target_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let normalized = normalize_url(target_url);
+    let parsed: url::Url = normalized.parse().map_err(|e: url::ParseError| e.to_string())?;
     if let Some(view) = app.get_webview(target) {
         view.navigate(parsed).map_err(|e| e.to_string())?;
         return Ok(());

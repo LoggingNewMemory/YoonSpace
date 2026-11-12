@@ -279,7 +279,7 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
     let target = typeof resource === "string" ? resource : (resource ? resource.url : "");
     if (isBlockedUrl(target)) {
       reportBlock(target);
-      return Promise.reject(new TypeError("Blocked by YoonSpace Shields (Brave adblock-rust)"));
+      return Promise.resolve(new Response("", { status: 204, statusText: "No Content" }));
     }
     return originalFetch.apply(this, arguments);
   };

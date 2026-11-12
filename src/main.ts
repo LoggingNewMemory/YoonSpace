@@ -47,11 +47,19 @@ function normalizeUrl(input: string, activeEngineId: string): string {
   const trimmed = input.trim();
   if (!trimmed) return "https://google.com";
 
-  if (/^https?:\/\//i.test(trimmed)) {
+  // If already starts with a protocol scheme (http://, https://, etc.)
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
     return trimmed;
   }
 
-  if (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(:\d+)?(\/.*)?$/i.test(trimmed) || /^localhost(:\d+)?/i.test(trimmed)) {
+  // Detect domain names (with or without subdomains, e.g. youtube.com, www.youtube.com), localhost, or IPv4
+  const isDomainOrHost =
+    !/\s/.test(trimmed) &&
+    (/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(\/.*)?$/i.test(trimmed) ||
+      /^localhost(:\d+)?(\/.*)?$/i.test(trimmed) ||
+      /^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/.*)?$/.test(trimmed));
+
+  if (isDomainOrHost) {
     return `https://${trimmed}`;
   }
 
