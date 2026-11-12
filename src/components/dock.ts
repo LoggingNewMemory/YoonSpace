@@ -135,7 +135,7 @@ export function createDock(
             <!-- Workspaces 2x2 Grid Button -->
             <button
               id="dock-btn-workspaces"
-              title="Multi-Thread Workspaces"
+              title="YoonSpace"
               class="dock-item relative w-11 h-11 rounded-xl flex items-center justify-center transition-all text-[#FFDBD0] bg-[#222224] hover:bg-[#2c2c30] cursor-pointer shadow-sm shrink-0"
             >
               <span class="material-symbols-outlined text-[22px]">grid_view</span>
@@ -189,11 +189,11 @@ export function createDock(
           <div class="flex items-center justify-between w-full">
             <button
               id="dock-btn-workspaces"
-              title="Multi-Thread Workspaces"
+              title="YoonSpace"
               class="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-[#FFDBD0] bg-[#222224] hover:bg-[#2c2c30] transition-colors cursor-pointer text-xs font-semibold shadow-sm"
             >
               <span class="material-symbols-outlined text-[19px]">grid_view</span>
-              <span>Workspaces</span>
+              <span>YoonSpace</span>
             </button>
 
             <button
