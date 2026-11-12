@@ -15,8 +15,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // ACKNOWLEDGEMENT & ATTRIBUTION:
-// Powered by Brave Software's open-source `adblock-rust` engine (MPL-2.0).
-// Filter syntax: EasyList & EasyPrivacy. <https://github.com/brave/adblock-rust>
+// YoonSpace Shields adblocking engine is powered by Brave Software's
+// open-source `adblock-rust` engine (Mozilla Public License 2.0).
+// Reference repository: <https://github.com/brave/adblock-rust>
+// Copyright (c) Brave Software Inc. All rights reserved.
+// Filter syntax: EasyList, EasyPrivacy, and Brave Unbreak specifications.
 
 import { tauriIpc } from "../services/tauri_ipc";
 

@@ -17,7 +17,9 @@
 // ACKNOWLEDGEMENT & ATTRIBUTION:
 // YoonSpace Shields adblocking engine is powered by Brave Software's
 // open-source `adblock-rust` engine (Mozilla Public License 2.0).
-// Copyright (c) Brave Software Inc. <https://github.com/brave/adblock-rust>
+// Reference repository: <https://github.com/brave/adblock-rust>
+// Copyright (c) Brave Software Inc. All rights reserved.
+// Filter syntax: EasyList, EasyPrivacy, and Brave Unbreak specifications.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -56,7 +58,7 @@ pub fn get_shield_manager() -> &'static Arc<ShieldManager> {
 
 impl ShieldManager {
     pub fn new() -> Self {
-        // Core curated ad & tracker rules following standard EasyList / EasyPrivacy syntax
+        // Curated ad, tracker, and telemetry rules following Brave Shields / EasyList syntax
         let default_rules = concat!(
             // Major ad networks & exchanges
             "||doubleclick.net^\n",
@@ -113,13 +115,18 @@ impl ShieldManager {
             "||mouseflow.com^\n",
             "||crazyegg.com^\n",
 
-            // YouTube Ads
+            // YouTube Ads (Brave brave-main-list.txt rules)
             "||youtube.com/api/stats/ads^\n",
             "||youtube.com/pagead/^\n",
+            "||youtube.com/youtubei/v1/player/ad_break^\n",
+            "||youtube.com/pcs/activeview^\n",
             "||youtube.com/ptracking^\n",
             "||s.youtube.com/api/stats/qoe?*&adformat=^\n",
 
-            // Cosmetic element hiding rules
+            // Unbreak exemptions (Brave brave-unbreak.txt)
+            "@@||youtube.com/yts/jsbin^\n",
+
+            // Cosmetic element hiding rules (Safe subset from EasyList)
             "##.adsbygoogle\n",
             "##.ad-banner\n",
             "##.ad-container\n",
@@ -127,12 +134,11 @@ impl ShieldManager {
             "##.taboola-placeholder\n",
             "##.outbrain_widget\n",
             "##[id*=\"google_ads_iframe\"]\n",
-            "##div[data-ad-unit]\n",
-            "##div[id^=\"dfp-ad-\"]\n",
             "##.ytd-display-ad-renderer\n",
             "##.ytd-in-feed-ad-layout-renderer\n",
             "##.ytd-banner-promo-renderer\n",
-            "###player-ads\n"
+            "###player-ads\n",
+            "##.ytp-ad-overlay-container\n"
         );
 
         let engine = Engine::new_with_list_text(default_rules);
@@ -226,18 +232,20 @@ impl ShieldManager {
 
 /// Generates the client-side JavaScript injected into every Webview at initialization.
 /// Provides:
-/// 1. Network fetch & XHR proxy dropping known tracker endpoints
-/// 2. Script & iframe tag src filtering
-/// 3. Brave-style cosmetic element hiding CSS
-/// 4. YouTube video ad auto-skip & fast-forward scriptlet
+/// 1. Safe fetch & XHR proxies returning compliant mock responses (following Brave redirect conventions)
+/// 2. WebKitGTK data-URI handling for seamless application state loading
+/// 3. Non-destructive cosmetic element hiding (Brave EasyList)
+/// 4. Brave-style YouTube video ad auto-skip & fast-forward without hiding or breaking the video player
 pub fn get_shield_injection_script(tab_id: &str) -> String {
-    let template = r#"(function() {
+    let initial_enabled = get_shield_manager().is_enabled();
+    let template = r##"(function() {
   if (window.__YOONSPACE_SHIELD_INSTALLED__) return;
   window.__YOONSPACE_SHIELD_INSTALLED__ = true;
+  window.__YOONSPACE_SHIELD_ENABLED__ = __INITIAL_ENABLED__;
 
   const TAB_ID = "__TAB_ID__";
 
-  // Known top ad & tracker domains for instant in-page interception
+  // Known top ad & tracker domains for instant in-page interception (Brave Shields EasyList reference)
   const BLOCKED_DOMAINS = [
     "doubleclick.net", "googleadservices.com", "googlesyndication.com",
     "adservice.google.com", "adnxs.com", "criteo.com", "criteo.net",
@@ -249,6 +257,7 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
   ];
 
   function isBlockedUrl(rawUrl) {
+    if (!window.__YOONSPACE_SHIELD_ENABLED__) return false;
     if (!rawUrl || typeof rawUrl !== "string") return false;
     try {
       const parsed = new URL(rawUrl, window.location.href);
@@ -273,18 +282,58 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
     } catch (e) {}
   }
 
-  // 1. Intercept fetch()
+  // 1. Intercept fetch() safely
   const originalFetch = window.fetch;
   window.fetch = function(resource, init) {
-    let target = typeof resource === "string" ? resource : (resource ? resource.url : "");
+    let target = "";
+    if (typeof resource === "string") {
+      target = resource;
+    } else if (resource && typeof resource.url === "string") {
+      target = resource.url;
+    } else {
+      target = String(resource || "");
+    }
+
+    // WebKitGTK fix: handle data: URI fetch cleanly if WebKit blocks it under access control
+    if (target.startsWith("data:")) {
+      try {
+        const commaIdx = target.indexOf(",");
+        if (commaIdx !== -1) {
+          const meta = target.substring(5, commaIdx);
+          const raw = target.substring(commaIdx + 1);
+          const isBase64 = meta.indexOf(";base64") !== -1;
+          const mime = meta.split(";")[0] || "application/octet-stream";
+          let body;
+          if (isBase64) {
+            const binary = atob(raw);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            body = bytes.buffer;
+          } else {
+            body = decodeURIComponent(raw);
+          }
+          return Promise.resolve(new Response(body, {
+            status: 200,
+            statusText: "OK",
+            headers: { "Content-Type": mime }
+          }));
+        }
+      } catch (e) {}
+    }
+
     if (isBlockedUrl(target)) {
       reportBlock(target);
-      return Promise.resolve(new Response("", { status: 204, statusText: "No Content" }));
+      // Return a valid mock JSON response (Brave redirect convention) so .json() and .text() calls succeed
+      return Promise.resolve(new Response("{}", {
+        status: 200,
+        statusText: "OK",
+        headers: { "Content-Type": "application/json" }
+      }));
     }
     return originalFetch.apply(this, arguments);
   };
 
-  // 2. Intercept XMLHttpRequest
+  // 2. Intercept XMLHttpRequest safely without abort() crashing caller pipelines
   const originalOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url) {
     if (isBlockedUrl(url)) {
@@ -297,21 +346,42 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
   const originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function() {
     if (this._yoonspace_blocked) {
-      this.abort();
+      try {
+        Object.defineProperty(this, "readyState", { value: 4, writable: false });
+        Object.defineProperty(this, "status", { value: 200, writable: false });
+        Object.defineProperty(this, "statusText", { value: "OK", writable: false });
+        Object.defineProperty(this, "responseText", { value: "{}", writable: false });
+        Object.defineProperty(this, "response", { value: "{}", writable: false });
+      } catch (e) {}
+
+      const self = this;
+      setTimeout(function() {
+        try {
+          if (typeof self.onreadystatechange === "function") {
+            self.onreadystatechange(new Event("readystatechange"));
+          }
+          if (typeof self.onload === "function") {
+            self.onload(new Event("load"));
+          }
+          if (typeof self.onloadend === "function") {
+            self.onloadend(new Event("loadend"));
+          }
+        } catch (e) {}
+      }, 0);
       return;
     }
     return originalSend.apply(this, arguments);
   };
 
-  // 3. Cosmetic element hiding stylesheet
+  // 3. Non-destructive cosmetic element hiding stylesheet (Brave EasyList)
   function injectCosmeticStyles() {
+    if (!window.__YOONSPACE_SHIELD_ENABLED__) return;
+    if (document.getElementById("yoonspace-shields-cosmetic")) return;
     const css = `
       .adsbygoogle, .ad-banner, .ad-container, .sponsored-post,
       .taboola-placeholder, .outbrain_widget, [id*="google_ads_iframe"],
-      div[data-ad-unit], div[id^="dfp-ad-"],
       .ytd-display-ad-renderer, .ytd-in-feed-ad-layout-renderer, .ytd-banner-promo-renderer,
-      #player-ads, .ad-showing, .ytp-ad-overlay-container,
-      .ytp-ad-skip-button-container, .ytp-ad-message-container {
+      #player-ads, .ytp-ad-overlay-container {
         display: none !important;
         visibility: hidden !important;
         height: 0 !important;
@@ -332,24 +402,29 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
     injectCosmeticStyles();
   }
 
-  // 4. Brave-style YouTube Ad Skipper & Fast-Forward
+  // 4. Brave-style YouTube Ad Skipper (safe non-blocking implementation)
   if (window.location.hostname.includes("youtube.com")) {
     setInterval(function() {
+      if (!window.__YOONSPACE_SHIELD_ENABLED__) return;
+      const skipBtn = document.querySelector(".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, button.ytp-ad-skip-button-text");
+      if (skipBtn) {
+        skipBtn.click();
+        reportBlock("youtube-ad-skipped");
+        return;
+      }
+      const player = document.querySelector("#movie_player, .html5-video-player");
       const video = document.querySelector("video");
-      const ad = document.querySelector(".ad-showing, .ad-interrupting");
-      if (video && ad) {
-        if (isFinite(video.duration) && video.duration > 0) {
-          video.currentTime = video.duration;
-        }
-        const skipBtn = document.querySelector(".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button");
-        if (skipBtn) {
-          skipBtn.click();
-          reportBlock("youtube-video-ad");
+      if (player && video && (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting"))) {
+        if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration) {
+          video.currentTime = video.duration - 0.1;
+          video.playbackRate = 16.0;
         }
       }
     }, 250);
   }
-})();"#;
+})();"##;
 
-    template.replace("__TAB_ID__", tab_id)
+    template
+        .replace("__TAB_ID__", tab_id)
+        .replace("__INITIAL_ENABLED__", if initial_enabled { "true" } else { "false" })
 }

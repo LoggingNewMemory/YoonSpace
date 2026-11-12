@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use tauri::{command, AppHandle, Emitter};
+use tauri::{command, AppHandle, Emitter, Manager};
 use crate::core::shield::{get_shield_manager, ShieldStats};
 
 #[command]
@@ -23,10 +23,21 @@ pub fn get_shield_stats() -> ShieldStats {
 }
 
 #[command]
-pub fn toggle_shield(enabled: bool) -> bool {
+pub fn toggle_shield(app: AppHandle, enabled: bool) -> bool {
     let manager = get_shield_manager();
     manager.set_enabled(enabled);
-    manager.is_enabled()
+    let is_en = manager.is_enabled();
+
+    // Propagate enabled state dynamically to all active Webviews
+    let eval_code = format!(
+        "window.__YOONSPACE_SHIELD_ENABLED__ = {}; if (!{}) {{ const s = document.getElementById('yoonspace-shields-cosmetic'); if (s) s.remove(); }}",
+        is_en, is_en
+    );
+    for (_label, view) in app.webviews() {
+        let _ = view.eval(&eval_code);
+    }
+
+    is_en
 }
 
 #[derive(Clone, serde::Serialize)]

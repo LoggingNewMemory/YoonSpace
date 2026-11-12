@@ -372,6 +372,16 @@ fn attach_load_failed_recovery(webview: &tauri::Webview) {
     let _ = webview.with_webview(|platform_webview| {
         let inner_wv = platform_webview.inner();
         let last_interrupted = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+
+        let last_clone = last_interrupted.clone();
+        inner_wv.connect_load_changed(move |_wv, event| {
+            if event == webkit2gtk::LoadEvent::Finished {
+                if let Ok(mut last) = last_clone.lock() {
+                    last.clear();
+                }
+            }
+        });
+
         inner_wv.connect_load_failed(move |wv, _event, failing_uri, error| {
             if error.matches(webkit2gtk::PolicyError::FrameLoadInterruptedByPolicyChange)
                 || error.message().contains("interrupted")
