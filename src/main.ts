@@ -31,7 +31,8 @@ let webBar: WebBarController;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
-  const headerHeight = 80;
+  const header = document.querySelector("header");
+  const headerHeight = header ? header.offsetHeight : 80;
   const webBarHeight = 28;
   const topOffset = headerHeight + webBarHeight;
   return {
@@ -478,6 +479,15 @@ async function handleRestoreTab(tab: MinimizedTab) {
     if (omnibarInput) {
       omnibarInput.value = tab.url || tab.query || tab.title || "";
     }
+
+    try {
+      const targetUrl = tab.url || tab.leftUrl || "";
+      const domain = new URL(targetUrl).hostname;
+      (document.querySelector("header") as any)?.shieldController?.setDomain(domain);
+    } catch {}
+    tauriIpc.getTabShieldCount(tab.id).then((count) => {
+      (document.querySelector("header") as any)?.shieldController?.updateCount(count);
+    });
   } catch (e) {
     console.error("Failed to restore tab:", e);
   }
@@ -496,6 +506,9 @@ async function handleHomeClick() {
 
     isViewOpen = false;
     webBar.hide();
+
+    (document.querySelector("header") as any)?.shieldController?.setDomain("YoonSpace");
+    (document.querySelector("header") as any)?.shieldController?.updateCount(0);
 
     const mainCanvas = document.getElementById("main-canvas");
     if (mainCanvas) {
@@ -579,13 +592,24 @@ async function init() {
     }
   };
 
-  // 1. Titlebar (Fixed at top, height: 80px)
+  const handleShieldToggle = (_isOpen: boolean) => {
+    const header = document.querySelector("header");
+    const headerHeight = header ? header.offsetHeight : 80;
+    webBar.setTopOffset(headerHeight);
+    if (isViewOpen) {
+      const bounds = getSplitBounds();
+      tauriIpc.updateSplitLayout(bounds);
+    }
+  };
+
+  // 1. Titlebar (Fixed at top, height: 80px default)
   const titlebar = createTitlebar(
     (url) => handleSearch(url, currentConfig.active_search_engine),
     handleHomeClick,
     handleBack,
     handleForward,
-    handleReload
+    handleReload,
+    handleShieldToggle
   );
   app.appendChild(titlebar);
 
@@ -711,6 +735,13 @@ async function init() {
       if (omnibarInput && document.activeElement !== omnibarInput) {
         omnibarInput.value = url;
       }
+      try {
+        const domain = new URL(url).hostname;
+        (titlebar as any).shieldController?.setDomain(domain);
+      } catch {}
+      tauriIpc.getTabShieldCount(tab_id).then((count) => {
+        (titlebar as any).shieldController?.updateCount(count);
+      });
     }
   });
 
@@ -724,6 +755,17 @@ async function init() {
     if (activeTab && activeTab.id === tab_id) {
       if (pane === "left") activeTab.leftUrl = url;
       if (pane === "right") activeTab.rightUrl = url;
+      try {
+        const domain = new URL(url).hostname;
+        (titlebar as any).shieldController?.setDomain(domain);
+      } catch {}
+    }
+  });
+
+  // 7. Real-time Shields block events (Brave adblock-rust)
+  tauriIpc.onShieldBlocked((event) => {
+    if (activeTab && (activeTab.id === event.tab_id || event.tab_id.startsWith(activeTab.id))) {
+      (titlebar as any).shieldController?.updateCount(event.tab_count);
     }
   });
 

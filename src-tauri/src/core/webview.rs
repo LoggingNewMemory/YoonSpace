@@ -373,7 +373,9 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
     let app_title = app.clone();
     let app_load = app.clone();
     let tab_id_load = tab_id.clone();
+    let shield_script = crate::core::shield::get_shield_injection_script(&tab_id);
     let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(url))
+        .initialization_script(&shield_script)
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_title.emit("webview-title-changed", title);
@@ -449,7 +451,9 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
     let app_left = app.clone();
     let app_left_load = app.clone();
     let tab_id_left = tab_id.clone();
+    let left_shield = crate::core::shield::get_shield_injection_script(&left_label);
     let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(left_url))
+        .initialization_script(&left_shield)
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_left.emit("webview-split-left-title-changed", title);
@@ -472,7 +476,9 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
     let app_right = app.clone();
     let app_right_load = app.clone();
     let tab_id_right = tab_id.clone();
+    let right_shield = crate::core::shield::get_shield_injection_script(&right_label);
     let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(right_url))
+        .initialization_script(&right_shield)
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_right.emit("webview-split-right-title-changed", title);

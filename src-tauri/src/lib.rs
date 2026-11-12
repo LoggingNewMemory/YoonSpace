@@ -57,6 +57,10 @@ pub fn run() {
             commands::webview::close_split,
             commands::config::get_app_config,
             commands::config::update_app_config,
+            commands::shield::get_shield_stats,
+            commands::shield::toggle_shield,
+            commands::shield::record_shield_block,
+            commands::shield::get_tab_shield_count,
         ])
         .run(tauri::generate_context!())
         .expect("error while running yoonspace application");

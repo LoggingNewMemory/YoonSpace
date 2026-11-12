@@ -16,7 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AppConfig, MemoryStats, SplitBounds } from "../types";
+import type { AppConfig, MemoryStats, ShieldBlockEvent, ShieldStats, SplitBounds } from "../types";
 
 export const tauriIpc = {
   // Event listening
@@ -242,5 +242,36 @@ export const tauriIpc = {
     } catch (e) {
       console.warn("close_split failed:", e);
     }
+  },
+
+  // YoonSpace Shields (Powered by Brave adblock-rust)
+  async getShieldStats(): Promise<ShieldStats> {
+    try {
+      return await invoke<ShieldStats>("get_shield_stats");
+    } catch (e) {
+      console.warn("get_shield_stats failed:", e);
+      return { enabled: true, total_blocked: 0, tab_blocked: {}, recent_blocked: [] };
+    }
+  },
+
+  async toggleShield(enabled: boolean): Promise<boolean> {
+    try {
+      return await invoke<boolean>("toggle_shield", { enabled });
+    } catch (e) {
+      console.warn("toggle_shield failed:", e);
+      return enabled;
+    }
+  },
+
+  async getTabShieldCount(tabId: string): Promise<number> {
+    try {
+      return await invoke<number>("get_tab_shield_count", { tabId });
+    } catch {
+      return 0;
+    }
+  },
+
+  async onShieldBlocked(callback: (event: ShieldBlockEvent) => void): Promise<UnlistenFn> {
+    return listen<ShieldBlockEvent>("shield-blocked-event", (e) => callback(e.payload));
   },
 };

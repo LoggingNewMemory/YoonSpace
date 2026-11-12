@@ -50,6 +50,27 @@ export interface SplitBounds {
   height: number;
 }
 
+export interface BlockedItem {
+  url: string;
+  domain: string;
+  filter: string;
+  timestamp: number;
+}
+
+export interface ShieldStats {
+  enabled: boolean;
+  total_blocked: number;
+  tab_blocked: Record<string, number>;
+  recent_blocked: BlockedItem[];
+}
+
+export interface ShieldBlockEvent {
+  tab_id: string;
+  url: string;
+  tab_count: number;
+  total_count: number;
+}
+
 export interface MinimizedTab {
   id: string;
   title: string;

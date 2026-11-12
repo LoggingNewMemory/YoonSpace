@@ -35,6 +35,7 @@ export interface WebBarController {
   isVisible: () => boolean;
   isSplit: () => boolean;
   setLeftOffset: (offset: number) => void;
+  setTopOffset: (offset: number) => void;
 }
 
 export function createWebBar(
@@ -293,6 +294,9 @@ export function createWebBar(
     isSplit: () => currentMode === "split",
     setLeftOffset: (offset: number) => {
       container.style.left = `${offset}px`;
+    },
+    setTopOffset: (offset: number) => {
+      container.style.top = `${offset}px`;
     },
   };
 }
