@@ -20,6 +20,9 @@ import { getFaviconUrl, getFallbackIcon } from "../utils/favicon";
 export interface DockController {
   element: HTMLElement;
   getWidth: () => number;
+  isExpanded: () => boolean;
+  toggleExpanded: () => void;
+  setExpanded: (expanded: boolean) => void;
   addTab: (tab: MinimizedTab) => void;
   removeTab: (tabId: string) => void;
   updateTabTitle: (tabId: string, title: string, leftTitle?: string, rightTitle?: string) => void;
@@ -110,196 +113,266 @@ export function createDock(
   onActivateTab?: (tab: MinimizedTab) => void,
   onCloseTab?: (tabId: string) => void,
   onNewTab?: () => void,
-  onHoverTabsChange?: (isHovered: boolean) => void
+  onToggleExpanded?: (expanded: boolean) => void
 ): DockController {
   const aside = document.createElement("aside");
   aside.id = "app-dock";
-  aside.className =
-    "fixed left-0 top-20 bottom-0 w-16 bg-[#0e0e0e] z-40 flex flex-col py-3.5 justify-between border-r border-[#202020] shadow-[2px_0_12px_rgba(0,0,0,0.4)] select-none overflow-visible";
 
-  aside.innerHTML = `
-    <!-- Top Navigation & Tabs Section -->
-    <div class="flex flex-col items-start w-full px-2.5 gap-2 overflow-visible">
-      <!-- 2x2 Grid View & Add Buttons -->
-      <nav class="flex flex-col items-start gap-2 w-full overflow-visible">
-        <!-- Workspaces 2x2 Grid Button -->
-        <button
-          id="dock-btn-workspaces"
-          title="Multi-Thread Workspaces"
-          class="dock-item relative w-11 h-11 rounded-xl flex items-center justify-center transition-all text-[#FFDBD0] bg-[#222224] hover:bg-[#2c2c30] cursor-pointer shadow-sm shrink-0"
-        >
-          <span class="material-symbols-outlined text-[22px]">grid_view</span>
-        </button>
-
-        <!-- Add Button (+) -->
-        <button
-          id="dock-btn-add"
-          title="New Tab / Search"
-          class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
-        >
-          <span class="material-symbols-outlined text-[22px]">add</span>
-        </button>
-      </nav>
-
-      <!-- Divider line below top buttons -->
-      <div class="w-11 h-px bg-[#202020] my-0.5 shrink-0"></div>
-
-      <!-- Web Tabs Container -->
-      <div id="dock-tabs-list" class="flex flex-col items-start gap-2 w-full overflow-visible">
-      </div>
-    </div>
-
-    <!-- Bottom Settings -->
-    <div class="flex flex-col items-start w-full px-2.5 overflow-visible">
-      <button
-        id="dock-btn-settings"
-        title="Browser Settings"
-        class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
-      >
-        <span class="material-symbols-outlined text-[22px]">settings</span>
-      </button>
-    </div>
-  `;
-
-  const tabsContainer = aside.querySelector("#dock-tabs-list") as HTMLElement;
   const tabsMap = new Map<string, MinimizedTab>();
   let currentActiveTabId: string | null = null;
+  let isExpanded = false;
 
-  // Tabs container hover listener for overlay layout adjustment
-  tabsContainer.addEventListener("mouseenter", () => {
-    onHoverTabsChange?.(true);
-  });
+  const updateShell = () => {
+    if (!isExpanded) {
+      aside.className =
+        "fixed left-0 top-20 bottom-0 w-16 bg-[#0e0e0e] z-40 flex flex-col py-3.5 justify-between border-r border-[#202020] shadow-[2px_0_12px_rgba(0,0,0,0.4)] select-none overflow-hidden transition-[width] duration-200 ease-out";
 
-  tabsContainer.addEventListener("mouseleave", () => {
-    onHoverTabsChange?.(false);
-  });
+      aside.innerHTML = `
+        <!-- Top Navigation & Tabs Section -->
+        <div class="flex flex-col items-center w-full px-2 gap-2">
+          <!-- 2x2 Grid View, Add & Toggle Buttons -->
+          <nav class="flex flex-col items-center gap-2 w-full">
+            <!-- Workspaces 2x2 Grid Button -->
+            <button
+              id="dock-btn-workspaces"
+              title="Multi-Thread Workspaces"
+              class="dock-item relative w-11 h-11 rounded-xl flex items-center justify-center transition-all text-[#FFDBD0] bg-[#222224] hover:bg-[#2c2c30] cursor-pointer shadow-sm shrink-0"
+            >
+              <span class="material-symbols-outlined text-[22px]">grid_view</span>
+            </button>
+
+            <!-- Add Button (+) -->
+            <button
+              id="dock-btn-add"
+              title="New Tab / Search"
+              class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
+            >
+              <span class="material-symbols-outlined text-[22px]">add</span>
+            </button>
+
+            <!-- Expand Toggle Button -->
+            <button
+              id="dock-btn-toggle"
+              title="Expand Sidebar (Ctrl+B)"
+              class="dock-item w-11 h-6 rounded-md flex items-center justify-center text-[#707076] hover:text-[#e5e2e1] hover:bg-[#202022] transition-colors cursor-pointer shrink-0"
+            >
+              <span class="material-symbols-outlined text-[17px]">dock_to_right</span>
+            </button>
+          </nav>
+
+          <!-- Divider line below top buttons -->
+          <div class="w-11 h-px bg-[#202020] my-0.5 shrink-0"></div>
+
+          <!-- Web Tabs Container -->
+          <div id="dock-tabs-list" class="flex flex-col items-center gap-2 w-full"></div>
+        </div>
+
+        <!-- Bottom Settings -->
+        <div class="flex flex-col items-center w-full px-2">
+          <button
+            id="dock-btn-settings"
+            title="Browser Settings"
+            class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
+          >
+            <span class="material-symbols-outlined text-[22px]">settings</span>
+          </button>
+        </div>
+      `;
+    } else {
+      aside.className =
+        "fixed left-0 top-20 bottom-0 w-[220px] bg-[#0e0e0e] z-40 flex flex-col py-3.5 px-2.5 justify-between border-r border-[#202020] shadow-[2px_0_16px_rgba(0,0,0,0.5)] select-none overflow-hidden transition-[width] duration-200 ease-out";
+
+      aside.innerHTML = `
+        <!-- Top Navigation & Tabs Section (Arc / Zen Style) -->
+        <div class="flex flex-col items-start w-full gap-2">
+          <!-- Top Row: Workspaces label + Collapse button -->
+          <div class="flex items-center justify-between w-full">
+            <button
+              id="dock-btn-workspaces"
+              title="Multi-Thread Workspaces"
+              class="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-[#FFDBD0] bg-[#222224] hover:bg-[#2c2c30] transition-colors cursor-pointer text-xs font-semibold shadow-sm"
+            >
+              <span class="material-symbols-outlined text-[19px]">grid_view</span>
+              <span>Workspaces</span>
+            </button>
+
+            <button
+              id="dock-btn-toggle"
+              title="Collapse Sidebar (Ctrl+B)"
+              class="w-7 h-7 rounded-lg flex items-center justify-center text-[#88888e] hover:text-[#e5e2e1] hover:bg-[#202022] transition-colors cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-[18px]">dock_to_left</span>
+            </button>
+          </div>
+
+          <!-- New Tab / Search full row button -->
+          <button
+            id="dock-btn-add"
+            title="New Tab / Search"
+            class="w-full h-8 px-2.5 rounded-xl flex items-center gap-2 text-[#e2bfb4] hover:bg-[#202022] hover:text-[#e5e2e1] border border-[#2b2b2e] hover:border-[#3d3d42] transition-colors cursor-pointer text-xs font-medium"
+          >
+            <span class="material-symbols-outlined text-[17px]">add</span>
+            <span class="truncate">New Tab / Search</span>
+            <span class="ml-auto text-[10px] text-[#777] font-mono">^T</span>
+          </button>
+
+          <!-- Divider line below top buttons -->
+          <div class="w-full h-px bg-[#202020] my-0.5 shrink-0"></div>
+
+          <!-- Web Tabs Container -->
+          <div id="dock-tabs-list" class="flex flex-col items-start gap-1.5 w-full overflow-y-auto"></div>
+        </div>
+
+        <!-- Bottom Settings -->
+        <div class="flex flex-col items-start w-full">
+          <button
+            id="dock-btn-settings"
+            title="Browser Settings"
+            class="w-full h-9 px-2.5 rounded-xl flex items-center gap-2.5 text-[#e2bfb4] hover:bg-[#202022] hover:text-[#e5e2e1] transition-colors cursor-pointer text-xs font-medium"
+          >
+            <span class="material-symbols-outlined text-[18px]">settings</span>
+            <span>Settings</span>
+          </button>
+        </div>
+      `;
+    }
+
+    // Attach common navigation button handlers
+    aside.querySelector("#dock-btn-workspaces")?.addEventListener("click", () => {
+      setActiveTabId(null);
+      onSelectTab("workspaces");
+    });
+
+    aside.querySelector("#dock-btn-add")?.addEventListener("click", () => {
+      if (onNewTab) {
+        onNewTab();
+      } else {
+        onSelectTab("bookmarks");
+      }
+    });
+
+    aside.querySelector("#dock-btn-settings")?.addEventListener("click", () => {
+      onSelectTab("settings");
+    });
+
+    aside.querySelector("#dock-btn-toggle")?.addEventListener("click", () => {
+      toggleExpanded();
+    });
+  };
 
   const createTabElement = (tab: MinimizedTab, isActive: boolean): HTMLElement => {
     const isSplit = Boolean(tab.isSplit && tab.leftUrl && tab.rightUrl);
     const wrapper = document.createElement("div");
-    wrapper.className = "dock-tab-wrapper relative w-11 h-11 shrink-0 overflow-visible";
     wrapper.setAttribute("data-tab-id", tab.id);
-
-    // Initial state: ALWAYS compact (44px wide). If active: orange rounded square container.
-    const pill = document.createElement("div");
-    pill.id = `dock-tab-${tab.id}`;
-    pill.className = `dock-tab-pill absolute left-0 top-0 h-11 rounded-xl flex items-center cursor-pointer select-none transition-all duration-180 ease-out overflow-hidden z-20 ${
-      isActive
-        ? "bg-[#f85e2a]/15 border-2 border-[#f85e2a] text-[#e5e2e1] shadow-[0_0_12px_rgba(248,94,42,0.25)]"
-        : "bg-[#1a1a1c] border border-[#2b2b2e] text-[#e2bfb4] hover:border-[#3d3d42]"
-    }`;
-    pill.style.width = "44px";
+    wrapper.setAttribute("title", tab.title);
 
     const iconsHtml = isSplit ? renderSplitIcons(tab) : renderSingleIcon(tab);
 
-    pill.innerHTML = `
-      <!-- Icon Container (Single or Split) - perfectly centered in compact button -->
-      <div class="dock-tab-icon-container flex items-center justify-center shrink-0 w-10 h-10">
-        ${iconsHtml}
-      </div>
+    if (!isExpanded) {
+      // COMPACT ICON RAIL (64px)
+      wrapper.className = "dock-tab-wrapper relative w-11 h-11 shrink-0 group select-none";
+      const pill = document.createElement("div");
+      pill.id = `dock-tab-${tab.id}`;
+      pill.className = `dock-tab-pill relative w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer select-none transition-all duration-150 overflow-hidden ${
+        isActive
+          ? "bg-[#f85e2a]/15 border-2 border-[#f85e2a] text-[#e5e2e1] shadow-[0_0_12px_rgba(248,94,42,0.25)]"
+          : "bg-[#1a1a1c] border border-[#2b2b2e] text-[#e2bfb4] hover:border-[#3d3d42] hover:bg-[#202022]"
+      }`;
 
-      <!-- Expanded Content: Divider | Title ... | Close Button ✕ (hidden unless hovered) -->
-      <div class="dock-tab-expanded-content flex items-center flex-1 min-w-0 pr-1.5 transition-opacity duration-150 opacity-0 pointer-events-none">
-        <!-- Vertical Divider | -->
-        <div class="w-px h-4 bg-[#3d3d40] mr-2.5 ml-0.5 shrink-0"></div>
+      pill.innerHTML = `
+        <div class="dock-tab-icon-container flex items-center justify-center shrink-0 w-10 h-10">
+          ${iconsHtml}
+        </div>
+        <button
+          type="button"
+          class="tab-close-btn absolute top-1 right-1 w-4 h-4 rounded-full bg-[#242428] border border-[#45454a] text-[#aa8a80] hover:text-[#ffb4ab] hover:bg-[#93000a] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-sm cursor-pointer z-30"
+          title="Close tab"
+        >
+          <svg width="7" height="7" viewBox="0 0 10 10" fill="none">
+            <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </button>
+      `;
 
-        <!-- Truncated Title ... -->
-        <span class="tab-title-text truncate text-xs font-medium text-[#e5e2e1] flex-1 text-left select-none tracking-tight" title="${escapeHtml(
-          tab.title
-        )}">
+      pill.querySelector(".tab-close-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onCloseTab?.(tab.id);
+      });
+
+      pill.addEventListener("click", () => {
+        onActivateTab?.(tab);
+      });
+
+      wrapper.addEventListener("auxclick", (e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          onCloseTab?.(tab.id);
+        }
+      });
+
+      wrapper.appendChild(pill);
+      return wrapper;
+    } else {
+      // EXPANDED ARC / ZEN SIDEBAR (220px)
+      wrapper.className = "dock-tab-wrapper relative w-full h-10 shrink-0 group select-none";
+      const pill = document.createElement("div");
+      pill.id = `dock-tab-${tab.id}`;
+      pill.className = `dock-tab-pill relative w-full h-10 px-2 rounded-xl flex items-center cursor-pointer select-none transition-all duration-150 overflow-hidden ${
+        isActive
+          ? "bg-[#261f1c] border-2 border-[#f85e2a] text-[#e5e2e1] shadow-[0_4px_16px_rgba(248,94,42,0.25)]"
+          : "bg-[#161618] border border-[#262629] text-[#c5c2c1] hover:border-[#38383c] hover:bg-[#202022]"
+      }`;
+
+      pill.innerHTML = `
+        <!-- Left Icon Container -->
+        <div class="dock-tab-icon-container flex items-center justify-center shrink-0 w-6 h-6 mr-1.5">
+          ${iconsHtml}
+        </div>
+
+        <!-- Vertical Divider -->
+        <div class="w-px h-3.5 bg-[#3d3d40] mr-2 shrink-0"></div>
+
+        <!-- Truncated Tab Title -->
+        <span class="tab-title-text truncate text-xs font-medium text-[#e5e2e1] flex-1 text-left tracking-tight select-none">
           ${escapeHtml(tab.title)}
         </span>
 
-        <!-- Close Button ✕ -->
+        <!-- Dedicated Close Button ✕ -->
         <button
           type="button"
-          class="tab-close-btn w-5 h-5 rounded-md flex items-center justify-center text-[#aa8a80] hover:text-[#ffb4ab] hover:bg-[#93000a]/40 ml-1 shrink-0 transition-colors cursor-pointer"
+          class="tab-close-btn w-5 h-5 rounded-md flex items-center justify-center text-[#aa8a80] hover:text-[#ffb4ab] hover:bg-[#93000a]/40 ml-1 shrink-0 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
           title="Close tab"
         >
-          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+            <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
           </svg>
         </button>
-      </div>
-    `;
+      `;
 
-    // Click on Close button ✕
-    const closeBtn = pill.querySelector(".tab-close-btn");
-    closeBtn?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onCloseTab?.(tab.id);
-    });
+      pill.querySelector(".tab-close-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onCloseTab?.(tab.id);
+      });
 
-    // Click on Tab pill to activate
-    pill.addEventListener("click", () => {
-      onActivateTab?.(tab);
-    });
+      pill.addEventListener("click", () => {
+        onActivateTab?.(tab);
+      });
 
-    // Hover expand for ANY tab (active or inactive)
-    wrapper.addEventListener("mouseenter", () => {
-      pill.style.width = "200px";
-      pill.style.zIndex = "50";
+      wrapper.addEventListener("auxclick", (e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          onCloseTab?.(tab.id);
+        }
+      });
 
-      if (tab.id === currentActiveTabId) {
-        pill.classList.remove("bg-[#f85e2a]/15", "shadow-[0_0_12px_rgba(248,94,42,0.25)]");
-        pill.classList.add(
-          "bg-[#261f1c]",
-          "border-2",
-          "border-[#f85e2a]",
-          "shadow-[0_4px_16px_rgba(248,94,42,0.35)]"
-        );
-      } else {
-        pill.classList.remove("bg-[#1a1a1c]", "border-[#2b2b2e]");
-        pill.classList.add(
-          "bg-[#202022]",
-          "border-[#404044]",
-          "shadow-[0_4px_16px_rgba(0,0,0,0.6)]"
-        );
-      }
-
-      const exp = pill.querySelector(".dock-tab-expanded-content") as HTMLElement;
-      if (exp) {
-        exp.classList.remove("opacity-0", "pointer-events-none");
-        exp.classList.add("opacity-100", "pointer-events-auto");
-      }
-    });
-
-    wrapper.addEventListener("mouseleave", () => {
-      pill.style.width = "44px";
-      pill.style.zIndex = "20";
-
-      if (tab.id === currentActiveTabId) {
-        pill.classList.remove(
-          "bg-[#261f1c]",
-          "shadow-[0_4px_16px_rgba(248,94,42,0.35)]"
-        );
-        pill.classList.add(
-          "bg-[#f85e2a]/15",
-          "border-2",
-          "border-[#f85e2a]",
-          "shadow-[0_0_12px_rgba(248,94,42,0.25)]"
-        );
-      } else {
-        pill.classList.remove(
-          "bg-[#202022]",
-          "border-[#404044]",
-          "shadow-[0_4px_16px_rgba(0,0,0,0.6)]"
-        );
-        pill.classList.add("bg-[#1a1a1c]", "border-[#2b2b2e]");
-      }
-
-      const exp = pill.querySelector(".dock-tab-expanded-content") as HTMLElement;
-      if (exp) {
-        exp.classList.remove("opacity-100", "pointer-events-auto");
-        exp.classList.add("opacity-0", "pointer-events-none");
-      }
-    });
-
-    wrapper.appendChild(pill);
-    return wrapper;
+      wrapper.appendChild(pill);
+      return wrapper;
+    }
   };
 
   const renderTabs = () => {
+    const tabsContainer = aside.querySelector("#dock-tabs-list");
+    if (!tabsContainer) return;
     tabsContainer.innerHTML = "";
     tabsMap.forEach((tab) => {
       const isActive = tab.id === currentActiveTabId;
@@ -307,6 +380,20 @@ export function createDock(
       tabsContainer.appendChild(el);
     });
   };
+
+  const setExpanded = (expanded: boolean) => {
+    isExpanded = expanded;
+    updateShell();
+    renderTabs();
+    onToggleExpanded?.(isExpanded);
+  };
+
+  const toggleExpanded = () => {
+    setExpanded(!isExpanded);
+  };
+
+  // Initial shell render
+  updateShell();
 
   const addTab = (tab: MinimizedTab) => {
     tabsMap.set(tab.id, tab);
@@ -328,8 +415,9 @@ export function createDock(
       if (leftTitle) tab.leftTitle = leftTitle;
       if (rightTitle) tab.rightTitle = rightTitle;
 
-      const wrapper = tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
+      const wrapper = aside.querySelector(`[data-tab-id="${tabId}"]`);
       if (wrapper) {
+        wrapper.setAttribute("title", title);
         const titleEl = wrapper.querySelector(".tab-title-text") as HTMLElement;
         if (titleEl) {
           titleEl.textContent = title;
@@ -342,7 +430,6 @@ export function createDock(
   const setActiveTabId = (activeId: string | null) => {
     currentActiveTabId = activeId;
 
-    // Update workspaces button active styling
     const workspacesBtn = aside.querySelector("#dock-btn-workspaces");
     if (workspacesBtn) {
       if (!activeId) {
@@ -357,27 +444,12 @@ export function createDock(
     renderTabs();
   };
 
-  // Nav buttons click handlers
-  aside.querySelector("#dock-btn-workspaces")?.addEventListener("click", () => {
-    setActiveTabId(null);
-    onSelectTab("workspaces");
-  });
-
-  aside.querySelector("#dock-btn-add")?.addEventListener("click", () => {
-    if (onNewTab) {
-      onNewTab();
-    } else {
-      onSelectTab("bookmarks");
-    }
-  });
-
-  aside.querySelector("#dock-btn-settings")?.addEventListener("click", () => {
-    onSelectTab("settings");
-  });
-
   return {
     element: aside,
-    getWidth: () => 64,
+    getWidth: () => (isExpanded ? 220 : 64),
+    isExpanded: () => isExpanded,
+    toggleExpanded,
+    setExpanded,
     addTab,
     removeTab,
     updateTabTitle,

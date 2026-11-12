@@ -543,29 +543,7 @@ async function init() {
   );
   app.appendChild(titlebar);
 
-  // 2. Dock with Hand-drawn Design & Active/Hover Expanded States
-  dock = createDock(
-    (tabId) => {
-      if (tabId === "home" || tabId === "workspaces") {
-        handleHomeClick();
-      }
-    },
-    handleRestoreTab,
-    handleCloseTab,
-    handleNewTab,
-    (isHovered) => {
-      if (isViewOpen) {
-        const bounds = getSplitBounds();
-        tauriIpc.updateSplitLayout({
-          ...bounds,
-          x: isHovered ? 214 : 64,
-        });
-      }
-    }
-  );
-  app.appendChild(dock.element);
-
-  // 3. Web Header Bar (Fixed at top: 80px, left: 64px, right: 0, height: 28px)
+  // 2. Web Header Bar (Fixed at top: 80px, left: 64px, right: 0, height: 28px)
   webBar = createWebBar({
     onMinimize: handleMinimizeWeb,
     onClose: handleCloseWeb,
@@ -579,7 +557,37 @@ async function init() {
   // 4. Main Canvas & Welcome Screen
   const mainWrapper = document.createElement("div");
   mainWrapper.className =
-    "pl-16 min-h-screen pt-20 flex flex-col justify-center items-center bg-[#131313] overflow-y-auto";
+    "pl-16 min-h-screen pt-20 flex flex-col justify-center items-center bg-[#131313] overflow-y-auto transition-[padding] duration-200 ease-out";
+
+  // 3. Dock with Arc / Zen Collapsible Sidebar
+  dock = createDock(
+    (tabId) => {
+      if (tabId === "home" || tabId === "workspaces") {
+        handleHomeClick();
+      }
+    },
+    handleRestoreTab,
+    handleCloseTab,
+    handleNewTab,
+    (isExpanded) => {
+      const dockWidth = isExpanded ? 220 : 64;
+      webBar.setLeftOffset(dockWidth);
+      mainWrapper.style.paddingLeft = `${dockWidth}px`;
+      if (isViewOpen) {
+        const bounds = getSplitBounds();
+        tauriIpc.updateSplitLayout(bounds);
+      }
+    }
+  );
+  app.appendChild(dock.element);
+
+  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar (Arc / Zen style)
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+      e.preventDefault();
+      dock.toggleExpanded();
+    }
+  });
 
   const main = document.createElement("main");
   main.id = "main-canvas";
