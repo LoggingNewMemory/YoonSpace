@@ -77,7 +77,6 @@ pub mod gtk_overlay {
                 for child in other_children {
                     vbox.remove(&child);
                     child.set_widget_name(&tab_id);
-                    child.set_no_show_all(true);
                     child.set_margin_start(bounds.x as i32);
                     child.set_margin_top(bounds.y as i32);
                     child.set_halign(gtk::Align::Fill);
@@ -86,6 +85,10 @@ pub mod gtk_overlay {
                     child.set_vexpand(true);
                     overlay.add_overlay(&child);
                     child.show_all();
+                    child.show();
+                    child.queue_resize();
+                    child.queue_draw();
+                    child.set_no_show_all(true);
                 }
                 Ok(())
             })();
@@ -127,10 +130,9 @@ pub mod gtk_overlay {
 
                 let split_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
                 split_box.set_widget_name(&tab_id);
-                split_box.set_no_show_all(true);
                 split_box.set_homogeneous(true);
-                for child in new_children {
-                    split_box.pack_start(&child, true, true, 0);
+                for child in &new_children {
+                    split_box.pack_start(child, true, true, 0);
                 }
 
                 split_box.set_margin_start(bounds.x as i32);
@@ -141,7 +143,15 @@ pub mod gtk_overlay {
                 split_box.set_vexpand(true);
 
                 overlay.add_overlay(&split_box);
+                for child in &new_children {
+                    child.show_all();
+                    child.show();
+                }
                 split_box.show_all();
+                split_box.show();
+                split_box.queue_resize();
+                split_box.queue_draw();
+                split_box.set_no_show_all(true);
                 Ok(())
             })();
             let _ = tx.send(res);
@@ -164,7 +174,16 @@ pub mod gtk_overlay {
                             if child.widget_name().as_str() == tab_id.as_str() {
                                 child.set_margin_start(bounds.x as i32);
                                 child.set_margin_top(bounds.y as i32);
+                                if let Ok(container) = child.clone().dynamic_cast::<gtk::Container>() {
+                                    for c in container.children() {
+                                        c.show_all();
+                                        c.show();
+                                    }
+                                }
+                                child.show_all();
                                 child.show();
+                                child.queue_resize();
+                                child.queue_draw();
                             } else {
                                 child.hide();
                             }
@@ -327,7 +346,7 @@ pub struct SingleViewRequest {
     pub bounds: SplitBounds,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SplitBounds {
     pub x: f64,
     pub y: f64,
@@ -365,7 +384,10 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
     ).map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "linux")]
-    gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
+    {
+        gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
+        gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
+    }
 
     Ok(())
 }
@@ -437,7 +459,10 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
     ).map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "linux")]
-    gtk_overlay::attach_split_views(app, &tab_id, req.bounds)?;
+    {
+        gtk_overlay::attach_split_views(app, &tab_id, req.bounds)?;
+        gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
+    }
 
     Ok(())
 }
