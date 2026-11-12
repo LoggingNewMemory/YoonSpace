@@ -59,4 +59,7 @@ export interface MinimizedTab {
   rightUrl?: string;
   leftTitle?: string;
   rightTitle?: string;
+  icon?: string;
+  leftIcon?: string;
+  rightIcon?: string;
 }

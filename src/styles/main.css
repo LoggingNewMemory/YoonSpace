@@ -79,3 +79,14 @@
 .no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* Dock Tab Pills Animations & Styles */
+.dock-tab-pill {
+  transition: width 0.18s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  will-change: width, box-shadow;
+}
+
+.dock-tab-expanded-content {
+  transition: opacity 0.15s ease;
+}
+

@@ -30,7 +30,7 @@ let dock: DockController;
 let webBar: WebBarController;
 
 function getSplitBounds(): SplitBounds {
-  const dockWidth = 64;
+  const dockWidth = dock ? dock.getWidth() : 64;
   const headerHeight = 80;
   const webBarHeight = 28;
   const topOffset = headerHeight + webBarHeight;
@@ -74,12 +74,6 @@ function deriveTitleFromInput(input: string): string {
 }
 
 async function handleSpawnPreset(preset: SplitPreset) {
-  // If a tab is already open, minimize it to the sidebar
-  if (isViewOpen && activeTab) {
-    dock.addMinimizedTab(activeTab);
-  }
-
-  const bounds = getSplitBounds();
   const tabId = "preset-" + preset.id;
 
   let leftTitle = "Left View";
@@ -101,6 +95,11 @@ async function handleSpawnPreset(preset: SplitPreset) {
     leftTitle,
     rightTitle,
   };
+
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
+  const bounds = getSplitBounds();
 
   try {
     await tauriIpc.spawnSplit(preset.left_url, preset.right_url, bounds);
@@ -126,13 +125,7 @@ async function handleSpawnPreset(preset: SplitPreset) {
 }
 
 async function handleSearch(query: string, engineId: string) {
-  // If a tab is already open, minimize it to the sidebar
-  if (isViewOpen && activeTab) {
-    dock.addMinimizedTab(activeTab);
-  }
-
   const targetUrl = normalizeUrl(query, engineId);
-  const bounds = getSplitBounds();
   const displayTitle = deriveTitleFromInput(query);
   const tabId = "tab-" + Date.now();
 
@@ -143,6 +136,11 @@ async function handleSearch(query: string, engineId: string) {
     query: query,
     isSplit: false,
   };
+
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
+  const bounds = getSplitBounds();
 
   try {
     await tauriIpc.spawnSingleView(targetUrl, bounds);
@@ -187,12 +185,8 @@ async function refreshTelemetry() {
   }
 }
 
-// User clicked Minimize on top web bar -> goes to the sidebar dock
+// User clicked Minimize on top web bar -> tab stays in sidebar, view is minimized
 async function handleMinimizeWeb() {
-  if (activeTab) {
-    dock.addMinimizedTab({ ...activeTab });
-  }
-
   try {
     await tauriIpc.closeSplit();
     setTimeout(refreshTelemetry, 100);
@@ -221,44 +215,63 @@ async function handleMinimizeWeb() {
     omnibarInput.value = "";
   }
 
-  dock.setActiveTab("dock-btn-workspaces");
+  dock.setActiveTabId(null);
 }
 
-// User clicked Close on top web bar -> closes tab
+// Close a specific tab (from sidebar or top web bar)
+async function handleCloseTab(tabId: string) {
+  const isClosingActive = activeTab && activeTab.id === tabId;
+  dock.removeTab(tabId);
+
+  if (isClosingActive) {
+    try {
+      await tauriIpc.closeSplit();
+      setTimeout(refreshTelemetry, 100);
+      setTimeout(refreshTelemetry, 300);
+    } catch (e) {
+      console.error("Failed to close webview on tab close:", e);
+    }
+
+    isViewOpen = false;
+    activeTab = null;
+    webBar.hide();
+
+    // Check if other tabs remain in the sidebar
+    const remainingTabs = dock.getTabs();
+    if (remainingTabs.length > 0) {
+      const nextTab = remainingTabs[remainingTabs.length - 1];
+      await handleRestoreTab(nextTab);
+      return;
+    }
+
+    // No tabs remain: return to Welcome screen
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.remove("hidden");
+    }
+
+    const indicator = document.getElementById("split-active-indicator");
+    if (indicator) {
+      indicator.classList.add("hidden");
+      indicator.classList.remove("flex");
+    }
+
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = "";
+    }
+
+    dock.setActiveTabId(null);
+  }
+}
+
+// User clicked Close on top web bar -> closes active tab
 async function handleCloseWeb() {
   if (activeTab) {
-    dock.removeMinimizedTab(activeTab.id);
+    await handleCloseTab(activeTab.id);
+  } else {
+    await handleMinimizeWeb();
   }
-
-  try {
-    await tauriIpc.closeSplit();
-    setTimeout(refreshTelemetry, 100);
-    setTimeout(refreshTelemetry, 300);
-  } catch (e) {
-    console.error("Failed to close webview on close:", e);
-  }
-
-  isViewOpen = false;
-  activeTab = null;
-  webBar.hide();
-
-  const mainCanvas = document.getElementById("main-canvas");
-  if (mainCanvas) {
-    mainCanvas.classList.remove("hidden");
-  }
-
-  const indicator = document.getElementById("split-active-indicator");
-  if (indicator) {
-    indicator.classList.add("hidden");
-    indicator.classList.remove("flex");
-  }
-
-  const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-  if (omnibarInput) {
-    omnibarInput.value = "";
-  }
-
-  dock.setActiveTab("dock-btn-workspaces");
 }
 
 // User clicked Minimize on Left pane of dual split view
@@ -274,20 +287,24 @@ async function handleMinimizeLeft() {
     url: activeTab.leftUrl,
     isSplit: false,
   };
-  dock.addMinimizedTab(leftTab);
+  dock.addTab(leftTab);
 
   const remainingUrl = activeTab.rightUrl;
   const remainingTitle = activeTab.rightTitle || "Web View";
+
+  activeTab = {
+    id: "tab-" + (Date.now() + 1),
+    title: remainingTitle,
+    url: remainingUrl,
+    isSplit: false,
+  };
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
   const bounds = getSplitBounds();
 
   try {
     await tauriIpc.spawnSingleView(remainingUrl, bounds);
-    activeTab = {
-      id: "tab-" + (Date.now() + 1),
-      title: remainingTitle,
-      url: remainingUrl,
-      isSplit: false,
-    };
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -310,16 +327,20 @@ async function handleCloseLeft() {
 
   const remainingUrl = activeTab.rightUrl;
   const remainingTitle = activeTab.rightTitle || "Web View";
+
+  activeTab = {
+    id: "tab-" + Date.now(),
+    title: remainingTitle,
+    url: remainingUrl,
+    isSplit: false,
+  };
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
   const bounds = getSplitBounds();
 
   try {
     await tauriIpc.spawnSingleView(remainingUrl, bounds);
-    activeTab = {
-      id: "tab-" + Date.now(),
-      title: remainingTitle,
-      url: remainingUrl,
-      isSplit: false,
-    };
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -346,20 +367,24 @@ async function handleMinimizeRight() {
     url: activeTab.rightUrl,
     isSplit: false,
   };
-  dock.addMinimizedTab(rightTab);
+  dock.addTab(rightTab);
 
   const remainingUrl = activeTab.leftUrl;
   const remainingTitle = activeTab.leftTitle || "Web View";
+
+  activeTab = {
+    id: "tab-" + (Date.now() + 1),
+    title: remainingTitle,
+    url: remainingUrl,
+    isSplit: false,
+  };
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
   const bounds = getSplitBounds();
 
   try {
     await tauriIpc.spawnSingleView(remainingUrl, bounds);
-    activeTab = {
-      id: "tab-" + (Date.now() + 1),
-      title: remainingTitle,
-      url: remainingUrl,
-      isSplit: false,
-    };
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -382,16 +407,20 @@ async function handleCloseRight() {
 
   const remainingUrl = activeTab.leftUrl;
   const remainingTitle = activeTab.leftTitle || "Web View";
+
+  activeTab = {
+    id: "tab-" + Date.now(),
+    title: remainingTitle,
+    url: remainingUrl,
+    isSplit: false,
+  };
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
   const bounds = getSplitBounds();
 
   try {
     await tauriIpc.spawnSingleView(remainingUrl, bounds);
-    activeTab = {
-      id: "tab-" + Date.now(),
-      title: remainingTitle,
-      url: remainingUrl,
-      isSplit: false,
-    };
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -405,16 +434,12 @@ async function handleCloseRight() {
   }
 }
 
-// User clicked on a minimized tab on the sidebar dock -> restores it
+// User clicked on a tab on the sidebar dock -> restores / activates it
 async function handleRestoreTab(tab: MinimizedTab) {
-  // If another tab is open, minimize it first
-  if (isViewOpen && activeTab && activeTab.id !== tab.id) {
-    dock.addMinimizedTab(activeTab);
-  }
+  activeTab = tab;
+  dock.setActiveTabId(tab.id);
 
   const bounds = getSplitBounds();
-  activeTab = tab;
-  dock.removeMinimizedTab(tab.id);
 
   try {
     if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
@@ -465,6 +490,18 @@ async function handleRestoreTab(tab: MinimizedTab) {
 async function handleHomeClick() {
   if (isViewOpen) {
     await handleMinimizeWeb();
+  } else {
+    dock.setActiveTabId(null);
+  }
+}
+
+// User clicked Add (+) in dock -> goes to home / focuses omnibar
+async function handleNewTab() {
+  await handleHomeClick();
+  const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+  if (omnibarInput) {
+    omnibarInput.focus();
+    omnibarInput.select();
   }
 }
 
@@ -506,14 +543,25 @@ async function init() {
   );
   app.appendChild(titlebar);
 
-  // 2. Dock (Fixed at left: 0, top: 80px, width: 64px) with Minimized Tabs support
+  // 2. Dock with Hand-drawn Design & Active/Hover Expanded States
   dock = createDock(
     (tabId) => {
       if (tabId === "home" || tabId === "workspaces") {
         handleHomeClick();
       }
     },
-    handleRestoreTab
+    handleRestoreTab,
+    handleCloseTab,
+    handleNewTab,
+    (isHovered) => {
+      if (isViewOpen) {
+        const bounds = getSplitBounds();
+        tauriIpc.updateSplitLayout({
+          ...bounds,
+          x: isHovered ? 214 : 64,
+        });
+      }
+    }
   );
   app.appendChild(dock.element);
 
@@ -562,6 +610,7 @@ async function init() {
     if (event.payload && isViewOpen && activeTab && !activeTab.isSplit) {
       activeTab.title = event.payload;
       webBar.setSingleMode(event.payload);
+      dock.updateTabTitle(activeTab.id, event.payload);
     }
   });
 
@@ -569,6 +618,9 @@ async function init() {
     if (event.payload && isViewOpen && activeTab && activeTab.isSplit) {
       activeTab.leftTitle = event.payload;
       webBar.setLeftTitle(event.payload);
+      const combined = `${event.payload} | ${activeTab.rightTitle || "Right"}`;
+      activeTab.title = combined;
+      dock.updateTabTitle(activeTab.id, combined, event.payload, activeTab.rightTitle);
     }
   });
 
@@ -576,6 +628,9 @@ async function init() {
     if (event.payload && isViewOpen && activeTab && activeTab.isSplit) {
       activeTab.rightTitle = event.payload;
       webBar.setRightTitle(event.payload);
+      const combined = `${activeTab.leftTitle || "Left"} | ${event.payload}`;
+      activeTab.title = combined;
+      dock.updateTabTitle(activeTab.id, combined, activeTab.leftTitle, event.payload);
     }
   });
 
