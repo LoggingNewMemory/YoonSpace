@@ -16,8 +16,9 @@
 
 use tauri::AppHandle;
 use crate::core::webview::{
-    close_split_views, is_split_active, navigate_split_view, spawn_single_view as core_spawn_single_view,
-    spawn_split_views, update_split_bounds, SingleViewRequest, SplitBounds, SplitViewRequest,
+    close_split_views, close_tab_view, hide_all_webviews, is_split_active, navigate_split_view,
+    spawn_single_view as core_spawn_single_view, spawn_split_views, update_split_bounds,
+    SingleViewRequest, SplitBounds, SplitViewRequest,
 };
 
 #[tauri::command]
@@ -43,6 +44,16 @@ pub fn navigate_split(app: AppHandle, pane: String, url: String) -> Result<(), S
 #[tauri::command]
 pub fn check_split_active(app: AppHandle) -> bool {
     is_split_active(&app)
+}
+
+#[tauri::command]
+pub fn hide_webviews(app: AppHandle) -> Result<(), String> {
+    hide_all_webviews(&app)
+}
+
+#[tauri::command]
+pub fn close_tab(app: AppHandle, tab_id: String) -> Result<(), String> {
+    close_tab_view(&app, &tab_id)
 }
 
 #[tauri::command]

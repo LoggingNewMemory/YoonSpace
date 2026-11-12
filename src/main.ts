@@ -102,7 +102,7 @@ async function handleSpawnPreset(preset: SplitPreset) {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.spawnSplit(preset.left_url, preset.right_url, bounds);
+    await tauriIpc.spawnSplit(preset.left_url, preset.right_url, bounds, activeTab.id);
     isViewOpen = true;
 
     const mainCanvas = document.getElementById("main-canvas");
@@ -143,7 +143,7 @@ async function handleSearch(query: string, engineId: string) {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.spawnSingleView(targetUrl, bounds);
+    await tauriIpc.spawnSingleView(targetUrl, bounds, activeTab.id);
     isViewOpen = true;
 
     const mainCanvas = document.getElementById("main-canvas");
@@ -185,37 +185,9 @@ async function refreshTelemetry() {
   }
 }
 
-// User clicked Minimize on top web bar -> tab stays in sidebar, view is minimized
+// User clicked Minimize on top web bar -> hides web view and shows workspace without reloading
 async function handleMinimizeWeb() {
-  try {
-    await tauriIpc.closeSplit();
-    setTimeout(refreshTelemetry, 100);
-    setTimeout(refreshTelemetry, 300);
-  } catch (e) {
-    console.error("Failed to close webview on minimize:", e);
-  }
-
-  isViewOpen = false;
-  activeTab = null;
-  webBar.hide();
-
-  const mainCanvas = document.getElementById("main-canvas");
-  if (mainCanvas) {
-    mainCanvas.classList.remove("hidden");
-  }
-
-  const indicator = document.getElementById("split-active-indicator");
-  if (indicator) {
-    indicator.classList.add("hidden");
-    indicator.classList.remove("flex");
-  }
-
-  const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-  if (omnibarInput) {
-    omnibarInput.value = "";
-  }
-
-  dock.setActiveTabId(null);
+  await handleHomeClick();
 }
 
 // Close a specific tab (from sidebar or top web bar)
@@ -223,14 +195,15 @@ async function handleCloseTab(tabId: string) {
   const isClosingActive = activeTab && activeTab.id === tabId;
   dock.removeTab(tabId);
 
+  try {
+    await tauriIpc.closeTab(tabId);
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
+  } catch (e) {
+    console.error("Failed to close webview on tab close:", e);
+  }
+
   if (isClosingActive) {
-    try {
-      await tauriIpc.closeSplit();
-      setTimeout(refreshTelemetry, 100);
-      setTimeout(refreshTelemetry, 300);
-    } catch (e) {
-      console.error("Failed to close webview on tab close:", e);
-    }
 
     isViewOpen = false;
     activeTab = null;
@@ -304,7 +277,7 @@ async function handleMinimizeLeft() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -340,7 +313,7 @@ async function handleCloseLeft() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -384,7 +357,7 @@ async function handleMinimizeRight() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -420,7 +393,7 @@ async function handleCloseRight() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.spawnSingleView(remainingUrl, bounds);
+    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
@@ -443,7 +416,7 @@ async function handleRestoreTab(tab: MinimizedTab) {
 
   try {
     if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
-      await tauriIpc.spawnSplit(tab.leftUrl, tab.rightUrl, bounds);
+      await tauriIpc.spawnSplit(tab.leftUrl, tab.rightUrl, bounds, tab.id);
       const indicator = document.getElementById("split-active-indicator");
       if (indicator) {
         indicator.classList.remove("hidden");
@@ -460,7 +433,7 @@ async function handleRestoreTab(tab: MinimizedTab) {
       webBar.setSplitMode(leftTitle, rightTitle);
       webBar.show();
     } else {
-      await tauriIpc.spawnSingleView(tab.url, bounds);
+      await tauriIpc.spawnSingleView(tab.url || "", bounds, tab.id);
       const indicator = document.getElementById("split-active-indicator");
       if (indicator) {
         indicator.classList.add("hidden");
@@ -479,7 +452,7 @@ async function handleRestoreTab(tab: MinimizedTab) {
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
     if (omnibarInput) {
-      omnibarInput.value = tab.query || tab.title || tab.url;
+      omnibarInput.value = tab.query || tab.title || tab.url || "";
     }
   } catch (e) {
     console.error("Failed to restore tab:", e);
@@ -489,7 +462,34 @@ async function handleRestoreTab(tab: MinimizedTab) {
 // User clicked Home / Workspaces in dock
 async function handleHomeClick() {
   if (isViewOpen) {
-    await handleMinimizeWeb();
+    try {
+      await tauriIpc.hideWebviews();
+      setTimeout(refreshTelemetry, 100);
+      setTimeout(refreshTelemetry, 300);
+    } catch (e) {
+      console.error("Failed to hide webviews on workspace click:", e);
+    }
+
+    isViewOpen = false;
+    webBar.hide();
+
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.remove("hidden");
+    }
+
+    const indicator = document.getElementById("split-active-indicator");
+    if (indicator) {
+      indicator.classList.add("hidden");
+      indicator.classList.remove("flex");
+    }
+
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = "";
+    }
+
+    dock.setActiveTabId(null);
   } else {
     dock.setActiveTabId(null);
   }

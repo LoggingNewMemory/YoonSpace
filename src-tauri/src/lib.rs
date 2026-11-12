@@ -48,6 +48,8 @@ pub fn run() {
             commands::webview::update_split_layout,
             commands::webview::navigate_split,
             commands::webview::check_split_active,
+            commands::webview::hide_webviews,
+            commands::webview::close_tab,
             commands::webview::close_split,
             commands::config::get_app_config,
             commands::config::update_app_config,

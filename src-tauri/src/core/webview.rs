@@ -47,10 +47,11 @@ pub mod gtk_overlay {
         rx.recv().map_err(|e| e.to_string())?
     }
 
-    pub fn attach_single_view(app: &AppHandle, bounds: SplitBounds) -> Result<(), String> {
+    pub fn attach_single_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> Result<(), String> {
         ensure_overlay(app)?;
         let (tx, rx) = std::sync::mpsc::channel();
         let app_handle = app.clone();
+        let tab_id = tab_id.to_string();
         app.run_on_main_thread(move || {
             let res = (|| -> Result<(), String> {
                 let window = app_handle.get_window("main").ok_or("Main window not found")?;
@@ -61,9 +62,10 @@ pub mod gtk_overlay {
                     .ok_or("Overlay not found in vbox")?;
 
                 let main_child = overlay.child();
+                // Hide other tab overlays
                 for child in overlay.children() {
                     if main_child.as_ref() != Some(&child) {
-                        overlay.remove(&child);
+                        child.hide();
                     }
                 }
 
@@ -74,6 +76,8 @@ pub mod gtk_overlay {
 
                 for child in other_children {
                     vbox.remove(&child);
+                    child.set_widget_name(&tab_id);
+                    child.set_no_show_all(true);
                     child.set_margin_start(bounds.x as i32);
                     child.set_margin_top(bounds.y as i32);
                     child.set_halign(gtk::Align::Fill);
@@ -83,7 +87,6 @@ pub mod gtk_overlay {
                     overlay.add_overlay(&child);
                     child.show_all();
                 }
-                overlay.show_all();
                 Ok(())
             })();
             let _ = tx.send(res);
@@ -91,10 +94,11 @@ pub mod gtk_overlay {
         rx.recv().map_err(|e| e.to_string())?
     }
 
-    pub fn attach_split_views(app: &AppHandle, bounds: SplitBounds) -> Result<(), String> {
+    pub fn attach_split_views(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> Result<(), String> {
         ensure_overlay(app)?;
         let (tx, rx) = std::sync::mpsc::channel();
         let app_handle = app.clone();
+        let tab_id = tab_id.to_string();
         app.run_on_main_thread(move || {
             let res = (|| -> Result<(), String> {
                 let window = app_handle.get_window("main").ok_or("Main window not found")?;
@@ -105,9 +109,10 @@ pub mod gtk_overlay {
                     .ok_or("Overlay not found in vbox")?;
 
                 let main_child = overlay.child();
+                // Hide other tab overlays
                 for child in overlay.children() {
                     if main_child.as_ref() != Some(&child) {
-                        overlay.remove(&child);
+                        child.hide();
                     }
                 }
 
@@ -121,6 +126,8 @@ pub mod gtk_overlay {
                 }
 
                 let split_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                split_box.set_widget_name(&tab_id);
+                split_box.set_no_show_all(true);
                 split_box.set_homogeneous(true);
                 for child in new_children {
                     split_box.pack_start(&child, true, true, 0);
@@ -135,12 +142,118 @@ pub mod gtk_overlay {
 
                 overlay.add_overlay(&split_box);
                 split_box.show_all();
-                overlay.show_all();
                 Ok(())
             })();
             let _ = tx.send(res);
         }).map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())?
+    }
+
+    pub fn activate_tab_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_handle = app.clone();
+        let tab_id = tab_id.to_string();
+        app.run_on_main_thread(move || {
+            let res = (|| -> Result<(), String> {
+                let window = app_handle.get_window("main").ok_or("Main window not found")?;
+                let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+                if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+                    let main_child = overlay.child();
+                    for child in overlay.children() {
+                        if main_child.as_ref() != Some(&child) {
+                            if child.widget_name().as_str() == tab_id.as_str() {
+                                child.set_margin_start(bounds.x as i32);
+                                child.set_margin_top(bounds.y as i32);
+                                child.show();
+                            } else {
+                                child.hide();
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            })();
+            let _ = tx.send(res);
+        }).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+
+    pub fn hide_all_tab_views(app: &AppHandle) -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_handle = app.clone();
+        app.run_on_main_thread(move || {
+            let res = (|| -> Result<(), String> {
+                let window = app_handle.get_window("main").ok_or("Main window not found")?;
+                let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+                if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+                    let main_child = overlay.child();
+                    for child in overlay.children() {
+                        if main_child.as_ref() != Some(&child) {
+                            child.hide();
+                        }
+                    }
+                }
+                Ok(())
+            })();
+            let _ = tx.send(res);
+        }).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+
+    pub fn remove_tab_view(app: &AppHandle, tab_id: &str) -> Result<bool, String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_handle = app.clone();
+        let tab_id = tab_id.to_string();
+        app.run_on_main_thread(move || {
+            let res = (|| -> Result<bool, String> {
+                let window = app_handle.get_window("main").ok_or("Main window not found")?;
+                let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+                let mut remaining_tabs = 0;
+                if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+                    let main_child = overlay.child();
+                    for child in overlay.children() {
+                        if main_child.as_ref() != Some(&child) {
+                            if child.widget_name().as_str() == tab_id.as_str() {
+                                overlay.remove(&child);
+                            } else {
+                                remaining_tabs += 1;
+                            }
+                        }
+                    }
+                }
+                Ok(remaining_tabs > 0)
+            })();
+            let _ = tx.send(res);
+        }).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+
+    pub fn has_any_overlay(app: &AppHandle) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let res = (|| -> bool {
+                let window = match app_handle.get_window("main") {
+                    Some(w) => w,
+                    None => return false,
+                };
+                let vbox = match window.default_vbox() {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                };
+                if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+                    let main_child = overlay.child();
+                    for child in overlay.children() {
+                        if main_child.as_ref() != Some(&child) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            })();
+            let _ = tx.send(res);
+        });
+        rx.recv().unwrap_or(false)
     }
 
     pub fn update_overlay_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(), String> {
@@ -201,6 +314,7 @@ pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SplitViewRequest {
+    pub tab_id: Option<String>,
     pub left_url: String,
     pub right_url: String,
     pub bounds: SplitBounds,
@@ -208,6 +322,7 @@ pub struct SplitViewRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SingleViewRequest {
+    pub tab_id: Option<String>,
     pub url: String,
     pub bounds: SplitBounds,
 }
@@ -222,24 +337,22 @@ pub struct SplitBounds {
 
 pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), String> {
     let window = app.get_window("main").ok_or("Main window not found")?;
+    let tab_id = req.tab_id.unwrap_or_else(|| "single_view".to_string());
 
-    if let Some(view) = app.get_webview("single_view") {
-        if app.get_webview("split_left").is_none() && app.get_webview("split_right").is_none() {
-            let parsed: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
-            view.navigate(parsed).map_err(|e| e.to_string())?;
-            let _ = view.set_position(LogicalPosition::new(req.bounds.x, req.bounds.y));
-            let _ = view.set_size(LogicalSize::new(req.bounds.width, req.bounds.height));
-            #[cfg(target_os = "linux")]
-            let _ = gtk_overlay::update_overlay_bounds(app, req.bounds);
-            return Ok(());
-        }
+    if let Some(view) = app.get_webview(&tab_id) {
+        let _ = view.set_position(LogicalPosition::new(req.bounds.x, req.bounds.y));
+        let _ = view.set_size(LogicalSize::new(req.bounds.width, req.bounds.height));
+        #[cfg(target_os = "linux")]
+        gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
+        return Ok(());
     }
 
-    close_split_views(app)?;
+    #[cfg(target_os = "linux")]
+    gtk_overlay::hide_all_tab_views(app)?;
 
     let url: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
     let app_title = app.clone();
-    let builder = WebviewBuilder::new("single_view", WebviewUrl::External(url))
+    let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(url))
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_title.emit("webview-title-changed", title);
@@ -252,15 +365,41 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
     ).map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "linux")]
-    gtk_overlay::attach_single_view(app, req.bounds)?;
+    gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
 
     Ok(())
 }
 
 pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), String> {
     let window = app.get_window("main").ok_or("Main window not found")?;
+    let tab_id = req.tab_id.unwrap_or_else(|| "split_view".to_string());
+    let left_label = format!("{}_left", tab_id);
+    let right_label = format!("{}_right", tab_id);
 
-    close_split_views(app)?;
+    if app.get_webview(&left_label).is_some() && app.get_webview(&right_label).is_some() {
+        let half_width = req.bounds.width / 2.0;
+        let height = req.bounds.height;
+        let top_y = req.bounds.y;
+        let left_x = req.bounds.x;
+        let right_x = req.bounds.x + half_width;
+
+        if let Some(left) = app.get_webview(&left_label) {
+            let _ = left.set_position(LogicalPosition::new(left_x, top_y));
+            let _ = left.set_size(LogicalSize::new(half_width, height));
+        }
+        if let Some(right) = app.get_webview(&right_label) {
+            let _ = right.set_position(LogicalPosition::new(right_x, top_y));
+            let _ = right.set_size(LogicalSize::new(half_width, height));
+        }
+
+        #[cfg(target_os = "linux")]
+        gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
+
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    gtk_overlay::hide_all_tab_views(app)?;
 
     let half_width = req.bounds.width / 2.0;
     let height = req.bounds.height;
@@ -272,14 +411,14 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
     let right_url: url::Url = req.right_url.parse().map_err(|e: url::ParseError| e.to_string())?;
 
     let app_left = app.clone();
-    let left_builder = WebviewBuilder::new("split_left", WebviewUrl::External(left_url))
+    let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(left_url))
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_left.emit("webview-split-left-title-changed", title);
         });
 
     let app_right = app.clone();
-    let right_builder = WebviewBuilder::new("split_right", WebviewUrl::External(right_url))
+    let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(right_url))
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_right.emit("webview-split-right-title-changed", title);
@@ -298,23 +437,22 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
     ).map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "linux")]
-    gtk_overlay::attach_split_views(app, req.bounds)?;
+    gtk_overlay::attach_split_views(app, &tab_id, req.bounds)?;
 
     Ok(())
 }
 
 pub fn update_split_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(), String> {
-    if let Some(view) = app.get_webview("single_view") {
-        let _ = view.set_position(LogicalPosition::new(bounds.x, bounds.y));
-        let _ = view.set_size(LogicalSize::new(bounds.width, bounds.height));
-    }
-
     let half_width = bounds.width / 2.0;
     let height = bounds.height;
     let top_y = bounds.y;
     let left_x = bounds.x;
     let right_x = bounds.x + half_width;
 
+    if let Some(view) = app.get_webview("single_view") {
+        let _ = view.set_position(LogicalPosition::new(bounds.x, bounds.y));
+        let _ = view.set_size(LogicalSize::new(bounds.width, bounds.height));
+    }
     if let Some(left) = app.get_webview("split_left") {
         let _ = left.set_position(LogicalPosition::new(left_x, top_y));
         let _ = left.set_size(LogicalSize::new(half_width, height));
@@ -353,9 +491,55 @@ unsafe extern "C" {
 }
 
 pub fn is_split_active(app: &AppHandle) -> bool {
-    app.get_webview("single_view").is_some() ||
-    app.get_webview("split_left").is_some() ||
-    app.get_webview("split_right").is_some()
+    #[cfg(target_os = "linux")]
+    {
+        gtk_overlay::has_any_overlay(app)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        app.get_webview("single_view").is_some() ||
+        app.get_webview("split_left").is_some() ||
+        app.get_webview("split_right").is_some()
+    }
+}
+
+pub fn hide_all_webviews(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    gtk_overlay::hide_all_tab_views(app)?;
+    Ok(())
+}
+
+pub fn close_tab_view(app: &AppHandle, tab_id: &str) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    let has_remaining = gtk_overlay::remove_tab_view(app, tab_id)?;
+
+    if let Some(view) = app.get_webview(tab_id) {
+        let _ = view.close();
+    }
+    if let Some(left) = app.get_webview(&format!("{}_left", tab_id)) {
+        let _ = left.close();
+    }
+    if let Some(right) = app.get_webview(&format!("{}_right", tab_id)) {
+        let _ = right.close();
+    }
+    if tab_id == "single_view" {
+        if let Some(view) = app.get_webview("single_view") {
+            let _ = view.close();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    if !has_remaining {
+        use webkit2gtk::WebContextExt;
+        if let Some(context) = webkit2gtk::WebContext::default() {
+            context.clear_cache();
+        }
+        unsafe {
+            malloc_trim(0);
+        }
+    }
+
+    Ok(())
 }
 
 pub fn close_split_views(app: &AppHandle) -> Result<(), String> {

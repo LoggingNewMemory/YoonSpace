@@ -132,10 +132,11 @@ export const tauriIpc = {
   },
 
   // WebViews
-  async spawnSingleView(url: string, bounds: SplitBounds): Promise<void> {
+  async spawnSingleView(url: string, bounds: SplitBounds, tabId?: string): Promise<void> {
     try {
       await invoke("spawn_single_view", {
         req: {
+          tab_id: tabId,
           url,
           bounds,
         },
@@ -146,10 +147,11 @@ export const tauriIpc = {
     }
   },
 
-  async spawnSplit(leftUrl: string, rightUrl: string, bounds: SplitBounds): Promise<void> {
+  async spawnSplit(leftUrl: string, rightUrl: string, bounds: SplitBounds, tabId?: string): Promise<void> {
     try {
       await invoke("spawn_split", {
         req: {
+          tab_id: tabId,
           left_url: leftUrl,
           right_url: rightUrl,
           bounds,
@@ -182,6 +184,22 @@ export const tauriIpc = {
       return await invoke<boolean>("check_split_active");
     } catch {
       return false;
+    }
+  },
+
+  async hideWebviews(): Promise<void> {
+    try {
+      await invoke("hide_webviews");
+    } catch (e) {
+      console.warn("hide_webviews failed:", e);
+    }
+  },
+
+  async closeTab(tabId: string): Promise<void> {
+    try {
+      await invoke("close_tab", { tabId });
+    } catch (e) {
+      console.warn("close_tab failed:", e);
     }
   },
 
