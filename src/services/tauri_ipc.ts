@@ -179,6 +179,39 @@ export const tauriIpc = {
     }
   },
 
+  async navigateTab(tabId: string, url: string): Promise<void> {
+    try {
+      await invoke("navigate_tab", { tabId, url });
+    } catch (e) {
+      console.error("navigate_tab failed:", e);
+      throw e;
+    }
+  },
+
+  async goBack(tabId: string): Promise<void> {
+    try {
+      await invoke("webview_go_back", { tabId });
+    } catch (e) {
+      console.warn("webview_go_back failed:", e);
+    }
+  },
+
+  async goForward(tabId: string): Promise<void> {
+    try {
+      await invoke("webview_go_forward", { tabId });
+    } catch (e) {
+      console.warn("webview_go_forward failed:", e);
+    }
+  },
+
+  async reload(tabId: string): Promise<void> {
+    try {
+      await invoke("webview_reload", { tabId });
+    } catch (e) {
+      console.warn("webview_reload failed:", e);
+    }
+  },
+
   async checkSplitActive(): Promise<boolean> {
     try {
       return await invoke<boolean>("check_split_active");

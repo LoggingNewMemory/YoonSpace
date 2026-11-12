@@ -16,7 +16,13 @@
 
 import { tauriIpc } from "../services/tauri_ipc";
 
-export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: () => void) {
+export function createTitlebar(
+  onNavigate: (url: string) => void,
+  onHomeClick: () => void,
+  onBack?: () => void,
+  onForward?: () => void,
+  onReload?: () => void
+) {
   const container = document.createElement("header");
   container.className =
     "fixed top-0 left-0 right-0 z-50 flex flex-col bg-[#0e0e0e]/95 backdrop-blur-xl border-b border-[#202020] shadow-[0_1px_8px_rgba(0,0,0,0.4)]";
@@ -82,14 +88,48 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
 
     <!-- Navigation / Omnibar Row -->
     <div class="h-12 px-4 flex items-center justify-center bg-[#1b1b1c]/95 border-t border-[#202020]/60 relative">
-      <div id="split-active-indicator" class="hidden absolute left-4 items-center gap-1.5 px-2 py-0.5 rounded bg-[#f85e2a]/20 border border-[#f85e2a]/40 text-[#ffb59e] text-[11px] font-medium">
-        <span class="material-symbols-outlined text-[14px]">splitscreen</span>
-        <span>Dual Split Active</span>
-        <button id="btn-close-split" class="ml-1 hover:text-white cursor-pointer" title="Close Split View">
-          <span class="material-symbols-outlined text-[12px]">close</span>
-        </button>
+      <!-- Left Edge: Navigation Controls (Back, Forward, Reload) & Split Indicator -->
+      <div class="absolute left-2 flex items-center gap-1.5 z-10">
+        <div class="flex items-center gap-0.5">
+          <button
+            id="nav-btn-back"
+            type="button"
+            title="Back (Alt+Left)"
+            aria-label="Back"
+            class="w-7 h-7 rounded-lg flex items-center justify-center text-[#9c9a98] hover:text-[#e5e2e1] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer"
+          >
+            <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+          </button>
+          <button
+            id="nav-btn-forward"
+            type="button"
+            title="Forward (Alt+Right)"
+            aria-label="Forward"
+            class="w-7 h-7 rounded-lg flex items-center justify-center text-[#9c9a98] hover:text-[#e5e2e1] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer"
+          >
+            <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+          </button>
+          <button
+            id="nav-btn-reload"
+            type="button"
+            title="Reload (Ctrl+R / F5)"
+            aria-label="Reload"
+            class="w-7 h-7 rounded-lg flex items-center justify-center text-[#9c9a98] hover:text-[#e5e2e1] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer"
+          >
+            <span class="material-symbols-outlined text-[18px]">refresh</span>
+          </button>
+        </div>
+
+        <div id="split-active-indicator" class="hidden items-center gap-1.5 px-2 py-0.5 rounded bg-[#f85e2a]/20 border border-[#f85e2a]/40 text-[#ffb59e] text-[11px] font-medium">
+          <span class="material-symbols-outlined text-[14px]">splitscreen</span>
+          <span>Dual Split Active</span>
+          <button id="btn-close-split" class="ml-1 hover:text-white cursor-pointer" title="Close Split View">
+            <span class="material-symbols-outlined text-[12px]">close</span>
+          </button>
+        </div>
       </div>
 
+      <!-- Centered Address / Omnibar Form -->
       <div class="w-full max-w-2xl mx-auto -translate-y-0.5">
         <form id="global-omnibar-form" class="w-full">
           <div class="w-full h-8 px-3 bg-[#202020] rounded-lg flex items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)] border border-transparent focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all">
@@ -126,6 +166,17 @@ export function createTitlebar(onNavigate: (url: string) => void, onHomeClick: (
   container.querySelector("#btn-win-min")?.addEventListener("click", () => tauriIpc.minimizeWindow());
   container.querySelector("#btn-win-max")?.addEventListener("click", () => tauriIpc.toggleMaximizeWindow());
   container.querySelector("#btn-win-close")?.addEventListener("click", () => tauriIpc.closeWindow());
+
+  // Navigation controls handlers
+  container.querySelector("#nav-btn-back")?.addEventListener("click", () => {
+    onBack?.();
+  });
+  container.querySelector("#nav-btn-forward")?.addEventListener("click", () => {
+    onForward?.();
+  });
+  container.querySelector("#nav-btn-reload")?.addEventListener("click", () => {
+    onReload?.();
+  });
 
   const form = container.querySelector("#global-omnibar-form") as HTMLFormElement;
   const input = container.querySelector("#global-omnibar-input") as HTMLInputElement;

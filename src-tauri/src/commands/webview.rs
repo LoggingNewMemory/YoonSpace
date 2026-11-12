@@ -17,7 +17,9 @@
 use tauri::AppHandle;
 use crate::core::webview::{
     close_split_views, close_tab_view, hide_all_webviews, is_split_active, navigate_split_view,
-    spawn_single_view as core_spawn_single_view, spawn_split_views, update_split_bounds,
+    navigate_tab_view, spawn_single_view as core_spawn_single_view, spawn_split_views,
+    update_split_bounds, webview_go_back as core_webview_go_back,
+    webview_go_forward as core_webview_go_forward, webview_reload as core_webview_reload,
     SingleViewRequest, SplitBounds, SplitViewRequest,
 };
 
@@ -39,6 +41,26 @@ pub fn update_split_layout(app: AppHandle, bounds: SplitBounds) -> Result<(), St
 #[tauri::command]
 pub fn navigate_split(app: AppHandle, pane: String, url: String) -> Result<(), String> {
     navigate_split_view(&app, &pane, &url)
+}
+
+#[tauri::command]
+pub fn navigate_tab(app: AppHandle, tab_id: String, url: String) -> Result<(), String> {
+    navigate_tab_view(&app, &tab_id, &url)
+}
+
+#[tauri::command]
+pub fn webview_go_back(app: AppHandle, tab_id: String) -> Result<(), String> {
+    core_webview_go_back(&app, &tab_id)
+}
+
+#[tauri::command]
+pub fn webview_go_forward(app: AppHandle, tab_id: String) -> Result<(), String> {
+    core_webview_go_forward(&app, &tab_id)
+}
+
+#[tauri::command]
+pub fn webview_reload(app: AppHandle, tab_id: String) -> Result<(), String> {
+    core_webview_reload(&app, &tab_id)
 }
 
 #[tauri::command]

@@ -213,7 +213,6 @@ export function createDock(
           >
             <span class="material-symbols-outlined text-[17px]">add</span>
             <span class="truncate">New Tab / Search</span>
-            <span class="ml-auto text-[10px] text-[#777] font-mono">^T</span>
           </button>
 
           <!-- Divider line below top buttons -->

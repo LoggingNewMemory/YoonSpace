@@ -371,10 +371,24 @@ pub fn spawn_single_view(app: &AppHandle, req: SingleViewRequest) -> Result<(), 
 
     let url: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
     let app_title = app.clone();
+    let app_load = app.clone();
+    let tab_id_load = tab_id.clone();
     let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(url))
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_title.emit("webview-title-changed", title);
+        })
+        .on_page_load(move |_webview, payload| {
+            use tauri::Emitter;
+            #[derive(Clone, serde::Serialize)]
+            struct UrlChangedPayload {
+                tab_id: String,
+                url: String,
+            }
+            let _ = app_load.emit("webview-url-changed", UrlChangedPayload {
+                tab_id: tab_id_load.clone(),
+                url: payload.url().as_str().to_string(),
+            });
         });
 
     window.add_child(
@@ -433,17 +447,49 @@ pub fn spawn_split_views(app: &AppHandle, req: SplitViewRequest) -> Result<(), S
     let right_url: url::Url = req.right_url.parse().map_err(|e: url::ParseError| e.to_string())?;
 
     let app_left = app.clone();
+    let app_left_load = app.clone();
+    let tab_id_left = tab_id.clone();
     let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(left_url))
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_left.emit("webview-split-left-title-changed", title);
+        })
+        .on_page_load(move |_webview, payload| {
+            use tauri::Emitter;
+            #[derive(Clone, serde::Serialize)]
+            struct SplitUrlPayload {
+                tab_id: String,
+                pane: String,
+                url: String,
+            }
+            let _ = app_left_load.emit("webview-split-url-changed", SplitUrlPayload {
+                tab_id: tab_id_left.clone(),
+                pane: "left".to_string(),
+                url: payload.url().as_str().to_string(),
+            });
         });
 
     let app_right = app.clone();
+    let app_right_load = app.clone();
+    let tab_id_right = tab_id.clone();
     let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(right_url))
         .on_document_title_changed(move |_webview, title| {
             use tauri::Emitter;
             let _ = app_right.emit("webview-split-right-title-changed", title);
+        })
+        .on_page_load(move |_webview, payload| {
+            use tauri::Emitter;
+            #[derive(Clone, serde::Serialize)]
+            struct SplitUrlPayload {
+                tab_id: String,
+                pane: String,
+                url: String,
+            }
+            let _ = app_right_load.emit("webview-split-url-changed", SplitUrlPayload {
+                tab_id: tab_id_right.clone(),
+                pane: "right".to_string(),
+                url: payload.url().as_str().to_string(),
+            });
         });
 
     window.add_child(
@@ -507,6 +553,69 @@ pub fn navigate_split_view(app: &AppHandle, pane: &str, target_url: &str) -> Res
         Ok(())
     } else {
         Err(format!("Webview '{}' not active", label))
+    }
+}
+
+pub fn navigate_tab_view(app: &AppHandle, target: &str, target_url: &str) -> Result<(), String> {
+    let parsed: url::Url = target_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    if let Some(view) = app.get_webview(target) {
+        view.navigate(parsed).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let left_label = format!("{}_left", target);
+    if let Some(view) = app.get_webview(&left_label) {
+        view.navigate(parsed).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    Err(format!("Webview '{}' not found", target))
+}
+
+pub fn webview_go_back(app: &AppHandle, target: &str) -> Result<(), String> {
+    if let Some(view) = app.get_webview(target) {
+        let _ = view.eval("window.history.back()");
+        return Ok(());
+    }
+    let left_label = format!("{}_left", target);
+    if let Some(view) = app.get_webview(&left_label) {
+        let _ = view.eval("window.history.back()");
+        return Ok(());
+    }
+    Err(format!("Webview '{}' not found", target))
+}
+
+pub fn webview_go_forward(app: &AppHandle, target: &str) -> Result<(), String> {
+    if let Some(view) = app.get_webview(target) {
+        let _ = view.eval("window.history.forward()");
+        return Ok(());
+    }
+    let left_label = format!("{}_left", target);
+    if let Some(view) = app.get_webview(&left_label) {
+        let _ = view.eval("window.history.forward()");
+        return Ok(());
+    }
+    Err(format!("Webview '{}' not found", target))
+}
+
+pub fn webview_reload(app: &AppHandle, target: &str) -> Result<(), String> {
+    if let Some(view) = app.get_webview(target) {
+        let _ = view.eval("window.location.reload()");
+        return Ok(());
+    }
+    let left_label = format!("{}_left", target);
+    let right_label = format!("{}_right", target);
+    let mut found = false;
+    if let Some(view) = app.get_webview(&left_label) {
+        let _ = view.eval("window.location.reload()");
+        found = true;
+    }
+    if let Some(view) = app.get_webview(&right_label) {
+        let _ = view.eval("window.location.reload()");
+        found = true;
+    }
+    if found {
+        Ok(())
+    } else {
+        Err(format!("Webview '{}' not found", target))
     }
 }
 

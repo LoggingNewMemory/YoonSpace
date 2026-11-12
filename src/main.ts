@@ -127,6 +127,29 @@ async function handleSpawnPreset(preset: SplitPreset) {
 async function handleSearch(query: string, engineId: string) {
   const targetUrl = normalizeUrl(query, engineId);
   const displayTitle = deriveTitleFromInput(query);
+
+  // If a single tab is currently active and open, navigate it in-place instead of creating a new tab!
+  if (isViewOpen && activeTab && !activeTab.isSplit) {
+    activeTab.url = targetUrl;
+    activeTab.query = query;
+    activeTab.title = displayTitle;
+
+    dock.updateTabTitle(activeTab.id, displayTitle);
+    webBar.setSingleMode(displayTitle);
+
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = query;
+    }
+
+    try {
+      await tauriIpc.navigateTab(activeTab.id, targetUrl);
+    } catch (e) {
+      console.error("Failed to navigate current tab:", e);
+    }
+    return;
+  }
+
   const tabId = "tab-" + Date.now();
 
   activeTab = {
@@ -452,7 +475,7 @@ async function handleRestoreTab(tab: MinimizedTab) {
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
     if (omnibarInput) {
-      omnibarInput.value = tab.query || tab.title || tab.url || "";
+      omnibarInput.value = tab.url || tab.query || tab.title || "";
     }
   } catch (e) {
     console.error("Failed to restore tab:", e);
@@ -536,10 +559,31 @@ async function init() {
 
   currentConfig = await tauriIpc.getAppConfig();
 
+  const handleBack = () => {
+    if (isViewOpen && activeTab) {
+      tauriIpc.goBack(activeTab.id);
+    }
+  };
+
+  const handleForward = () => {
+    if (isViewOpen && activeTab) {
+      tauriIpc.goForward(activeTab.id);
+    }
+  };
+
+  const handleReload = () => {
+    if (isViewOpen && activeTab) {
+      tauriIpc.reload(activeTab.id);
+    }
+  };
+
   // 1. Titlebar (Fixed at top, height: 80px)
   const titlebar = createTitlebar(
     (url) => handleSearch(url, currentConfig.active_search_engine),
-    handleHomeClick
+    handleHomeClick,
+    handleBack,
+    handleForward,
+    handleReload
   );
   app.appendChild(titlebar);
 
@@ -582,10 +626,20 @@ async function init() {
   app.appendChild(dock.element);
 
   // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar (Arc / Zen style)
+  // Navigation shortcuts: Alt+Left (Back), Alt+Right (Forward), F5/Ctrl+R (Reload)
   window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
       e.preventDefault();
       dock.toggleExpanded();
+    } else if ((e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) && isViewOpen && activeTab) {
+      e.preventDefault();
+      handleReload();
+    } else if (e.altKey && e.key === "ArrowLeft" && isViewOpen && activeTab) {
+      e.preventDefault();
+      handleBack();
+    } else if (e.altKey && e.key === "ArrowRight" && isViewOpen && activeTab) {
+      e.preventDefault();
+      handleForward();
     }
   });
 
@@ -639,6 +693,35 @@ async function init() {
       const combined = `${activeTab.leftTitle || "Left"} | ${event.payload}`;
       activeTab.title = combined;
       dock.updateTabTitle(activeTab.id, combined, activeTab.leftTitle, event.payload);
+    }
+  });
+
+  // 6. Real-time URL synchronization (In-page link clicks, redirects, history navigation)
+  tauriIpc.listen<{ tab_id: string; url: string }>("webview-url-changed", (event) => {
+    const { tab_id, url } = event.payload;
+    const tab = dock.getTab(tab_id);
+    if (tab) {
+      tab.url = url;
+    }
+    if (activeTab && activeTab.id === tab_id) {
+      activeTab.url = url;
+      const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+      if (omnibarInput && document.activeElement !== omnibarInput) {
+        omnibarInput.value = url;
+      }
+    }
+  });
+
+  tauriIpc.listen<{ tab_id: string; pane: "left" | "right"; url: string }>("webview-split-url-changed", (event) => {
+    const { tab_id, pane, url } = event.payload;
+    const tab = dock.getTab(tab_id);
+    if (tab) {
+      if (pane === "left") tab.leftUrl = url;
+      if (pane === "right") tab.rightUrl = url;
+    }
+    if (activeTab && activeTab.id === tab_id) {
+      if (pane === "left") activeTab.leftUrl = url;
+      if (pane === "right") activeTab.rightUrl = url;
     }
   });
 
