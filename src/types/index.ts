@@ -19,6 +19,7 @@ export interface MemoryStats {
   total_rss_mb: number;  // Total VmRSS (including shared system libs)
   shared_mb: number;     // Shared library pages
   virtual_mb: number;    // Virtual address space
+  gpu_renderer?: string; // Active GPU render node/device
 }
 
 export interface SearchEngine {

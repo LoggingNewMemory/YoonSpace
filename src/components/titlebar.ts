@@ -207,7 +207,8 @@ export function createTitlebar(
         ramBadge.textContent = `${stats.resident_mb.toFixed(0)} MB RAM`;
       }
       if (badgeContainer && stats) {
-        badgeContainer.title = `Private RAM: ${stats.resident_mb} MB\nTotal RSS: ${stats.total_rss_mb} MB (incl. shared OS libs)\nShared Libs: ${stats.shared_mb} MB`;
+        const gpuInfo = stats.gpu_renderer ? `\nGPU: ${stats.gpu_renderer}` : "";
+        badgeContainer.title = `Private RAM: ${stats.resident_mb} MB\nTotal RSS: ${stats.total_rss_mb} MB (incl. shared OS libs)\nShared Libs: ${stats.shared_mb} MB${gpuInfo}`;
       }
     })
     .catch((err) => {

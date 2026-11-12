@@ -132,6 +132,47 @@ pub fn configure_universal_igpu() {
                     std::env::set_var("VK_LOADER_DRIVERS_SELECT", "*radv*:*amd*");
                 }
             }
+
+            eprintln!(
+                "[YoonSpace GPU] Prioritized Integrated GPU: {} ({}) via Mesa",
+                target_igpu.card, dri_prime_val
+            );
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_active_gpu_name() -> String {
+    let pid = std::process::id();
+    let fd_dir = format!("/proc/{}/fd", pid);
+    if let Ok(entries) = std::fs::read_dir(fd_dir) {
+        for entry in entries.flatten() {
+            if let Ok(link) = std::fs::read_link(entry.path()) {
+                let s = link.to_string_lossy();
+                if let Some(idx) = s.find("renderD") {
+                    let render_node = &s[idx..];
+                    let render_name = render_node.split('/').next().unwrap_or(render_node);
+                    let dev_vendor_path = format!("/sys/class/drm/{}/device/vendor", render_name);
+                    let vendor = std::fs::read_to_string(dev_vendor_path)
+                        .map(|v| v.trim().to_lowercase())
+                        .unwrap_or_default();
+                    if vendor == "0x8086" {
+                        return format!("Intel Iris/UHD iGPU ({})", render_name);
+                    } else if vendor == "0x1002" {
+                        return format!("AMD Radeon iGPU/dGPU ({})", render_name);
+                    } else if vendor == "0x10de" {
+                        return format!("NVIDIA GeForce dGPU ({})", render_name);
+                    } else {
+                        return format!("GPU ({})", render_name);
+                    }
+                }
+            }
+        }
+    }
+    "Integrated GPU (Mesa)".to_string()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn get_active_gpu_name() -> String {
+    "Integrated GPU".to_string()
 }

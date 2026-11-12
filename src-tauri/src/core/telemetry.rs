@@ -23,6 +23,7 @@ pub struct MemoryStats {
     pub total_rss_mb: f64,   // Total VmRSS (including shared system libs)
     pub shared_mb: f64,      // Shared library pages (RssFile + RssShmem)
     pub virtual_mb: f64,     // Total virtual address space
+    pub gpu_renderer: Option<String>,
 }
 
 #[cfg(target_os = "linux")]
@@ -95,11 +96,13 @@ pub fn get_process_memory() -> MemoryStats {
         }
 
         if parsed_any {
+            let gpu_renderer = Some(crate::core::gpu::get_active_gpu_name());
             return MemoryStats {
                 resident_mb: ((total_anon_kb / 1024.0) * 10.0).round() / 10.0,
                 total_rss_mb: ((total_rss_kb / 1024.0) * 10.0).round() / 10.0,
                 shared_mb: (((total_file_kb + total_shmem_kb) / 1024.0) * 10.0).round() / 10.0,
                 virtual_mb: ((total_vm_size_kb / 1024.0) * 10.0).round() / 10.0,
+                gpu_renderer,
             };
         }
     }
@@ -122,11 +125,13 @@ pub fn get_process_memory() -> MemoryStats {
 
     let rss_mb = (total_memory_bytes as f64) / (1024.0 * 1024.0);
     let vm_mb = (total_virtual_bytes as f64) / (1024.0 * 1024.0);
+    let gpu_renderer = Some(crate::core::gpu::get_active_gpu_name());
 
     MemoryStats {
         resident_mb: (rss_mb * 10.0).round() / 10.0,
         total_rss_mb: (rss_mb * 10.0).round() / 10.0,
         shared_mb: 0.0,
         virtual_mb: (vm_mb * 10.0).round() / 10.0,
+        gpu_renderer,
     }
 }
