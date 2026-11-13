@@ -16,7 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AppConfig, MemoryStats, ShieldBlockEvent, ShieldStats, SplitBounds } from "../types";
+import type { AppConfig, MemoryStats, ShieldBlockEvent, ShieldSettings, ShieldStats, SplitBounds, TabBreakdown } from "../types";
 
 export const tauriIpc = {
   // Event listening
@@ -250,7 +250,26 @@ export const tauriIpc = {
       return await invoke<ShieldStats>("get_shield_stats");
     } catch (e) {
       console.warn("get_shield_stats failed:", e);
-      return { enabled: true, total_blocked: 0, tab_blocked: {}, recent_blocked: [] };
+      return {
+        enabled: true,
+        block_trackers: true,
+        upgrade_https: true,
+        aggressive_sandbox: false,
+        total_blocked: 0,
+        total_breakdown: { total: 0, trackers: 0, ads: 0, miners: 0 },
+        tab_blocked: {},
+        tab_breakdown: {},
+        recent_blocked: [],
+      };
+    }
+  },
+
+  async updateShieldSettings(settings: ShieldSettings): Promise<ShieldStats> {
+    try {
+      return await invoke<ShieldStats>("update_shield_settings", { settings });
+    } catch (e) {
+      console.warn("update_shield_settings failed:", e);
+      return this.getShieldStats();
     }
   },
 
@@ -263,6 +282,33 @@ export const tauriIpc = {
     }
   },
 
+  async toggleShieldTrackers(enabled: boolean): Promise<boolean> {
+    try {
+      return await invoke<boolean>("toggle_shield_trackers", { enabled });
+    } catch (e) {
+      console.warn("toggle_shield_trackers failed:", e);
+      return enabled;
+    }
+  },
+
+  async toggleShieldHttps(enabled: boolean): Promise<boolean> {
+    try {
+      return await invoke<boolean>("toggle_shield_https", { enabled });
+    } catch (e) {
+      console.warn("toggle_shield_https failed:", e);
+      return enabled;
+    }
+  },
+
+  async toggleShieldSandbox(enabled: boolean): Promise<boolean> {
+    try {
+      return await invoke<boolean>("toggle_shield_sandbox", { enabled });
+    } catch (e) {
+      console.warn("toggle_shield_sandbox failed:", e);
+      return enabled;
+    }
+  },
+
   async getTabShieldCount(tabId: string): Promise<number> {
     try {
       return await invoke<number>("get_tab_shield_count", { tabId });
@@ -271,11 +317,27 @@ export const tauriIpc = {
     }
   },
 
-  async checkShieldUrl(url: string, sourceUrl?: string): Promise<boolean> {
+  async getTabShieldBreakdown(tabId: string): Promise<TabBreakdown> {
     try {
-      return await invoke<boolean>("check_shield_url", { url, sourceUrl });
+      return await invoke<TabBreakdown>("get_tab_shield_breakdown", { tabId });
+    } catch {
+      return { total: 0, trackers: 0, ads: 0, miners: 0 };
+    }
+  },
+
+  async checkShieldUrl(url: string, sourceUrl?: string, reqType?: string): Promise<boolean> {
+    try {
+      return await invoke<boolean>("check_shield_url", { url, sourceUrl, reqType });
     } catch {
       return false;
+    }
+  },
+
+  async recordShieldBlock(tabId: string, url: string, category?: string): Promise<void> {
+    try {
+      await invoke("record_shield_block", { tabId, url, category });
+    } catch (e) {
+      console.warn("record_shield_block failed:", e);
     }
   },
 

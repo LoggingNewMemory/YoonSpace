@@ -41,6 +41,7 @@ export interface AppConfig {
   active_search_engine: string;
   search_engines: SearchEngine[];
   split_presets: SplitPreset[];
+  shield_settings?: ShieldSettings;
 }
 
 export interface SplitBounds {
@@ -50,25 +51,47 @@ export interface SplitBounds {
   height: number;
 }
 
+export interface ShieldSettings {
+  enabled: boolean;
+  block_trackers: boolean;
+  upgrade_https: boolean;
+  aggressive_sandbox: boolean;
+}
+
+export interface TabBreakdown {
+  total: number;
+  trackers: number;
+  ads: number;
+  miners: number;
+}
+
 export interface BlockedItem {
   url: string;
   domain: string;
+  category: string;
   filter: string;
   timestamp: number;
 }
 
 export interface ShieldStats {
   enabled: boolean;
+  block_trackers: boolean;
+  upgrade_https: boolean;
+  aggressive_sandbox: boolean;
   total_blocked: number;
+  total_breakdown: TabBreakdown;
   tab_blocked: Record<string, number>;
+  tab_breakdown: Record<string, TabBreakdown>;
   recent_blocked: BlockedItem[];
 }
 
 export interface ShieldBlockEvent {
   tab_id: string;
   url: string;
+  category: string;
   tab_count: number;
   total_count: number;
+  tab_breakdown: TabBreakdown;
 }
 
 export interface MinimizedTab {

@@ -206,33 +206,18 @@ export function createTitlebar(
             </div>
             <span id="shield-stat-count" class="text-3xl font-extrabold text-[#e95420] font-mono leading-none">0</span>
           </div>
-          <div class="space-y-2.5 pt-2 border-t border-[#2e2e32]">
-            <div class="space-y-1">
-              <div class="flex justify-between text-[11px]">
-                <span class="text-neutral-300">Trackers &amp; Fingerprinting</span>
-                <span id="shield-stat-trackers" class="font-mono text-white font-medium">0</span>
-              </div>
-              <div class="w-full h-1.5 bg-[#2c2c30] rounded-full overflow-hidden">
-                <div id="shield-bar-trackers" class="h-full bg-[#e95420] rounded-full transition-all duration-300" style="width: 0%;"></div>
-              </div>
+          <div class="space-y-2 pt-2 border-t border-[#2e2e32]">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-neutral-300">Trackers &amp; Fingerprinting</span>
+              <span id="shield-stat-trackers" class="font-mono text-white font-medium">0</span>
             </div>
-            <div class="space-y-1">
-              <div class="flex justify-between text-[11px]">
-                <span class="text-neutral-300">Cross-site Ads &amp; Popups</span>
-                <span id="shield-stat-ads" class="font-mono text-white font-medium">0</span>
-              </div>
-              <div class="w-full h-1.5 bg-[#2c2c30] rounded-full overflow-hidden">
-                <div id="shield-bar-ads" class="h-full bg-amber-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
-              </div>
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-neutral-300">Cross-site Ads &amp; Popups</span>
+              <span id="shield-stat-ads" class="font-mono text-white font-medium">0</span>
             </div>
-            <div class="space-y-1">
-              <div class="flex justify-between text-[11px]">
-                <span class="text-neutral-300">Cryptominers &amp; Malicious Scripts</span>
-                <span id="shield-stat-miners" class="font-mono text-white font-medium">0</span>
-              </div>
-              <div class="w-full h-1.5 bg-[#2c2c30] rounded-full overflow-hidden">
-                <div id="shield-bar-miners" class="h-full bg-rose-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
-              </div>
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-neutral-300">Cryptominers &amp; Malicious Scripts</span>
+              <span id="shield-stat-miners" class="font-mono text-white font-medium">0</span>
             </div>
           </div>
         </div>

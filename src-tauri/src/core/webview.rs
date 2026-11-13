@@ -378,15 +378,28 @@ pub fn normalize_url(raw: &str) -> String {
     }
     if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
         format!("https://{}", trimmed)
+    } else if trimmed.starts_with("http://") {
+        let manager = crate::core::shield::get_shield_manager();
+        if manager.is_upgrade_https()
+            && !trimmed.starts_with("http://localhost")
+            && !trimmed.starts_with("http://127.0.0.1")
+        {
+            format!("https://{}", &trimmed[7..])
+        } else {
+            trimmed.to_string()
+        }
     } else {
         trimmed.to_string()
     }
 }
 
 #[cfg(target_os = "linux")]
-fn attach_load_failed_recovery(webview: &tauri::Webview) {
-    use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt};
-    let _ = webview.with_webview(|platform_webview| {
+fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &str) {
+    use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt, URIRequestExt, WebResourceExt, UserContentManagerExt};
+    let app_handle = app.clone();
+    let tab_id_str = tab_id.to_string();
+
+    let _ = webview.with_webview(move |platform_webview| {
         let inner_wv = platform_webview.inner();
 
         // 1. Optimize WebKitGTK settings for unrestricted media playback & modern web
@@ -404,8 +417,38 @@ fn attach_load_failed_recovery(webview: &tauri::Webview) {
             settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Always);
         }
 
-        // 2. Unblock autoplay policy for media (audio & video) without requiring user gestures
+        // 2. Unblock autoplay policy & filter popup ad windows via Brave adblock-rust
+        let app_popup = app_handle.clone();
+        let tab_id_popup = tab_id_str.clone();
         inner_wv.connect_decide_policy(move |_wv, decision, decision_type| {
+            if decision_type == webkit2gtk::PolicyDecisionType::NewWindowAction {
+                use gtk::prelude::Cast;
+                use webkit2gtk::{NavigationPolicyDecisionExt, URIRequestExt};
+                if let Some(nav_action) = decision.dynamic_cast_ref::<webkit2gtk::NavigationPolicyDecision>() {
+                    #[allow(deprecated)]
+                    let req_opt = nav_action.navigation_action().and_then(|na| na.request()).or_else(|| nav_action.request());
+                    if let Some(req) = req_opt {
+                        if let Some(uri) = req.uri() {
+                            let manager = crate::core::shield::get_shield_manager();
+                            if manager.is_enabled() {
+                                let (should_block, category) = manager.check_url_categorized(uri.as_str(), "", "subdocument");
+                                if should_block {
+                                    decision.ignore();
+                                    crate::commands::shield::record_and_emit_block(
+                                        &app_popup,
+                                        &tab_id_popup,
+                                        uri.as_str(),
+                                        Some(category),
+                                        1,
+                                    );
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction
                 || decision_type == webkit2gtk::PolicyDecisionType::NewWindowAction
             {
@@ -418,7 +461,90 @@ fn attach_load_failed_recovery(webview: &tauri::Webview) {
             false
         });
 
-        // 3. Load interruption recovery
+        // 3. Subresource blocking & HTTPS upgrade at the WebKitGTK network boundary
+        let app_resource = app_handle.clone();
+        let tab_id_resource = tab_id_str.clone();
+        inner_wv.connect_resource_load_started(move |wv, web_resource, req| {
+            let manager = crate::core::shield::get_shield_manager();
+            if !manager.is_enabled() {
+                return;
+            }
+            if let Some(uri) = req.uri() {
+                let uri_str = uri.as_str();
+                if uri_str.starts_with("http://") || uri_str.starts_with("https://") {
+                    // HTTPS upgrading
+                    if manager.is_upgrade_https()
+                        && uri_str.starts_with("http://")
+                        && !uri_str.starts_with("http://localhost")
+                        && !uri_str.starts_with("http://127.0.0.1")
+                    {
+                        let upgraded = format!("https://{}", &uri_str[7..]);
+                        req.set_uri(&upgraded);
+                    }
+
+                    let page_url = wv.uri().map(|u| u.to_string()).unwrap_or_default();
+                    let res_uri = web_resource.uri().map(|u| u.to_string()).unwrap_or_default();
+
+                    // Do not block top-level main frame navigation
+                    if !page_url.is_empty() && (uri_str == page_url || res_uri == page_url) {
+                        return;
+                    }
+
+                    let (should_block, category) = manager.check_url_categorized(uri_str, &page_url, "other");
+                    if should_block {
+                        req.set_uri("about:blank");
+                        crate::commands::shield::record_and_emit_block(
+                            &app_resource,
+                            &tab_id_resource,
+                            uri_str,
+                            Some(category),
+                            1,
+                        );
+                    }
+                }
+            }
+        });
+
+        // 4. Script message handler for in-page blocks & cosmetic elements
+        if let Some(ucm) = inner_wv.user_content_manager() {
+            let app_msg = app_handle.clone();
+            let tab_id_msg = tab_id_str.clone();
+            ucm.connect_script_message_received(Some("shield_block"), move |_ucm, js_res| {
+                if let Some(js_val) = js_res.js_value() {
+                    use javascriptcore::ValueExt;
+                    let msg_str = js_val.to_str();
+                    #[derive(serde::Deserialize)]
+                    struct ScriptBlockPayload {
+                        #[serde(rename = "tabId")]
+                        tab_id: Option<String>,
+                        url: Option<String>,
+                        category: Option<String>,
+                        count: Option<u64>,
+                    }
+                    if let Ok(payload) = serde_json::from_str::<ScriptBlockPayload>(msg_str.as_str()) {
+                        let target_tab = payload.tab_id.as_deref().unwrap_or(&tab_id_msg);
+                        let target_url = payload.url.as_deref().unwrap_or("shield-block");
+                        let override_cat = payload.category.as_deref().and_then(|c| match c.to_lowercase().as_str() {
+                            "tracker" => Some(crate::core::shield::ShieldCategory::Tracker),
+                            "miner" => Some(crate::core::shield::ShieldCategory::Miner),
+                            "ad" => Some(crate::core::shield::ShieldCategory::Ad),
+                            _ => None,
+                        });
+                        let count = payload.count.unwrap_or(1);
+                        crate::commands::shield::record_and_emit_block(
+                            &app_msg,
+                            target_tab,
+                            target_url,
+                            override_cat,
+                            count,
+                        );
+                    }
+                }
+            });
+            let _ = ucm.register_script_message_handler("shield_block");
+        }
+
+        // 5. Load interruption recovery
         let last_interrupted = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
 
         let last_clone = last_interrupted.clone();
@@ -492,8 +618,12 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
                 url: payload.url().as_str().to_string(),
             });
 
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                crate::core::shield::get_shield_manager().reset_tab(&tab_id_load);
+            }
+
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                crate::core::shield::inject_page_cosmetics(&webview, payload.url().as_str());
+                crate::core::shield::inject_page_cosmetics(&webview, &tab_id_load, payload.url().as_str());
             }
         });
 
@@ -505,7 +635,7 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
 
     #[cfg(target_os = "linux")]
     {
-        attach_load_failed_recovery(&single_view);
+        configure_native_webview(app, &single_view, &tab_id);
         gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
         gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
     }
@@ -579,8 +709,12 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
                 url: payload.url().as_str().to_string(),
             });
 
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                crate::core::shield::get_shield_manager().reset_tab(&tab_id_left);
+            }
+
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                crate::core::shield::inject_page_cosmetics(&webview, payload.url().as_str());
+                crate::core::shield::inject_page_cosmetics(&webview, &tab_id_left, payload.url().as_str());
             }
         });
 
@@ -608,8 +742,12 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
                 url: payload.url().as_str().to_string(),
             });
 
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                crate::core::shield::get_shield_manager().reset_tab(&tab_id_right);
+            }
+
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                crate::core::shield::inject_page_cosmetics(&webview, payload.url().as_str());
+                crate::core::shield::inject_page_cosmetics(&webview, &tab_id_right, payload.url().as_str());
             }
         });
 
@@ -627,8 +765,8 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
 
     #[cfg(target_os = "linux")]
     {
-        attach_load_failed_recovery(&left_webview);
-        attach_load_failed_recovery(&right_webview);
+        configure_native_webview(app, &left_webview, &left_label);
+        configure_native_webview(app, &right_webview, &right_label);
         gtk_overlay::attach_split_views(app, &tab_id, req.bounds)?;
         gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
     }

@@ -22,9 +22,11 @@
 // Filter syntax: EasyList, EasyPrivacy, and Brave Unbreak specifications.
 
 import { tauriIpc } from "../services/tauri_ipc";
+import type { TabBreakdown } from "../types";
 
 export interface ShieldController {
   updateCount: (count: number) => void;
+  updateBreakdown: (breakdown: TabBreakdown) => void;
   setDomain: (domain: string) => void;
   togglePopover: () => void;
   closePopover: () => void;
@@ -38,24 +40,26 @@ export function initShieldUI(
   onToggle?: (isOpen: boolean) => void
 ): ShieldController {
   let isShieldEnabled = true;
-  let currentTabCount = 0;
+  let currentBreakdown: TabBreakdown = { total: 0, trackers: 0, ads: 0, miners: 0 };
 
   const toggleInput = sidebar.querySelector("#shield-toggle-input") as HTMLInputElement | null;
+  const optTrackers = sidebar.querySelector("#shield-opt-trackers") as HTMLInputElement | null;
+  const optHttps = sidebar.querySelector("#shield-opt-https") as HTMLInputElement | null;
+  const optSandbox = sidebar.querySelector("#shield-opt-sandbox") as HTMLInputElement | null;
+
   const siteDomainEl = sidebar.querySelector("#shield-site-domain") as HTMLElement | null;
   const statCountEl = sidebar.querySelector("#shield-stat-count") as HTMLElement | null;
   const statTrackersEl = sidebar.querySelector("#shield-stat-trackers") as HTMLElement | null;
-  const barTrackersEl = sidebar.querySelector("#shield-bar-trackers") as HTMLElement | null;
   const statAdsEl = sidebar.querySelector("#shield-stat-ads") as HTMLElement | null;
-  const barAdsEl = sidebar.querySelector("#shield-bar-ads") as HTMLElement | null;
   const statMinersEl = sidebar.querySelector("#shield-stat-miners") as HTMLElement | null;
-  const barMinersEl = sidebar.querySelector("#shield-bar-miners") as HTMLElement | null;
 
   // Initialize initial state from backend
   tauriIpc.getShieldStats().then((stats) => {
     isShieldEnabled = stats.enabled;
-    if (toggleInput) {
-      toggleInput.checked = isShieldEnabled;
-    }
+    if (toggleInput) toggleInput.checked = stats.enabled;
+    if (optTrackers) optTrackers.checked = stats.block_trackers;
+    if (optHttps) optHttps.checked = stats.upgrade_https;
+    if (optSandbox) optSandbox.checked = stats.aggressive_sandbox;
     updateVisualState();
   });
 
@@ -64,13 +68,15 @@ export function initShieldUI(
       toggleInput.checked = isShieldEnabled;
     }
 
+    const total = currentBreakdown.total;
+
     if (isShieldEnabled) {
       shieldIcon.textContent = "shield";
-      if (currentTabCount > 0) {
+      if (total > 0) {
         shieldBtn.className =
           "h-7 min-w-[28px] px-1.5 rounded-lg flex items-center justify-center gap-1 text-[#f85e2a] hover:text-[#ff7e4f] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
         countBadge.classList.remove("hidden");
-        countBadge.textContent = currentTabCount.toString();
+        countBadge.textContent = total.toString();
       } else {
         shieldBtn.className =
           "w-7 h-7 rounded-lg flex items-center justify-center text-[#f85e2a] hover:text-[#ff7e4f] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
@@ -84,41 +90,51 @@ export function initShieldUI(
     }
 
     if (statCountEl) {
-      statCountEl.textContent = currentTabCount.toString();
+      statCountEl.textContent = total.toString();
     }
 
-    // Dynamic breakdown bars matching Stitch design
-    if (currentTabCount > 0) {
-      const trackers = Math.round(currentTabCount * 0.55);
-      const ads = Math.round(currentTabCount * 0.35);
-      const miners = Math.max(0, currentTabCount - trackers - ads);
-
-      if (statTrackersEl) statTrackersEl.textContent = trackers.toString();
-      if (statAdsEl) statAdsEl.textContent = ads.toString();
-      if (statMinersEl) statMinersEl.textContent = miners.toString();
-
-      if (barTrackersEl) barTrackersEl.style.width = `${Math.min(100, Math.round((trackers / currentTabCount) * 100))}%`;
-      if (barAdsEl) barAdsEl.style.width = `${Math.min(100, Math.round((ads / currentTabCount) * 100))}%`;
-      if (barMinersEl) barMinersEl.style.width = `${Math.min(100, Math.round((miners / currentTabCount) * 100))}%`;
-    } else {
-      if (statTrackersEl) statTrackersEl.textContent = "0";
-      if (statAdsEl) statAdsEl.textContent = "0";
-      if (statMinersEl) statMinersEl.textContent = "0";
-      if (barTrackersEl) barTrackersEl.style.width = "0%";
-      if (barAdsEl) barAdsEl.style.width = "0%";
-      if (barMinersEl) barMinersEl.style.width = "0%";
-    }
+    if (statTrackersEl) statTrackersEl.textContent = currentBreakdown.trackers.toString();
+    if (statAdsEl) statAdsEl.textContent = currentBreakdown.ads.toString();
+    if (statMinersEl) statMinersEl.textContent = currentBreakdown.miners.toString();
   }
 
+  // Toggles connected to backend
   toggleInput?.addEventListener("change", async () => {
     const nextState = toggleInput.checked;
     isShieldEnabled = await tauriIpc.toggleShield(nextState);
     updateVisualState();
   });
 
-  function openPopover() {
+  optTrackers?.addEventListener("change", async () => {
+    if (optTrackers) {
+      await tauriIpc.toggleShieldTrackers(optTrackers.checked);
+    }
+  });
+
+  optHttps?.addEventListener("change", async () => {
+    if (optHttps) {
+      await tauriIpc.toggleShieldHttps(optHttps.checked);
+    }
+  });
+
+  optSandbox?.addEventListener("change", async () => {
+    if (optSandbox) {
+      await tauriIpc.toggleShieldSandbox(optSandbox.checked);
+    }
+  });
+
+  async function openPopover() {
     sidebar.classList.remove("hidden");
     onToggle?.(true);
+    try {
+      const stats = await tauriIpc.getShieldStats();
+      isShieldEnabled = stats.enabled;
+      if (toggleInput) toggleInput.checked = stats.enabled;
+      if (optTrackers) optTrackers.checked = stats.block_trackers;
+      if (optHttps) optHttps.checked = stats.upgrade_https;
+      if (optSandbox) optSandbox.checked = stats.aggressive_sandbox;
+      updateVisualState();
+    } catch {}
   }
 
   function closePopover() {
@@ -147,7 +163,11 @@ export function initShieldUI(
 
   return {
     updateCount: (count: number) => {
-      currentTabCount = count;
+      currentBreakdown.total = count;
+      updateVisualState();
+    },
+    updateBreakdown: (breakdown: TabBreakdown) => {
+      currentBreakdown = { ...breakdown };
       updateVisualState();
     },
     setDomain: (domain: string) => {

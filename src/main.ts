@@ -44,6 +44,26 @@ function getSplitBounds(): SplitBounds {
   };
 }
 
+function updateShieldForTab(tab: MinimizedTab | null) {
+  const header = document.querySelector("header") as any;
+  if (!header || !header.shieldController) return;
+  if (!tab) {
+    header.shieldController.setDomain("YoonSpace");
+    header.shieldController.updateBreakdown({ total: 0, trackers: 0, ads: 0, miners: 0 });
+    return;
+  }
+  const targetUrl = tab.url || tab.leftUrl || "";
+  try {
+    const domain = new URL(targetUrl).hostname;
+    header.shieldController.setDomain(domain);
+  } catch {
+    header.shieldController.setDomain("Current Website");
+  }
+  tauriIpc.getTabShieldBreakdown(tab.id).then((breakdown) => {
+    header.shieldController.updateBreakdown(breakdown);
+  });
+}
+
 function normalizeUrl(input: string, activeEngineId: string): string {
   const trimmed = input.trim();
   if (!trimmed) return "https://google.com";
@@ -129,6 +149,7 @@ async function handleSpawnPreset(preset: SplitPreset) {
       indicator.classList.add("flex");
       indicator.querySelector("span:nth-child(2)")!.textContent = preset.title;
     }
+    updateShieldForTab(activeTab);
   } catch (e) {
     console.error("Failed to spawn preset:", e);
   }
@@ -154,6 +175,7 @@ async function handleSearch(query: string, engineId: string) {
 
     try {
       await tauriIpc.navigateTab(activeTab.id, targetUrl);
+      updateShieldForTab(activeTab);
     } catch (e) {
       console.error("Failed to navigate current tab:", e);
     }
@@ -197,6 +219,7 @@ async function handleSearch(query: string, engineId: string) {
       indicator.classList.add("hidden");
       indicator.classList.remove("flex");
     }
+    updateShieldForTab(activeTab);
   } catch (e) {
     console.error("Failed to spawn single view:", e);
   }
@@ -252,6 +275,7 @@ async function handleCloseTab(tabId: string) {
     }
 
     // No tabs remain: return to Welcome screen
+    updateShieldForTab(null);
     const mainCanvas = document.getElementById("main-canvas");
     if (mainCanvas) {
       mainCanvas.classList.remove("hidden");
@@ -489,14 +513,7 @@ async function handleRestoreTab(tab: MinimizedTab) {
       omnibarInput.value = tab.url || tab.query || tab.title || "";
     }
 
-    try {
-      const targetUrl = tab.url || tab.leftUrl || "";
-      const domain = new URL(targetUrl).hostname;
-      (document.querySelector("header") as any)?.shieldController?.setDomain(domain);
-    } catch {}
-    tauriIpc.getTabShieldCount(tab.id).then((count) => {
-      (document.querySelector("header") as any)?.shieldController?.updateCount(count);
-    });
+    updateShieldForTab(tab);
   } catch (e) {
     console.error("Failed to restore tab:", e);
   }
@@ -516,8 +533,7 @@ async function handleHomeClick() {
     isViewOpen = false;
     webBar.hide();
 
-    (document.querySelector("header") as any)?.shieldController?.setDomain("YoonSpace");
-    (document.querySelector("header") as any)?.shieldController?.updateCount(0);
+    updateShieldForTab(null);
 
     const mainCanvas = document.getElementById("main-canvas");
     if (mainCanvas) {
@@ -745,13 +761,7 @@ async function init() {
       if (omnibarInput && document.activeElement !== omnibarInput) {
         omnibarInput.value = url;
       }
-      try {
-        const domain = new URL(url).hostname;
-        (titlebar as any).shieldController?.setDomain(domain);
-      } catch {}
-      tauriIpc.getTabShieldCount(tab_id).then((count) => {
-        (titlebar as any).shieldController?.updateCount(count);
-      });
+      updateShieldForTab(activeTab);
     }
   });
 
@@ -765,17 +775,14 @@ async function init() {
     if (activeTab && activeTab.id === tab_id) {
       if (pane === "left") activeTab.leftUrl = url;
       if (pane === "right") activeTab.rightUrl = url;
-      try {
-        const domain = new URL(url).hostname;
-        (titlebar as any).shieldController?.setDomain(domain);
-      } catch {}
+      updateShieldForTab(activeTab);
     }
   });
 
   // 7. Real-time Shields block events (Brave adblock-rust)
   tauriIpc.onShieldBlocked((event) => {
     if (activeTab && (activeTab.id === event.tab_id || event.tab_id.startsWith(activeTab.id))) {
-      (titlebar as any).shieldController?.updateCount(event.tab_count);
+      (titlebar as any).shieldController?.updateBreakdown(event.tab_breakdown);
     }
   });
 

@@ -36,10 +36,31 @@ pub struct SplitPreset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShieldSettings {
+    pub enabled: bool,
+    pub block_trackers: bool,
+    pub upgrade_https: bool,
+    pub aggressive_sandbox: bool,
+}
+
+impl Default for ShieldSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            block_trackers: true,
+            upgrade_https: true,
+            aggressive_sandbox: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub active_search_engine: String,
     pub search_engines: Vec<SearchEngine>,
     pub split_presets: Vec<SplitPreset>,
+    #[serde(default)]
+    pub shield_settings: ShieldSettings,
 }
 
 impl Default for AppConfig {
@@ -83,6 +104,7 @@ impl Default for AppConfig {
                     right_url: "https://www.youtube.com".to_string(),
                 },
             ],
+            shield_settings: ShieldSettings::default(),
         }
     }
 }
