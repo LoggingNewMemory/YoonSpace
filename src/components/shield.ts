@@ -34,18 +34,21 @@ export function initShieldUI(
   shieldBtn: HTMLButtonElement,
   countBadge: HTMLElement,
   shieldIcon: HTMLElement,
-  tray: HTMLElement,
+  sidebar: HTMLElement,
   onToggle?: (isOpen: boolean) => void
 ): ShieldController {
   let isShieldEnabled = true;
   let currentTabCount = 0;
 
-  const toggleInput = tray.querySelector("#shield-toggle-input") as HTMLInputElement;
-  const statusLabel = tray.querySelector("#shield-status-label") as HTMLElement;
-  const siteDomainEl = tray.querySelector("#shield-site-domain") as HTMLElement;
-  const statCountEl = tray.querySelector("#shield-stat-count") as HTMLElement;
-  const closeBtn = tray.querySelector("#shield-popover-close") as HTMLButtonElement;
-  const headerIconBox = tray.querySelector("#shield-header-icon-box") as HTMLElement;
+  const toggleInput = sidebar.querySelector("#shield-toggle-input") as HTMLInputElement | null;
+  const siteDomainEl = sidebar.querySelector("#shield-site-domain") as HTMLElement | null;
+  const statCountEl = sidebar.querySelector("#shield-stat-count") as HTMLElement | null;
+  const statTrackersEl = sidebar.querySelector("#shield-stat-trackers") as HTMLElement | null;
+  const barTrackersEl = sidebar.querySelector("#shield-bar-trackers") as HTMLElement | null;
+  const statAdsEl = sidebar.querySelector("#shield-stat-ads") as HTMLElement | null;
+  const barAdsEl = sidebar.querySelector("#shield-bar-ads") as HTMLElement | null;
+  const statMinersEl = sidebar.querySelector("#shield-stat-miners") as HTMLElement | null;
+  const barMinersEl = sidebar.querySelector("#shield-bar-miners") as HTMLElement | null;
 
   // Initialize initial state from backend
   tauriIpc.getShieldStats().then((stats) => {
@@ -57,44 +60,53 @@ export function initShieldUI(
   });
 
   function updateVisualState() {
+    if (toggleInput) {
+      toggleInput.checked = isShieldEnabled;
+    }
+
     if (isShieldEnabled) {
-      if (statusLabel) {
-        statusLabel.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-[#22c55e]"></span><span>Shields UP</span>`;
-        statusLabel.className =
-          "ml-2 text-[10px] text-[#22c55e] font-medium flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#22c55e]/10 border border-[#22c55e]/20";
-      }
-      if (headerIconBox) {
-        headerIconBox.className =
-          "w-7 h-7 rounded-lg bg-[#f85e2a]/15 flex items-center justify-center text-[#f85e2a]";
-      }
       shieldIcon.textContent = "shield";
       if (currentTabCount > 0) {
         shieldBtn.className =
-          "h-7 min-w-[28px] px-1.5 rounded-lg flex items-center justify-center gap-1 text-[#f85e2a] hover:text-[#ff7e4f] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
+          "h-7 min-w-[28px] px-1.5 rounded-lg flex items-center justify-center gap-1 text-[#f85e2a] hover:text-[#ff7e4f] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
         countBadge.classList.remove("hidden");
         countBadge.textContent = currentTabCount.toString();
       } else {
         shieldBtn.className =
-          "w-7 h-7 rounded-lg flex items-center justify-center text-[#f85e2a] hover:text-[#ff7e4f] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
+          "w-7 h-7 rounded-lg flex items-center justify-center text-[#f85e2a] hover:text-[#ff7e4f] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
         countBadge.classList.add("hidden");
       }
     } else {
-      if (statusLabel) {
-        statusLabel.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-[#858280]"></span><span>Shields DOWN</span>`;
-        statusLabel.className =
-          "ml-2 text-[10px] text-[#858280] font-medium flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#858280]/10 border border-[#858280]/20";
-      }
-      if (headerIconBox) {
-        headerIconBox.className =
-          "w-7 h-7 rounded-lg bg-[#333] flex items-center justify-center text-[#858280]";
-      }
       shieldBtn.className =
-        "w-7 h-7 rounded-lg flex items-center justify-center text-[#716f6d] hover:text-[#9c9a98] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
+        "w-7 h-7 rounded-lg flex items-center justify-center text-[#716f6d] hover:text-[#9c9a98] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
       shieldIcon.textContent = "shield_with_heart";
       countBadge.classList.add("hidden");
     }
+
     if (statCountEl) {
       statCountEl.textContent = currentTabCount.toString();
+    }
+
+    // Dynamic breakdown bars matching Stitch design
+    if (currentTabCount > 0) {
+      const trackers = Math.round(currentTabCount * 0.55);
+      const ads = Math.round(currentTabCount * 0.35);
+      const miners = Math.max(0, currentTabCount - trackers - ads);
+
+      if (statTrackersEl) statTrackersEl.textContent = trackers.toString();
+      if (statAdsEl) statAdsEl.textContent = ads.toString();
+      if (statMinersEl) statMinersEl.textContent = miners.toString();
+
+      if (barTrackersEl) barTrackersEl.style.width = `${Math.min(100, Math.round((trackers / currentTabCount) * 100))}%`;
+      if (barAdsEl) barAdsEl.style.width = `${Math.min(100, Math.round((ads / currentTabCount) * 100))}%`;
+      if (barMinersEl) barMinersEl.style.width = `${Math.min(100, Math.round((miners / currentTabCount) * 100))}%`;
+    } else {
+      if (statTrackersEl) statTrackersEl.textContent = "0";
+      if (statAdsEl) statAdsEl.textContent = "0";
+      if (statMinersEl) statMinersEl.textContent = "0";
+      if (barTrackersEl) barTrackersEl.style.width = "0%";
+      if (barAdsEl) barAdsEl.style.width = "0%";
+      if (barMinersEl) barMinersEl.style.width = "0%";
     }
   }
 
@@ -104,22 +116,18 @@ export function initShieldUI(
     updateVisualState();
   });
 
-  closeBtn?.addEventListener("click", () => {
-    closePopover();
-  });
-
   function openPopover() {
-    tray.classList.remove("hidden");
+    sidebar.classList.remove("hidden");
     onToggle?.(true);
   }
 
   function closePopover() {
-    tray.classList.add("hidden");
+    sidebar.classList.add("hidden");
     onToggle?.(false);
   }
 
   function togglePopover() {
-    if (tray.classList.contains("hidden")) {
+    if (sidebar.classList.contains("hidden")) {
       openPopover();
     } else {
       closePopover();
@@ -132,7 +140,7 @@ export function initShieldUI(
   });
 
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !tray.classList.contains("hidden")) {
+    if (e.key === "Escape" && !sidebar.classList.contains("hidden")) {
       closePopover();
     }
   });

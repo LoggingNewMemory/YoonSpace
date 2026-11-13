@@ -36,6 +36,7 @@ export interface WebBarController {
   isSplit: () => boolean;
   setLeftOffset: (offset: number) => void;
   setTopOffset: (offset: number) => void;
+  setRightOffset: (offset: number) => void;
 }
 
 export function createWebBar(
@@ -53,7 +54,7 @@ export function createWebBar(
   const container = document.createElement("div");
   container.id = "web-header-bar";
   container.className =
-    "hidden fixed top-20 left-16 right-0 h-7 z-40 px-0 flex items-center border-b border-[#353535]/40 select-none shadow-sm bg-[#242426] transition-[left] duration-200 ease-out";
+    "hidden fixed top-20 left-16 right-0 h-7 z-40 px-0 flex items-center border-b border-[#353535]/40 select-none shadow-sm bg-[#242426] transition-[left,right] duration-200 ease-out";
 
   container.innerHTML = `
     <!-- Single View Header Bar -->
@@ -297,6 +298,9 @@ export function createWebBar(
     },
     setTopOffset: (offset: number) => {
       container.style.top = `${offset}px`;
+    },
+    setRightOffset: (offset: number) => {
+      container.style.right = `${offset}px`;
     },
   };
 }

@@ -79,6 +79,10 @@ pub mod gtk_overlay {
                     child.set_widget_name(&tab_id);
                     child.set_margin_start(bounds.x as i32);
                     child.set_margin_top(bounds.y as i32);
+                    let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
+                    let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
+                    let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
+                    child.set_margin_end(margin_end);
                     child.set_halign(gtk::Align::Fill);
                     child.set_valign(gtk::Align::Fill);
                     child.set_hexpand(true);
@@ -137,6 +141,10 @@ pub mod gtk_overlay {
 
                 split_box.set_margin_start(bounds.x as i32);
                 split_box.set_margin_top(bounds.y as i32);
+                let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
+                let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
+                let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
+                split_box.set_margin_end(margin_end);
                 split_box.set_halign(gtk::Align::Fill);
                 split_box.set_valign(gtk::Align::Fill);
                 split_box.set_hexpand(true);
@@ -174,6 +182,10 @@ pub mod gtk_overlay {
                             if child.widget_name().as_str() == tab_id.as_str() {
                                 child.set_margin_start(bounds.x as i32);
                                 child.set_margin_top(bounds.y as i32);
+                                let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
+                                let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
+                                let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
+                                child.set_margin_end(margin_end);
                                 if let Ok(container) = child.clone().dynamic_cast::<gtk::Container>() {
                                     for c in container.children() {
                                         c.show_all();
@@ -284,10 +296,15 @@ pub mod gtk_overlay {
                 let vbox = window.default_vbox().map_err(|e| e.to_string())?;
                 if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
                     let main_child = overlay.child();
+                    let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
+                    let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
+                    let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
                     for child in overlay.children() {
                         if main_child.as_ref() != Some(&child) {
                             child.set_margin_start(bounds.x as i32);
                             child.set_margin_top(bounds.y as i32);
+                            child.set_margin_end(margin_end);
+                            child.queue_resize();
                         }
                     }
                 }

@@ -28,17 +28,18 @@ let isViewOpen = false;
 let activeTab: MinimizedTab | null = null;
 let dock: DockController;
 let webBar: WebBarController;
+let isShieldOpen = false;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
-  const header = document.querySelector("header");
-  const headerHeight = header ? header.offsetHeight : 80;
+  const rightOffset = isShieldOpen ? 360 : 0;
+  const headerHeight = 80;
   const webBarHeight = 28;
   const topOffset = headerHeight + webBarHeight;
   return {
     x: dockWidth,
     y: topOffset,
-    width: Math.max(300, window.innerWidth - dockWidth),
+    width: Math.max(300, window.innerWidth - dockWidth - rightOffset),
     height: Math.max(300, window.innerHeight - topOffset),
   };
 }
@@ -600,10 +601,11 @@ async function init() {
     }
   };
 
-  const handleShieldToggle = (_isOpen: boolean) => {
-    const header = document.querySelector("header");
-    const headerHeight = header ? header.offsetHeight : 80;
-    webBar.setTopOffset(headerHeight);
+  const handleShieldToggle = (isOpen: boolean) => {
+    isShieldOpen = isOpen;
+    const rightOffset = isShieldOpen ? 360 : 0;
+    webBar.setRightOffset(rightOffset);
+    mainWrapper.style.paddingRight = `${rightOffset}px`;
     if (isViewOpen) {
       const bounds = getSplitBounds();
       tauriIpc.updateSplitLayout(bounds);
