@@ -37,7 +37,8 @@ export function initShieldUI(
   countBadge: HTMLElement,
   shieldIcon: HTMLElement,
   sidebar: HTMLElement,
-  onToggle?: (isOpen: boolean) => void
+  onToggle?: (isOpen: boolean) => void,
+  onReload?: () => void
 ): ShieldController {
   let isShieldEnabled = true;
   let currentBreakdown: TabBreakdown = { total: 0, trackers: 0, ads: 0, miners: 0 };
@@ -103,23 +104,27 @@ export function initShieldUI(
     const nextState = toggleInput.checked;
     isShieldEnabled = await tauriIpc.toggleShield(nextState);
     updateVisualState();
+    onReload?.();
   });
 
   optTrackers?.addEventListener("change", async () => {
     if (optTrackers) {
       await tauriIpc.toggleShieldTrackers(optTrackers.checked);
+      onReload?.();
     }
   });
 
   optHttps?.addEventListener("change", async () => {
     if (optHttps) {
       await tauriIpc.toggleShieldHttps(optHttps.checked);
+      onReload?.();
     }
   });
 
   optSandbox?.addEventListener("change", async () => {
     if (optSandbox) {
       await tauriIpc.toggleShieldSandbox(optSandbox.checked);
+      onReload?.();
     }
   });
 

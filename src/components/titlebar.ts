@@ -358,7 +358,7 @@ export function createTitlebar(
   const shieldIcon = container.querySelector("#shield-icon") as HTMLElement | null;
   const tray = (document.querySelector("#yoonspace-shields-sidebar") as HTMLElement | null) || sidebar;
   if (shieldBtn && shieldBadge && shieldIcon && tray) {
-    const shieldController = initShieldUI(shieldBtn, shieldBadge, shieldIcon, tray, onShieldToggle);
+    const shieldController = initShieldUI(shieldBtn, shieldBadge, shieldIcon, tray, onShieldToggle, onReload);
     (container as TitlebarElement).shieldController = shieldController;
   }
 
