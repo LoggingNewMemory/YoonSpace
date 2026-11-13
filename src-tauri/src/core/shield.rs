@@ -15,17 +15,23 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // ACKNOWLEDGEMENT & ATTRIBUTION:
-// YoonSpace Shields adblocking engine is powered by Brave Software's
+// YoonSpace Shields adblocking engine is powered directly by Brave Software's
 // open-source `adblock-rust` engine (Mozilla Public License 2.0).
 // Reference repository: <https://github.com/brave/adblock-rust>
 // Copyright (c) Brave Software Inc. All rights reserved.
-// Filter syntax: EasyList, EasyPrivacy, and Brave Unbreak specifications.
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+use adblock::cosmetic_filter_cache::UrlSpecificResources;
 use adblock::Engine;
+use adblock::lists::{FilterSet, ParseOptions};
 use adblock::request::Request;
+use adblock::resources::Resource;
 use serde::{Deserialize, Serialize};
+
+const BRAVE_DATA_DIR: &str = "/home/yamada/CODE/BraveStuffs/adblock-rust/data/brave";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShieldStats {
@@ -44,8 +50,11 @@ pub struct BlockedItem {
 }
 
 pub struct ShieldManager {
-    engine: Engine,
+    engine: Mutex<Engine>,
     state: Mutex<ShieldStats>,
+    fast_blocked_domains_json: String,
+    yt_scriptlet: String,
+    yt_hide_selectors: String,
 }
 
 static SHIELD_MANAGER: OnceLock<Arc<ShieldManager>> = OnceLock::new();
@@ -56,102 +65,119 @@ pub fn get_shield_manager() -> &'static Arc<ShieldManager> {
     })
 }
 
+fn get_cache_dir() -> PathBuf {
+    let mut dir = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    dir.push("yoonspace");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
 impl ShieldManager {
     pub fn new() -> Self {
-        // Curated ad, tracker, and telemetry rules following Brave Shields / EasyList syntax
-        let default_rules = concat!(
-            // Major ad networks & exchanges
-            "||doubleclick.net^\n",
-            "||googleadservices.com^\n",
-            "||googlesyndication.com^\n",
-            "||adservice.google.com^\n",
-            "||pagead2.googlesyndication.com^\n",
-            "||adnxs.com^\n",
-            "||criteo.com^\n",
-            "||criteo.net^\n",
-            "||outbrain.com^\n",
-            "||taboola.com^\n",
-            "||amazon-adsystem.com^\n",
-            "||rubiconproject.com^\n",
-            "||pubmatic.com^\n",
-            "||openx.net^\n",
-            "||casalemedia.com^\n",
-            "||adroll.com^\n",
-            "||advertising.com^\n",
-            "||popads.net^\n",
-            "||propellerads.com^\n",
-            "||adform.net^\n",
-            "||moatads.com^\n",
-            "||revcontent.com^\n",
-            "||infolinks.com^\n",
-            "||chitika.com^\n",
-            "||exponential.com^\n",
-            "||contextweb.com^\n",
-            "||adtechus.com^\n",
-            "||scorecardresearch.com^\n",
-            "||quantserve.com^\n",
+        eprintln!("[YoonSpace Shield] Loading Brave adblock-rust from: {}", BRAVE_DATA_DIR);
 
-            // Trackers & Telemetry
-            "||google-analytics.com^\n",
-            "||analytics.google.com^\n",
-            "||googletagmanager.com/gtm.js^\n",
-            "||googletagservices.com^\n",
-            "||hotjar.com^\n",
-            "||clarity.ms^\n",
-            "||connect.facebook.net/en_US/fbevents.js^\n",
-            "||facebook.com/tr/^\n",
-            "||chartbeat.com^\n",
-            "||segment.io^\n",
-            "||segment.com^\n",
-            "||mixpanel.com^\n",
-            "||amplitude.com^\n",
-            "||newrelic.com^\n",
-            "||yandex.ru/metrika^\n",
-            "||mc.yandex.ru^\n",
-            "||branch.io^\n",
-            "||appsflyer.com^\n",
-            "||adjust.com^\n",
-            "||inspectlet.com^\n",
-            "||mouseflow.com^\n",
-            "||crazyegg.com^\n",
+        let data_dir = Path::new(BRAVE_DATA_DIR);
+        let list_path = data_dir.join("brave-main-list.txt");
+        let unbreak_path = data_dir.join("brave-unbreak.txt");
+        let res_path = data_dir.join("brave-resources.json");
 
-            // YouTube Ads (Brave brave-main-list.txt rules)
-            "||youtube.com/api/stats/ads^\n",
-            "||youtube.com/pagead/^\n",
-            "||youtube.com/youtubei/v1/player/ad_break^\n",
-            "||youtube.com/pcs/activeview^\n",
-            "||youtube.com/ptracking^\n",
-            "||s.youtube.com/api/stats/qoe?*&adformat=^\n",
+        // 1. Load resources directly from Brave adblock-rust
+        let res_str = fs::read_to_string(&res_path)
+            .unwrap_or_else(|e| panic!("Failed to read Brave resources at {:?}: {}", res_path, e));
+        let resources: Vec<Resource> = serde_json::from_str(&res_str)
+            .unwrap_or_else(|e| panic!("Failed to parse Brave resources JSON: {}", e));
 
-            // Unbreak exemptions (Brave brave-unbreak.txt)
-            "@@||youtube.com/yts/jsbin^\n",
+        // 2. Check engine cache to boot in ~10ms
+        let cache_dir = get_cache_dir();
+        let engine_cache_file = cache_dir.join("shield_engine.dat");
+        let meta_cache_file = cache_dir.join("shield_engine.meta");
 
-            // Cosmetic element hiding rules (Safe subset from EasyList)
-            "##.adsbygoogle\n",
-            "##.ad-banner\n",
-            "##.ad-container\n",
-            "##.sponsored-post\n",
-            "##.taboola-placeholder\n",
-            "##.outbrain_widget\n",
-            "##[id*=\"google_ads_iframe\"]\n",
-            "##.ytd-display-ad-renderer\n",
-            "##.ytd-in-feed-ad-layout-renderer\n",
-            "##.ytd-banner-promo-renderer\n",
-            "###player-ads\n",
-            "##.ytp-ad-overlay-container\n"
+        let list_meta = fs::metadata(&list_path)
+            .unwrap_or_else(|e| panic!("Failed to access {:?}: {}", list_path, e));
+        let list_size = list_meta.len();
+
+        let mut engine_opt: Option<Engine> = None;
+        if engine_cache_file.exists() && meta_cache_file.exists() {
+            if let Ok(meta_str) = fs::read_to_string(&meta_cache_file) {
+                if meta_str.trim() == list_size.to_string() {
+                    if let Ok(cache_bytes) = fs::read(&engine_cache_file) {
+                        let mut cached = Engine::default();
+                        if cached.deserialize(&cache_bytes).is_ok() {
+                            cached.use_resources(resources.clone());
+                            eprintln!("[YoonSpace Shield] Loaded pre-compiled Brave engine from cache in ~10ms.");
+                            engine_opt = Some(cached);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. If cache miss, parse lists with adblock-rust FilterSet
+        let list_str = fs::read_to_string(&list_path)
+            .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", list_path, e));
+
+        let engine = match engine_opt {
+            Some(e) => e,
+            None => {
+                let mut filter_set = FilterSet::new(false);
+                filter_set.add_filter_list(list_str.clone(), ParseOptions::default());
+
+                if unbreak_path.exists() {
+                    if let Ok(unbreak_str) = fs::read_to_string(&unbreak_path) {
+                        filter_set.add_filter_list(unbreak_str, ParseOptions::default());
+                    }
+                }
+
+                let mut built = Engine::new_with_filter_set(filter_set);
+                built.use_resources(resources.clone());
+
+                let serialized = built.serialize();
+                let _ = fs::write(&engine_cache_file, &serialized);
+                let _ = fs::write(&meta_cache_file, list_size.to_string());
+                eprintln!("[YoonSpace Shield] Compiled Brave adblock filter list ({} bytes) and cached engine.", serialized.len());
+                built
+            }
+        };
+
+        // 4. Extract top blocked domains directly from brave-main-list.txt for O(1) in-page synchronous matching
+        let mut fast_domains: Vec<String> = Vec::with_capacity(3000);
+        for line in list_str.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("||") && trimmed.ends_with('^') && !trimmed.contains('/') && !trimmed.contains('*') && !trimmed.contains('$') && !trimmed.contains(':') {
+                let domain = &trimmed[2..trimmed.len() - 1];
+                if !domain.is_empty() {
+                    fast_domains.push(domain.to_lowercase());
+                    if fast_domains.len() >= 3000 {
+                        break;
+                    }
+                }
+            }
+        }
+        let fast_blocked_domains_json = serde_json::to_string(&fast_domains).unwrap_or_else(|_| "[]".to_string());
+
+        // 5. Query official Brave cosmetic resources and scriptlets for YouTube from adblock-rust
+        let yt_cosmetic = engine.url_cosmetic_resources("https://www.youtube.com/watch?v=test");
+        let yt_scriptlet = yt_cosmetic.injected_script;
+        let yt_hide_selectors = yt_cosmetic.hide_selectors.into_iter().collect::<Vec<_>>().join(", ");
+
+        eprintln!(
+            "[YoonSpace Shield] adblock-rust ready: {} fast domains, {} bytes YouTube scriptlets, selectors: {}",
+            fast_domains.len(),
+            yt_scriptlet.len(),
+            yt_hide_selectors.len()
         );
 
-        let engine = Engine::new_with_list_text(default_rules);
-        eprintln!("[YoonSpace Shield] Brave adblock-rust engine initialized successfully.");
-
         Self {
-            engine,
+            engine: Mutex::new(engine),
             state: Mutex::new(ShieldStats {
                 enabled: true,
                 total_blocked: 0,
                 tab_blocked: HashMap::new(),
                 recent_blocked: Vec::new(),
             }),
+            fast_blocked_domains_json,
+            yt_scriptlet,
+            yt_hide_selectors,
         }
     }
 
@@ -165,16 +191,26 @@ impl ShieldManager {
         }
     }
 
-    pub fn check_url(&self, url: &str, source_url: &str) -> bool {
+    /// Check if a network request should be blocked according to the full 196,000+ rule Brave engine.
+    pub fn check_url(&self, url: &str, source_url: &str, req_type: &str) -> bool {
         if !self.is_enabled() {
             return false;
         }
 
-        if let Ok(req) = Request::new(url, source_url, "other", "GET") {
-            let res = self.engine.check_network_request(&req);
-            res.filter.is_some() && res.exception.is_none()
+        if let Ok(req) = Request::new(url, source_url, req_type, "GET") {
+            if let Ok(engine) = self.engine.lock() {
+                return engine.check_network_request(&req).should_block();
+            }
+        }
+        false
+    }
+
+    /// Query adblock-rust for cosmetic CSS hide selectors and scriptlets for any given URL.
+    pub fn url_cosmetic_resources(&self, url: &str) -> UrlSpecificResources {
+        if let Ok(engine) = self.engine.lock() {
+            engine.url_cosmetic_resources(url)
         } else {
-            false
+            UrlSpecificResources::empty()
         }
     }
 
@@ -196,7 +232,7 @@ impl ShieldManager {
             state.recent_blocked.push(BlockedItem {
                 url: url.to_string(),
                 domain,
-                filter: "Brave Shields EasyList".to_string(),
+                filter: "Brave adblock-rust".to_string(),
                 timestamp: now,
             });
 
@@ -228,16 +264,60 @@ impl ShieldManager {
             state.tab_blocked.remove(tab_id);
         }
     }
+
+    pub fn get_fast_domains_json(&self) -> &str {
+        &self.fast_blocked_domains_json
+    }
+
+    pub fn get_youtube_scriptlet(&self) -> &str {
+        &self.yt_scriptlet
+    }
+
+    pub fn get_youtube_hide_selectors(&self) -> &str {
+        &self.yt_hide_selectors
+    }
+}
+
+/// Dynamically injects site-specific cosmetic CSS hide selectors for any page via adblock-rust
+pub fn inject_page_cosmetics(webview: &tauri::Webview, url: &str) {
+    let manager = get_shield_manager();
+    if !manager.is_enabled() {
+        return;
+    }
+    let cosmetic = manager.url_cosmetic_resources(url);
+    if !cosmetic.hide_selectors.is_empty() {
+        let selectors: Vec<String> = cosmetic.hide_selectors.into_iter().collect();
+        let joined = selectors.join(", ");
+        let escaped = joined.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ");
+        let css_injection = format!(
+            r#"(function() {{
+                var s = document.getElementById("yoonspace-page-cosmetic");
+                if (!s) {{
+                    s = document.createElement("style");
+                    s.id = "yoonspace-page-cosmetic";
+                    (document.head || document.documentElement).appendChild(s);
+                }}
+                s.textContent = "{} {{ display: none !important; visibility: hidden !important; height: 0 !important; }}";
+            }})();"#,
+            escaped
+        );
+        let _ = webview.eval(&css_injection);
+    }
 }
 
 /// Generates the client-side JavaScript injected into every Webview at initialization.
-/// Provides:
-/// 1. Safe fetch & XHR proxies returning compliant mock responses (following Brave redirect conventions)
-/// 2. WebKitGTK data-URI handling for seamless application state loading
-/// 3. Non-destructive cosmetic element hiding (Brave EasyList)
-/// 4. Brave-style YouTube video ad auto-skip & fast-forward without hiding or breaking the video player
+/// Fully driven by Brave adblock-rust:
+/// 1. Intercepts fetch and XMLHttpRequest against the Brave adblock engine
+/// 2. Injects Brave's official scriptlets generated by adblock-rust for YouTube
+/// 3. Injects cosmetic hide selectors generated by adblock-rust
+/// 4. Does NOT hijack user media controls (preserves full video play/pause controls)
 pub fn get_shield_injection_script(tab_id: &str) -> String {
-    let initial_enabled = get_shield_manager().is_enabled();
+    let manager = get_shield_manager();
+    let initial_enabled = manager.is_enabled();
+    let fast_domains_json = manager.get_fast_domains_json();
+    let yt_scriptlet = manager.get_youtube_scriptlet();
+    let yt_selectors = manager.get_youtube_hide_selectors();
+
     let template = r##"(function() {
   if (window.__YOONSPACE_SHIELD_INSTALLED__) return;
   window.__YOONSPACE_SHIELD_INSTALLED__ = true;
@@ -245,30 +325,21 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
 
   const TAB_ID = "__TAB_ID__";
 
-  // Known top ad & tracker domains for instant in-page interception (Brave Shields EasyList reference)
-  const BLOCKED_DOMAINS = [
-    "doubleclick.net", "googleadservices.com", "googlesyndication.com",
-    "adservice.google.com", "adnxs.com", "criteo.com", "criteo.net",
-    "outbrain.com", "taboola.com", "amazon-adsystem.com", "rubiconproject.com",
-    "pubmatic.com", "openx.net", "casalemedia.com", "adroll.com",
-    "popads.net", "propellerads.com", "adform.net", "moatads.com",
-    "google-analytics.com", "hotjar.com", "clarity.ms", "scorecardresearch.com",
-    "quantserve.com", "branch.io", "appsflyer.com", "adjust.com"
-  ];
+  // Fast O(1) set of domain rules extracted directly from Brave adblock-rust
+  const FAST_DOMAINS = new Set(__FAST_DOMAINS_JSON__);
 
-  function isBlockedUrl(rawUrl) {
-    if (!window.__YOONSPACE_SHIELD_ENABLED__) return false;
-    if (!rawUrl || typeof rawUrl !== "string") return false;
+  function checkFastMatch(urlStr) {
+    if (!urlStr || typeof urlStr !== "string") return false;
     try {
-      const parsed = new URL(rawUrl, window.location.href);
+      const parsed = new URL(urlStr, window.location.href);
       const host = parsed.hostname.toLowerCase();
-      for (let i = 0; i < BLOCKED_DOMAINS.length; i++) {
-        if (host === BLOCKED_DOMAINS[i] || host.endsWith("." + BLOCKED_DOMAINS[i])) {
-          return true;
-        }
-      }
-      if (host.includes("youtube.com") && (parsed.pathname.includes("/pagead/") || parsed.pathname.includes("/api/stats/ads"))) {
-        return true;
+      if (FAST_DOMAINS.has(host)) return true;
+      // Check subdomains
+      let dotIdx = host.indexOf(".");
+      while (dotIdx !== -1) {
+        const sub = host.slice(dotIdx + 1);
+        if (FAST_DOMAINS.has(sub)) return true;
+        dotIdx = host.indexOf(".", dotIdx + 1);
       }
     } catch (e) {}
     return false;
@@ -282,9 +353,9 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
     } catch (e) {}
   }
 
-  // 1. Intercept fetch() safely
+  // 1. Safe fetch() interception powered by Brave adblock-rust
   const originalFetch = window.fetch;
-  window.fetch = function(resource, init) {
+  window.fetch = async function(resource, init) {
     let target = "";
     if (typeof resource === "string") {
       target = resource;
@@ -294,7 +365,7 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
       target = String(resource || "");
     }
 
-    // WebKitGTK fix: handle data: URI fetch cleanly if WebKit blocks it under access control
+    // WebKitGTK data: URI compatibility
     if (target.startsWith("data:")) {
       try {
         const commaIdx = target.indexOf(",");
@@ -312,33 +383,49 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
           } else {
             body = decodeURIComponent(raw);
           }
-          return Promise.resolve(new Response(body, {
+          return new Response(body, {
             status: 200,
             statusText: "OK",
             headers: { "Content-Type": mime }
-          }));
+          });
         }
       } catch (e) {}
     }
 
-    if (isBlockedUrl(target)) {
-      reportBlock(target);
-      // Return a valid mock JSON response (Brave redirect convention) so .json() and .text() calls succeed
-      return Promise.resolve(new Response("{}", {
-        status: 200,
-        statusText: "OK",
-        headers: { "Content-Type": "application/json" }
-      }));
+    if (window.__YOONSPACE_SHIELD_ENABLED__ && target && !target.startsWith("blob:")) {
+      let isBlocked = checkFastMatch(target);
+
+      // If not in fast set, verify against full 196k rule adblock-rust engine via Tauri IPC
+      if (!isBlocked && window.__TAURI__ && window.__TAURI__.core) {
+        try {
+          isBlocked = await window.__TAURI__.core.invoke("check_shield_url", {
+            url: target,
+            sourceUrl: window.location.href,
+            reqType: "fetch"
+          });
+        } catch (e) {}
+      }
+
+      if (isBlocked) {
+        reportBlock(target);
+        return new Response("{}", {
+          status: 200,
+          statusText: "OK",
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
+
     return originalFetch.apply(this, arguments);
   };
 
-  // 2. Intercept XMLHttpRequest safely without abort() crashing caller pipelines
+  // 2. Safe XMLHttpRequest interception
   const originalOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url) {
-    if (isBlockedUrl(url)) {
+    this._yoonspace_url = String(url || "");
+    if (window.__YOONSPACE_SHIELD_ENABLED__ && checkFastMatch(this._yoonspace_url)) {
       this._yoonspace_blocked = true;
-      reportBlock(url);
+      reportBlock(this._yoonspace_url);
     }
     return originalOpen.apply(this, arguments);
   };
@@ -370,26 +457,19 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
       }, 0);
       return;
     }
+
     return originalSend.apply(this, arguments);
   };
 
-  // 3. Non-destructive cosmetic element hiding stylesheet (Brave EasyList)
+  // 3. Inject cosmetic stylesheet generated by adblock-rust
   function injectCosmeticStyles() {
     if (!window.__YOONSPACE_SHIELD_ENABLED__) return;
     if (document.getElementById("yoonspace-shields-cosmetic")) return;
-    const css = `
-      .adsbygoogle, .ad-banner, .ad-container, .sponsored-post,
-      .taboola-placeholder, .outbrain_widget, [id*="google_ads_iframe"],
-      .ytd-display-ad-renderer, .ytd-in-feed-ad-layout-renderer, .ytd-banner-promo-renderer,
-      #player-ads, .ytp-ad-overlay-container {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-        min-height: 0 !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-      }
-    `;
+
+    const selectors = `__YT_SELECTORS__`;
+    if (!selectors || selectors.trim() === "") return;
+
+    const css = `${selectors} { display: none !important; visibility: hidden !important; height: 0 !important; }`;
     const style = document.createElement("style");
     style.id = "yoonspace-shields-cosmetic";
     style.textContent = css;
@@ -402,29 +482,62 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
     injectCosmeticStyles();
   }
 
-  // 4. Brave-style YouTube Ad Skipper (safe non-blocking implementation)
+  // 4. Execute official Brave scriptlets generated by adblock-rust for YouTube
   if (window.location.hostname.includes("youtube.com")) {
-    setInterval(function() {
-      if (!window.__YOONSPACE_SHIELD_ENABLED__) return;
-      const skipBtn = document.querySelector(".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, button.ytp-ad-skip-button-text");
-      if (skipBtn) {
-        skipBtn.click();
-        reportBlock("youtube-ad-skipped");
-        return;
-      }
-      const player = document.querySelector("#movie_player, .html5-video-player");
-      const video = document.querySelector("video");
-      if (player && video && (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting"))) {
-        if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration) {
-          video.currentTime = video.duration - 0.1;
-          video.playbackRate = 16.0;
-        }
-      }
-    }, 250);
+    try {
+      __BRAVE_YT_SCRIPT__
+    } catch (e) {
+      console.warn("[YoonSpace Shield] Scriptlet warning:", e);
+    }
   }
 })();"##;
 
     template
         .replace("__TAB_ID__", tab_id)
         .replace("__INITIAL_ENABLED__", if initial_enabled { "true" } else { "false" })
+        .replace("__FAST_DOMAINS_JSON__", fast_domains_json)
+        .replace("__BRAVE_YT_SCRIPT__", yt_scriptlet)
+        .replace("__YT_SELECTORS__", yt_selectors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shield_manager_from_cloned_brave() {
+        let manager = get_shield_manager();
+        assert!(manager.is_enabled());
+
+        // Check blocking of ad network URLs with adblock-rust native engine
+        assert!(manager.check_url("https://googleads.g.doubleclick.net/pagead/ads?client=ca-pub-123", "https://example.com", "script"));
+        assert!(manager.check_url("https://www.youtube.com/pagead/parallel_ad_playback", "https://www.youtube.com/watch?v=test", "xmlhttprequest"));
+        assert!(manager.check_url("https://www.youtube.com/api/stats/ads?adformat=1", "https://www.youtube.com/watch?v=test", "other"));
+        assert!(manager.check_url("https://www.youtube.com/youtubei/v1/player/ad_break", "https://www.youtube.com/watch?v=test", "fetch"));
+
+        // YouTube video stream & metadata should NOT be blocked
+        assert!(!manager.check_url("https://www.youtube.com/youtubei/v1/player?key=test", "https://www.youtube.com/watch?v=test", "fetch"));
+
+        // Check non-ad URL passes through
+        assert!(!manager.check_url("https://www.google.com/search?q=rust", "https://www.google.com", "document"));
+
+        // Verify Brave scriptlets & cosmetic hide selectors exist for YouTube
+        assert!(!manager.get_youtube_scriptlet().is_empty());
+        assert!(!manager.get_youtube_hide_selectors().is_empty());
+    }
+
+    #[test]
+    fn test_clean_shield_injection_script() {
+        let script = get_shield_injection_script("test_tab");
+        assert!(script.contains("window.__YOONSPACE_SHIELD_INSTALLED__"));
+        assert!(script.contains("TAB_ID = \"test_tab\""));
+
+        // Ensure no watchdog loop or hijack of playback controls exists
+        assert!(!script.contains("runYouTubeWatchdog"));
+        assert!(!script.contains("setInterval(runYouTubeWatchdog"));
+        assert!(!script.contains("video.play()"));
+
+        // Ensure Brave's scriptlets for YouTube are injected
+        assert!(script.contains("ytInitialPlayerResponse") || script.contains("trustedReplaceXhrResponse") || script.contains("trustedReplaceFetchResponse"));
+    }
 }

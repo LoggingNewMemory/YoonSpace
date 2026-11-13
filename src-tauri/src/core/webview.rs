@@ -368,9 +368,40 @@ pub fn normalize_url(raw: &str) -> String {
 
 #[cfg(target_os = "linux")]
 fn attach_load_failed_recovery(webview: &tauri::Webview) {
-    use webkit2gtk::WebViewExt;
+    use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt};
     let _ = webview.with_webview(|platform_webview| {
         let inner_wv = platform_webview.inner();
+
+        // 1. Optimize WebKitGTK settings for unrestricted media playback & modern web
+        if let Some(settings) = inner_wv.settings() {
+            settings.set_media_playback_requires_user_gesture(false);
+            settings.set_media_playback_allows_inline(true);
+            settings.set_enable_encrypted_media(true);
+            settings.set_enable_media(true);
+            settings.set_enable_mediasource(true);
+            settings.set_enable_media_stream(true);
+            settings.set_enable_media_capabilities(true);
+            settings.set_enable_webaudio(true);
+            settings.set_enable_webgl(true);
+            settings.set_enable_smooth_scrolling(true);
+            settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Always);
+        }
+
+        // 2. Unblock autoplay policy for media (audio & video) without requiring user gestures
+        inner_wv.connect_decide_policy(move |_wv, decision, decision_type| {
+            if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction
+                || decision_type == webkit2gtk::PolicyDecisionType::NewWindowAction
+            {
+                let policies = webkit2gtk::WebsitePolicies::builder()
+                    .autoplay(webkit2gtk::AutoplayPolicy::Allow)
+                    .build();
+                decision.use_with_policies(&policies);
+                return true;
+            }
+            false
+        });
+
+        // 3. Load interruption recovery
         let last_interrupted = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
 
         let last_clone = last_interrupted.clone();
@@ -432,7 +463,7 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
             use tauri::Emitter;
             let _ = app_title.emit("webview-title-changed", title);
         })
-        .on_page_load(move |_webview, payload| {
+        .on_page_load(move |webview, payload| {
             use tauri::Emitter;
             #[derive(Clone, serde::Serialize)]
             struct UrlChangedPayload {
@@ -443,6 +474,10 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
                 tab_id: tab_id_load.clone(),
                 url: payload.url().as_str().to_string(),
             });
+
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                crate::core::shield::inject_page_cosmetics(&webview, payload.url().as_str());
+            }
         });
 
     let single_view = window.add_child(
@@ -513,7 +548,7 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             use tauri::Emitter;
             let _ = app_left.emit("webview-split-left-title-changed", title);
         })
-        .on_page_load(move |_webview, payload| {
+        .on_page_load(move |webview, payload| {
             use tauri::Emitter;
             #[derive(Clone, serde::Serialize)]
             struct SplitUrlPayload {
@@ -526,6 +561,10 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
                 pane: "left".to_string(),
                 url: payload.url().as_str().to_string(),
             });
+
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                crate::core::shield::inject_page_cosmetics(&webview, payload.url().as_str());
+            }
         });
 
     let app_right = app.clone();
@@ -538,7 +577,7 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             use tauri::Emitter;
             let _ = app_right.emit("webview-split-right-title-changed", title);
         })
-        .on_page_load(move |_webview, payload| {
+        .on_page_load(move |webview, payload| {
             use tauri::Emitter;
             #[derive(Clone, serde::Serialize)]
             struct SplitUrlPayload {
@@ -551,6 +590,10 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
                 pane: "right".to_string(),
                 url: payload.url().as_str().to_string(),
             });
+
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                crate::core::shield::inject_page_cosmetics(&webview, payload.url().as_str());
+            }
         });
 
     let left_webview = window.add_child(

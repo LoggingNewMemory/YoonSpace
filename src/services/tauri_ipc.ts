@@ -271,6 +271,14 @@ export const tauriIpc = {
     }
   },
 
+  async checkShieldUrl(url: string, sourceUrl?: string): Promise<boolean> {
+    try {
+      return await invoke<boolean>("check_shield_url", { url, sourceUrl });
+    } catch {
+      return false;
+    }
+  },
+
   async onShieldBlocked(callback: (event: ShieldBlockEvent) => void): Promise<UnlistenFn> {
     return listen<ShieldBlockEvent>("shield-blocked-event", (e) => callback(e.payload));
   },

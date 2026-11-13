@@ -30,7 +30,7 @@ pub fn toggle_shield(app: AppHandle, enabled: bool) -> bool {
 
     // Propagate enabled state dynamically to all active Webviews
     let eval_code = format!(
-        "window.__YOONSPACE_SHIELD_ENABLED__ = {}; if (!{}) {{ const s = document.getElementById('yoonspace-shields-cosmetic'); if (s) s.remove(); }}",
+        "window.__YOONSPACE_SHIELD_ENABLED__ = {}; if (!{}) {{ const s = document.getElementById('yoonspace-cosmetic'); if (s) s.remove(); }}",
         is_en, is_en
     );
     for (_label, view) in app.webviews() {
@@ -66,4 +66,28 @@ pub fn record_shield_block(app: AppHandle, tab_id: String, url: String) {
 #[command]
 pub fn get_tab_shield_count(tab_id: String) -> u64 {
     get_shield_manager().get_tab_count(&tab_id)
+}
+
+#[command]
+pub fn check_shield_url(url: String, source_url: Option<String>, req_type: Option<String>) -> bool {
+    let source = source_url.unwrap_or_else(|| url.clone());
+    let rtype = req_type.unwrap_or_else(|| "other".to_string());
+    get_shield_manager().check_url(&url, &source, &rtype)
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct CosmeticResourcesResponse {
+    pub hide_selectors: Vec<String>,
+    pub injected_script: String,
+    pub generichide: bool,
+}
+
+#[command]
+pub fn get_cosmetic_resources(url: String) -> CosmeticResourcesResponse {
+    let res = get_shield_manager().url_cosmetic_resources(&url);
+    CosmeticResourcesResponse {
+        hide_selectors: res.hide_selectors.into_iter().collect(),
+        injected_script: res.injected_script,
+        generichide: res.generichide,
+    }
 }
