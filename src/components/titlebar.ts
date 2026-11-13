@@ -240,18 +240,44 @@ export function createTitlebar(
 
         <!-- Privacy Protections Card -->
         <div class="p-3.5 rounded-xl bg-[#202022] border border-[#2e2e32] shadow-sm space-y-3">
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-neutral-300">Block cross-site trackers</span>
-            <input id="shield-opt-trackers" checked="" class="w-4 h-4 accent-[#e95420] rounded bg-neutral-700 cursor-pointer" type="checkbox">
-          </div>
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-neutral-300">Upgrade connections to HTTPS</span>
-            <input id="shield-opt-https" checked="" class="w-4 h-4 accent-[#e95420] rounded bg-neutral-700 cursor-pointer" type="checkbox">
-          </div>
-          <div class="flex items-center justify-between text-xs">
-            <span class="text-neutral-300">Aggressive script sandboxing</span>
-            <input id="shield-opt-sandbox" class="w-4 h-4 accent-[#e95420] rounded bg-neutral-700 cursor-pointer" type="checkbox">
-          </div>
+          <!-- Block Trackers -->
+          <label class="flex items-center justify-between text-xs cursor-pointer select-none group">
+            <span class="text-neutral-300 group-hover:text-neutral-100 transition-colors">Block cross-site trackers</span>
+            <div class="relative flex items-center justify-center shrink-0">
+              <input id="shield-opt-trackers" type="checkbox" checked class="sr-only peer">
+              <div class="w-[18px] h-[18px] rounded-[5px] border border-[#3e3e44] bg-[#18181b] peer-checked:bg-[#e95420] peer-checked:border-[#e95420] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-all duration-150 shadow-inner group-hover:border-[#5a5a64] shrink-0">
+                <svg class="w-3.5 h-3.5 text-white opacity-0 transition-opacity duration-150 block shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4.5 12L9.5 17L19.5 7"></path>
+                </svg>
+              </div>
+            </div>
+          </label>
+
+          <!-- HTTPS Upgrade -->
+          <label class="flex items-center justify-between text-xs cursor-pointer select-none group">
+            <span class="text-neutral-300 group-hover:text-neutral-100 transition-colors">Upgrade connections to HTTPS</span>
+            <div class="relative flex items-center justify-center shrink-0">
+              <input id="shield-opt-https" type="checkbox" checked class="sr-only peer">
+              <div class="w-[18px] h-[18px] rounded-[5px] border border-[#3e3e44] bg-[#18181b] peer-checked:bg-[#e95420] peer-checked:border-[#e95420] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-all duration-150 shadow-inner group-hover:border-[#5a5a64] shrink-0">
+                <svg class="w-3.5 h-3.5 text-white opacity-0 transition-opacity duration-150 block shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4.5 12L9.5 17L19.5 7"></path>
+                </svg>
+              </div>
+            </div>
+          </label>
+
+          <!-- Aggressive Sandboxing -->
+          <label class="flex items-center justify-between text-xs cursor-pointer select-none group">
+            <span class="text-neutral-300 group-hover:text-neutral-100 transition-colors">Aggressive script sandboxing</span>
+            <div class="relative flex items-center justify-center shrink-0">
+              <input id="shield-opt-sandbox" type="checkbox" class="sr-only peer">
+              <div class="w-[18px] h-[18px] rounded-[5px] border border-[#3e3e44] bg-[#18181b] peer-checked:bg-[#e95420] peer-checked:border-[#e95420] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-all duration-150 shadow-inner group-hover:border-[#5a5a64] shrink-0">
+                <svg class="w-3.5 h-3.5 text-white opacity-0 transition-opacity duration-150 block shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4.5 12L9.5 17L19.5 7"></path>
+                </svg>
+              </div>
+            </div>
+          </label>
         </div>
 
         <!-- Engine Attribution Card -->
