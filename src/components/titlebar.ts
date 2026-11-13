@@ -197,7 +197,7 @@ export function createTitlebar(
             <span class="text-[10px] text-[#696766]">(ads, trackers & video interruptions)</span>
           </div>
           <div class="flex items-center gap-2 text-[10px] text-[#858280]">
-            <span>Engine: <strong class="text-[#cfcdcc]">Brave adblock-rust</strong></span>
+            <strong class="text-[#cfcdcc]">Brave adblock-rust</strong>
             <span class="px-1.5 py-0.5 rounded bg-[#252525] text-[#b5b3b1] font-mono text-[9px]">MPL-2.0</span>
           </div>
         </div>
