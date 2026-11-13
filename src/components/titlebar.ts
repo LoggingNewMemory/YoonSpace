@@ -187,15 +187,14 @@ export function createTitlebar(
       <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4 custom-scrollbar" style="scrollbar-width: none;">
         <!-- Toggle Card -->
         <div class="p-3.5 rounded-xl bg-[#202022] border border-[#2e2e32] shadow-sm">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-semibold text-neutral-200 font-mono">Enable YoonSpace Shields</span>
-            </div>
-            <div class="relative inline-flex items-center cursor-pointer">
+          <label class="flex items-center justify-between cursor-pointer select-none group">
+            <span class="text-xs font-semibold text-neutral-200 font-mono group-hover:text-white transition-colors">Enable YoonSpace Shields</span>
+            <div class="relative inline-flex items-center cursor-pointer shrink-0">
               <input id="shield-toggle-input" checked="" class="sr-only peer" type="checkbox">
-              <div class="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#e95420]"></div>
+              <div class="w-11 h-6 bg-[#3a3a3e] peer-checked:bg-[#e95420] rounded-full transition-colors duration-200 ease-in-out"></div>
+              <div class="absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out translate-x-0 peer-checked:translate-x-5 pointer-events-none"></div>
             </div>
-          </div>
+          </label>
         </div>
 
         <!-- Blocked Counter & Breakdown Card -->
