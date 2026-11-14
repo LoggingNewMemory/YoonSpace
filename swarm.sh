@@ -42,7 +42,7 @@ for task in "${TASKS[@]}"; do
     if command -v konsole &> /dev/null; then
         konsole --new-tab --workdir "$WORKTREE_DIR" \
             -p tabtitle="Swarm: $task" \
-            -e fish -c "echo 'Agent Branch: $BRANCH_NAME'; agy; exec fish" &
+            -e fish -c "echo 'Agent Branch: $BRANCH_NAME'; agy --dangerously-skip-permissions; exec fish" &
         sleep 0.3
     else
         echo "Siap di: $WORKTREE_DIR (Silakan cd ke sana dan jalankan agy)"
