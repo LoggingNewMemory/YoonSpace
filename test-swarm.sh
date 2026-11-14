@@ -34,6 +34,12 @@ if [ ${#TASKS[@]} -eq 0 ]; then
     exit 1
 fi
 
+prepare_worktree_diff() {
+    local wt_dir="$1"
+    git -C "$wt_dir" add -N . 2>/dev/null
+    git -C "$wt_dir" reset -q HEAD -- node_modules 2>/dev/null || true
+}
+
 apply_task() {
     local task="$1"
     local wt_dir="$SWARM_ROOT/$task"
@@ -44,15 +50,14 @@ apply_task() {
     fi
 
     echo "Menarik perubahan dari agen [$task] ke Main Tree..."
+    prepare_worktree_diff "$wt_dir"
 
-    git -C "$wt_dir" add -N . 2>/dev/null
-
-    if git -C "$wt_dir" diff --quiet HEAD; then
-        echo "Agen [$task] belum membuat perubahan apa pun (kosong)."
+    if git -C "$wt_dir" diff --quiet HEAD -- . ':(exclude)node_modules'; then
+        echo "Agen [$task] belum membuat perubahan kode apa pun (kosong)."
         return 0
     fi
 
-    if git -C "$wt_dir" diff HEAD | git apply --3way --whitespace=nowarn -; then
+    if git -C "$wt_dir" diff HEAD -- . ':(exclude)node_modules' | git apply --3way --whitespace=nowarn -; then
         echo "Berhasil! Perubahan dari [$task] sudah masuk ke Main Tree (Silakan cek VS Code & test app!)."
     else
         echo "Ada sedikit konflik baris saat menggabungkan [$task]!"
@@ -65,9 +70,9 @@ unapply_task() {
     local wt_dir="$SWARM_ROOT/$task"
 
     echo "Mencabut kembali perubahan [$task] dari Main Tree..."
-    git -C "$wt_dir" add -N . 2>/dev/null
+    prepare_worktree_diff "$wt_dir"
 
-    if git -C "$wt_dir" diff HEAD | git apply -R --3way --whitespace=nowarn -; then
+    if git -C "$wt_dir" diff HEAD -- . ':(exclude)node_modules' | git apply -R --3way --whitespace=nowarn -; then
         echo "Perubahan dari [$task] berhasil dilepas dari Main Tree!"
     else
         echo "Gagal melepas patch secara otomatis (mungkin sudah tercampur editan lain)."
@@ -81,12 +86,12 @@ show_summary() {
         local t="${TASKS[$i]}"
         local wt_dir="$SWARM_ROOT/$t"
         if [ -d "$wt_dir" ]; then
-            git -C "$wt_dir" add -N . 2>/dev/null
+            prepare_worktree_diff "$wt_dir"
             local stat
-            stat="$(git -C "$wt_dir" diff --shortstat HEAD)"
+            stat="$(git -C "$wt_dir" diff --shortstat HEAD -- . ':(exclude)node_modules')"
             if [ -n "$stat" ]; then
                 echo "  [$((i+1))] $t :$stat"
-                git -C "$wt_dir" status -s | sed 's/^/       /'
+                git -C "$wt_dir" status -s -- . ':(exclude)node_modules' | sed 's/^/       /'
             else
                 echo "  [$((i+1))] $t : (Tidak ada perubahan)"
             fi
@@ -105,8 +110,8 @@ while true; do
         wt_dir="$SWARM_ROOT/$t"
         status_badge="Kosong"
         if [ -d "$wt_dir" ]; then
-            git -C "$wt_dir" add -N . 2>/dev/null
-            changes_count=$(git -C "$wt_dir" status -s | wc -l)
+            prepare_worktree_diff "$wt_dir"
+            changes_count=$(git -C "$wt_dir" status -s -- . ':(exclude)node_modules' | wc -l)
             if [ "$changes_count" -gt 0 ]; then
                 status_badge="$changes_count file diubah"
             fi
