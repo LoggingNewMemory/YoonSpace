@@ -6,6 +6,12 @@ SWARM_ROOT="$(dirname "$BASE_DIR")/.${REPO_NAME}-swarm"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SWARM_SH="$SCRIPT_DIR/swarm.sh"
 
+# Mode resolusi konflik otomatis:
+# "union"  = Gabungkan kode kedua agen tanpa tanda <<<<<<< (Default terbaik untuk gabung banyak task)
+# "theirs" = Menangkan baris milik agen yang baru ditarik (Timpa baris yang bentrok)
+# "force"  = Langsung copy-overwrite seluruh file dari agen ke Main Tree (100% identik dengan worktree agen)
+CONFLICT_MODE="force"
+
 TASKS=()
 
 if [ -f "$SWARM_SH" ]; then
@@ -49,20 +55,54 @@ apply_task() {
         return 1
     fi
 
-    echo "Menarik perubahan dari agen [$task] ke Main Tree..."
+    echo "Menarik perubahan dari agen [$task] ke Main Tree (Mode: $CONFLICT_MODE)..."
     prepare_worktree_diff "$wt_dir"
 
-    if git -C "$wt_dir" diff --quiet HEAD -- . ':(exclude)node_modules'; then
+    mapfile -t changed_files < <(git -C "$wt_dir" diff --name-only HEAD -- . ':(exclude)node_modules')
+
+    if [ ${#changed_files[@]} -eq 0 ]; then
         echo "Agen [$task] belum membuat perubahan kode apa pun (kosong)."
         return 0
     fi
 
-    if git -C "$wt_dir" diff HEAD -- . ':(exclude)node_modules' | git apply --3way --whitespace=nowarn -; then
-        echo "Berhasil! Perubahan dari [$task] sudah masuk ke Main Tree (Silakan cek VS Code & test app!)."
-    else
-        echo "Ada sedikit konflik baris saat menggabungkan [$task]!"
-        echo "Cek tanda <<<<<<< di VS Code kamu untuk merapikannya ya, Assistant-kun!"
-    fi
+    for file in "${changed_files[@]}"; do
+        local wt_file="$wt_dir/$file"
+        local main_file="$BASE_DIR/$file"
+
+        if [ ! -e "$wt_file" ]; then
+            rm -f "$main_file"
+            echo "  [-] Dihapus: $file"
+            continue
+        fi
+
+        mkdir -p "$(dirname "$main_file")"
+
+        if [ ! -e "$main_file" ] || [ "$CONFLICT_MODE" = "force" ]; then
+            cp -f "$wt_file" "$main_file"
+            echo "  [F] Disalin langsung: $file"
+            continue
+        fi
+
+        local tmp_base
+        tmp_base="$(mktemp)"
+        if git -C "$wt_dir" show "HEAD:$file" > "$tmp_base" 2>/dev/null; then
+            if [ "$CONFLICT_MODE" = "theirs" ]; then
+                git merge-file --theirs -q "$main_file" "$tmp_base" "$wt_file"
+                echo "  [M] Digabung (Auto-Theirs, 0 conflict): $file"
+            else
+                git merge-file --union -q "$main_file" "$tmp_base" "$wt_file"
+                echo "  [M] Digabung (Auto-Union, 0 conflict): $file"
+            fi
+        else
+            cp -f "$wt_file" "$main_file"
+            echo "  [+] File baru: $file"
+        fi
+        rm -f "$tmp_base"
+    done
+
+    git reset -q HEAD 2>/dev/null || true
+
+    echo "Berhasil 100% TANPA CONFLICT MARKER! Silakan langsung test app, Assistant-kun~"
 }
 
 unapply_task() {
@@ -72,10 +112,20 @@ unapply_task() {
     echo "Mencabut kembali perubahan [$task] dari Main Tree..."
     prepare_worktree_diff "$wt_dir"
 
-    if git -C "$wt_dir" diff HEAD -- . ':(exclude)node_modules' | git apply -R --3way --whitespace=nowarn -; then
+    if git -C "$wt_dir" diff HEAD -- . ':(exclude)node_modules' | git apply -R --3way --whitespace=nowarn - 2>/dev/null; then
+        git reset -q HEAD 2>/dev/null || true
         echo "Perubahan dari [$task] berhasil dilepas dari Main Tree!"
     else
-        echo "Gagal melepas patch secara otomatis (mungkin sudah tercampur editan lain)."
+        echo "Gagal melepas patch dengan git apply -R, mengembalikan file yang disentuh [$task] ke HEAD..."
+        mapfile -t changed_files < <(git -C "$wt_dir" diff --name-only HEAD -- . ':(exclude)node_modules')
+        for file in "${changed_files[@]}"; do
+            if git cat-file -e "HEAD:$file" 2>/dev/null; then
+                git checkout HEAD -- "$file" 2>/dev/null
+            else
+                rm -f "$BASE_DIR/$file"
+            fi
+        done
+        echo "File yang berkaitan dengan [$task] telah di-reset ke kondisi awal!"
     fi
 }
 
@@ -104,7 +154,9 @@ show_summary() {
 
 while true; do
     echo ""
-    echo "=== KOYORI'S SWARM TESTER MENU ==="
+    echo "=== KOYORI'S ZERO-CONFLICT SWARM MENU ==="
+    echo "  Mode Saat Ini: [$CONFLICT_MODE] (Ketik 'm' untuk ganti mode)"
+    echo "-------------------------------------------"
     for i in "${!TASKS[@]}"; do
         t="${TASKS[$i]}"
         wt_dir="$SWARM_ROOT/$t"
@@ -122,12 +174,13 @@ while true; do
     done
     echo "-------------------------------------------"
     echo "  [a] Tarik SEMUA task sekaligus ke Main Tree"
+    echo "  [m] Ganti Mode Merge (union / theirs / force)"
     echo "  [u] Undo / Lepas 1 task dari Main Tree"
     echo "  [s] Lihat detail file yang diubah tiap agen"
     echo "  [r] Reset Main Tree (Kembalikan ke kondisi bersih sebelum tarik)"
     echo "  [q] Keluar"
     echo "==========================================="
-    read -rp "Pilih aksi (1-${#TASKS[@]}/a/u/s/r/q): " choice
+    read -rp "Pilih aksi (1-${#TASKS[@]}/a/m/u/s/r/q): " choice
 
     case "$choice" in
         [1-9]*)
@@ -143,6 +196,16 @@ while true; do
             for t in "${TASKS[@]}"; do
                 apply_task "$t"
             done
+            ;;
+        m|M)
+            if [ "$CONFLICT_MODE" = "union" ]; then
+                CONFLICT_MODE="theirs"
+            elif [ "$CONFLICT_MODE" = "theirs" ]; then
+                CONFLICT_MODE="force"
+            else
+                CONFLICT_MODE="union"
+            fi
+            echo "Mode berhasil diubah ke: [$CONFLICT_MODE]!"
             ;;
         u|U)
             read -rp "Masukkan nomor task yang mau dilepas (1-${#TASKS[@]}): " u_choice
