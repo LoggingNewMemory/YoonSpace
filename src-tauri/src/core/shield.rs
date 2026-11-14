@@ -959,6 +959,20 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
       console.warn("[YoonSpace Shield] Scriptlet warning:", e);
     }
   }
+
+  // 8. Navigation keyboard shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left / Cmd+[), Forward (Alt+Right / Cmd+])
+  window.addEventListener("keydown", function(e) {
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))) {
+      e.preventDefault();
+      window.location.reload();
+    } else if ((e.altKey && (e.key === "ArrowLeft" || e.key === "Left")) || (e.metaKey && e.key === "[")) {
+      e.preventDefault();
+      window.history.back();
+    } else if ((e.altKey && (e.key === "ArrowRight" || e.key === "Right")) || (e.metaKey && e.key === "]")) {
+      e.preventDefault();
+      window.history.forward();
+    }
+  }, true);
 })();"##;
 
     let yt_selectors_json = serde_json::to_string(yt_selectors).unwrap_or_else(|_| "\"\"".to_string());
@@ -1022,6 +1036,11 @@ mod tests {
 
         // Ensure Brave's scriptlets for YouTube are injected
         assert!(script.contains("ytInitialPlayerResponse") || script.contains("trustedReplaceXhrResponse") || script.contains("trustedReplaceFetchResponse"));
+
+        // Ensure navigation keyboard shortcuts (Back, Forward, Reload) are present
+        assert!(script.contains("window.history.back()"));
+        assert!(script.contains("window.history.forward()"));
+        assert!(script.contains("window.location.reload()"));
     }
 
     #[test]

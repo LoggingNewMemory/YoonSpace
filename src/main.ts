@@ -677,19 +677,24 @@ async function init() {
   );
   app.appendChild(dock.element);
 
-  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar (Arc / Zen style)
-  // Navigation shortcuts: Alt+Left (Back), Alt+Right (Forward), F5/Ctrl+R (Reload)
+  // Navigation keyboard shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left), Forward (Alt+Right)
   window.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+    // 1. Reload (Ctrl+R / Cmd+R / F5)
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))) {
       e.preventDefault();
-      dock.toggleExpanded();
-    } else if ((e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) && isViewOpen && activeTab) {
-      e.preventDefault();
-      handleReload();
-    } else if (e.altKey && e.key === "ArrowLeft" && isViewOpen && activeTab) {
+      if (isViewOpen && activeTab) {
+        handleReload();
+      } else {
+        window.location.reload();
+      }
+    }
+    // 2. Back (Alt+Left / Alt+ArrowLeft / Cmd+[)
+    else if (((e.altKey && (e.key === "ArrowLeft" || e.key === "Left")) || (e.metaKey && e.key === "[")) && isViewOpen && activeTab) {
       e.preventDefault();
       handleBack();
-    } else if (e.altKey && e.key === "ArrowRight" && isViewOpen && activeTab) {
+    }
+    // 3. Forward (Alt+Right / Alt+ArrowRight / Cmd+])
+    else if (((e.altKey && (e.key === "ArrowRight" || e.key === "Right")) || (e.metaKey && e.key === "]")) && isViewOpen && activeTab) {
       e.preventDefault();
       handleForward();
     }

@@ -403,7 +403,7 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
         let inner_wv = platform_webview.inner();
 
         // 1. Optimize WebKitGTK settings for unrestricted media playback & modern web
-        if let Some(settings) = inner_wv.settings() {
+        if let Some(settings) = WebViewExt::settings(&inner_wv) {
             settings.set_media_playback_requires_user_gesture(false);
             settings.set_media_playback_allows_inline(true);
             settings.set_enable_encrypted_media(true);
@@ -575,6 +575,39 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
                 }
             }
             false
+        });
+
+        // 6. Native keyboard navigation shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left), Forward (Alt+Right)
+        use gtk::prelude::WidgetExt;
+        inner_wv.connect_key_press_event(|wv, event| {
+            use gtk::gdk;
+            let state = event.state();
+            let is_ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
+            let is_alt = state.contains(gdk::ModifierType::MOD1_MASK);
+
+            if let Some(name) = event.keyval().name() {
+                let name_str = name.as_str();
+                // 1. Reload: Ctrl+R or F5
+                if (is_ctrl && (name_str == "r" || name_str == "R")) || name_str == "F5" {
+                    wv.reload();
+                    return gtk::glib::Propagation::Stop;
+                }
+                // 2. Back: Alt+Left
+                if is_alt && (name_str == "Left" || name_str == "KP_Left") {
+                    if wv.can_go_back() {
+                        wv.go_back();
+                    }
+                    return gtk::glib::Propagation::Stop;
+                }
+                // 3. Forward: Alt+Right
+                if is_alt && (name_str == "Right" || name_str == "KP_Right") {
+                    if wv.can_go_forward() {
+                        wv.go_forward();
+                    }
+                    return gtk::glib::Propagation::Stop;
+                }
+            }
+            gtk::glib::Propagation::Proceed
         });
     });
 }
@@ -839,7 +872,20 @@ pub fn webview_go_back(app: &AppHandle, target: &str) -> Result<(), String> {
         return Ok(());
     }
     let left_label = format!("{}_left", target);
+    let right_label = format!("{}_right", target);
+    let mut found = false;
     if let Some(view) = app.get_webview(&left_label) {
+        let _ = view.eval("window.history.back()");
+        found = true;
+    }
+    if let Some(view) = app.get_webview(&right_label) {
+        let _ = view.eval("window.history.back()");
+        found = true;
+    }
+    if found {
+        return Ok(());
+    }
+    if let Some(view) = app.get_webview("split_left") {
         let _ = view.eval("window.history.back()");
         return Ok(());
     }
@@ -852,7 +898,20 @@ pub fn webview_go_forward(app: &AppHandle, target: &str) -> Result<(), String> {
         return Ok(());
     }
     let left_label = format!("{}_left", target);
+    let right_label = format!("{}_right", target);
+    let mut found = false;
     if let Some(view) = app.get_webview(&left_label) {
+        let _ = view.eval("window.history.forward()");
+        found = true;
+    }
+    if let Some(view) = app.get_webview(&right_label) {
+        let _ = view.eval("window.history.forward()");
+        found = true;
+    }
+    if found {
+        return Ok(());
+    }
+    if let Some(view) = app.get_webview("split_left") {
         let _ = view.eval("window.history.forward()");
         return Ok(());
     }
@@ -872,6 +931,17 @@ pub fn webview_reload(app: &AppHandle, target: &str) -> Result<(), String> {
         found = true;
     }
     if let Some(view) = app.get_webview(&right_label) {
+        let _ = view.eval("window.location.reload()");
+        found = true;
+    }
+    if found {
+        return Ok(());
+    }
+    if let Some(view) = app.get_webview("split_left") {
+        let _ = view.eval("window.location.reload()");
+        found = true;
+    }
+    if let Some(view) = app.get_webview("split_right") {
         let _ = view.eval("window.location.reload()");
         found = true;
     }
