@@ -26,7 +26,6 @@ pub struct MemoryStats {
     pub gpu_renderer: Option<String>,
 }
 
-#[cfg(target_os = "linux")]
 fn get_descendant_pids(root_pid: u32) -> Vec<u32> {
     let mut pids = vec![root_pid];
     let mut i = 0;
@@ -53,58 +52,55 @@ fn get_descendant_pids(root_pid: u32) -> Vec<u32> {
 }
 
 pub fn get_process_memory() -> MemoryStats {
-    #[cfg(target_os = "linux")]
-    {
-        let root_pid = std::process::id();
-        let pids = get_descendant_pids(root_pid);
+    let root_pid = std::process::id();
+    let pids = get_descendant_pids(root_pid);
 
-        let mut total_anon_kb: f64 = 0.0;
-        let mut total_rss_kb: f64 = 0.0;
-        let mut total_file_kb: f64 = 0.0;
-        let mut total_shmem_kb: f64 = 0.0;
-        let mut total_vm_size_kb: f64 = 0.0;
-        let mut parsed_any = false;
+    let mut total_anon_kb: f64 = 0.0;
+    let mut total_rss_kb: f64 = 0.0;
+    let mut total_file_kb: f64 = 0.0;
+    let mut total_shmem_kb: f64 = 0.0;
+    let mut total_vm_size_kb: f64 = 0.0;
+    let mut parsed_any = false;
 
-        for pid in pids {
-            let status_path = format!("/proc/{}/status", pid);
-            if let Ok(status) = fs::read_to_string(&status_path) {
-                parsed_any = true;
-                for line in status.lines() {
-                    if line.starts_with("RssAnon:") {
-                        if let Some(val) = line.split_whitespace().nth(1) {
-                            total_anon_kb += val.parse::<f64>().unwrap_or(0.0);
-                        }
-                    } else if line.starts_with("VmRSS:") {
-                        if let Some(val) = line.split_whitespace().nth(1) {
-                            total_rss_kb += val.parse::<f64>().unwrap_or(0.0);
-                        }
-                    } else if line.starts_with("RssFile:") {
-                        if let Some(val) = line.split_whitespace().nth(1) {
-                            total_file_kb += val.parse::<f64>().unwrap_or(0.0);
-                        }
-                    } else if line.starts_with("RssShmem:") {
-                        if let Some(val) = line.split_whitespace().nth(1) {
-                            total_shmem_kb += val.parse::<f64>().unwrap_or(0.0);
-                        }
-                    } else if line.starts_with("VmSize:") {
-                        if let Some(val) = line.split_whitespace().nth(1) {
-                            total_vm_size_kb += val.parse::<f64>().unwrap_or(0.0);
-                        }
+    for pid in pids {
+        let status_path = format!("/proc/{}/status", pid);
+        if let Ok(status) = fs::read_to_string(&status_path) {
+            parsed_any = true;
+            for line in status.lines() {
+                if line.starts_with("RssAnon:") {
+                    if let Some(val) = line.split_whitespace().nth(1) {
+                        total_anon_kb += val.parse::<f64>().unwrap_or(0.0);
+                    }
+                } else if line.starts_with("VmRSS:") {
+                    if let Some(val) = line.split_whitespace().nth(1) {
+                        total_rss_kb += val.parse::<f64>().unwrap_or(0.0);
+                    }
+                } else if line.starts_with("RssFile:") {
+                    if let Some(val) = line.split_whitespace().nth(1) {
+                        total_file_kb += val.parse::<f64>().unwrap_or(0.0);
+                    }
+                } else if line.starts_with("RssShmem:") {
+                    if let Some(val) = line.split_whitespace().nth(1) {
+                        total_shmem_kb += val.parse::<f64>().unwrap_or(0.0);
+                    }
+                } else if line.starts_with("VmSize:") {
+                    if let Some(val) = line.split_whitespace().nth(1) {
+                        total_vm_size_kb += val.parse::<f64>().unwrap_or(0.0);
                     }
                 }
             }
         }
+    }
 
-        if parsed_any {
-            let gpu_renderer = Some(crate::core::gpu::get_active_gpu_name());
-            return MemoryStats {
-                resident_mb: ((total_anon_kb / 1024.0) * 10.0).round() / 10.0,
-                total_rss_mb: ((total_rss_kb / 1024.0) * 10.0).round() / 10.0,
-                shared_mb: (((total_file_kb + total_shmem_kb) / 1024.0) * 10.0).round() / 10.0,
-                virtual_mb: ((total_vm_size_kb / 1024.0) * 10.0).round() / 10.0,
-                gpu_renderer,
-            };
-        }
+    if parsed_any {
+        let gpu_renderer = Some(crate::core::gpu::get_active_gpu_name());
+        return MemoryStats {
+            resident_mb: ((total_anon_kb / 1024.0) * 10.0).round() / 10.0,
+            total_rss_mb: ((total_rss_kb / 1024.0) * 10.0).round() / 10.0,
+            shared_mb: (((total_file_kb + total_shmem_kb) / 1024.0) * 10.0).round() / 10.0,
+            virtual_mb: ((total_vm_size_kb / 1024.0) * 10.0).round() / 10.0,
+            gpu_renderer,
+        };
     }
 
     // Fallback: dynamically read memory via sysinfo

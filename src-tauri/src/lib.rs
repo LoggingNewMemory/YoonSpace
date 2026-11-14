@@ -29,10 +29,7 @@ pub fn run() {
                 )?;
             }
 
-            #[cfg(target_os = "linux")]
-            {
-                let _ = crate::core::webview::init_gtk_overlay(&app.handle());
-            }
+            let _ = crate::core::webview::init_gtk_overlay(&app.handle());
 
             Ok(())
         })

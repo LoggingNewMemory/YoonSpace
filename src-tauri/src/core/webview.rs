@@ -17,7 +17,6 @@
 use tauri::{AppHandle, Manager, WebviewBuilder, WebviewUrl, LogicalPosition, LogicalSize};
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "linux")]
 pub mod gtk_overlay {
     use gtk::prelude::*;
     use tauri::{AppHandle, Manager};
@@ -445,7 +444,6 @@ pub mod gtk_overlay {
     }
 }
 
-#[cfg(target_os = "linux")]
 pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
     gtk::glib::log_set_default_handler(|log_domain, log_level, message| {
         if message.contains("WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND") {
@@ -501,7 +499,6 @@ pub fn normalize_url(raw: &str) -> String {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &str) {
     use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt, URIRequestExt, WebResourceExt, UserContentManagerExt};
     let app_handle = app.clone();
@@ -733,17 +730,13 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
     let tab_id = req.tab_id.unwrap_or_else(|| "single_view".to_string());
 
     let single_exists = app.get_webview(&tab_id).is_some();
-    #[cfg(target_os = "linux")]
     let is_attached = gtk_overlay::is_tab_view_attached(app, &tab_id);
-    #[cfg(not(target_os = "linux"))]
-    let is_attached = true;
 
     if single_exists && is_attached {
         if let Some(view) = app.get_webview(&tab_id) {
             let _ = view.set_position(LogicalPosition::new(req.bounds.x, req.bounds.y));
             let _ = view.set_size(LogicalSize::new(req.bounds.width, req.bounds.height));
         }
-        #[cfg(target_os = "linux")]
         gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
         return Ok(());
     }
@@ -752,7 +745,6 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
         let _ = view.close();
     }
 
-    #[cfg(target_os = "linux")]
     gtk_overlay::hide_all_tab_views(app)?;
 
     let target_url: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
@@ -800,11 +792,8 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
         LogicalSize::new(req.bounds.width, req.bounds.height),
     ).map_err(|e| e.to_string())?;
 
-    #[cfg(target_os = "linux")]
-    {
-        configure_native_webview(app, &single_view, &tab_id);
-        gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
-    }
+    configure_native_webview(app, &single_view, &tab_id);
+    gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
 
     single_view.navigate(target_url).map_err(|e| e.to_string())?;
 
@@ -822,10 +811,7 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let left_exists = app.get_webview(&left_label).is_some();
     let right_exists = app.get_webview(&right_label).is_some();
 
-    #[cfg(target_os = "linux")]
     let is_attached = gtk_overlay::is_tab_view_attached(app, &tab_id);
-    #[cfg(not(target_os = "linux"))]
-    let is_attached = true;
 
     if left_exists && right_exists && is_attached {
         let half_width = req.bounds.width / 2.0;
@@ -843,7 +829,6 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             let _ = right.set_size(LogicalSize::new(half_width, height));
         }
 
-        #[cfg(target_os = "linux")]
         gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
 
         return Ok(());
@@ -856,7 +841,6 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
         let _ = view.close();
     }
 
-    #[cfg(target_os = "linux")]
     gtk_overlay::hide_all_tab_views(app)?;
 
     let half_width = req.bounds.width / 2.0;
@@ -959,12 +943,9 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
         LogicalSize::new(half_width, height),
     ).map_err(|e| e.to_string())?;
 
-    #[cfg(target_os = "linux")]
-    {
-        configure_native_webview(app, &left_webview, &left_label);
-        configure_native_webview(app, &right_webview, &right_label);
-        gtk_overlay::attach_split_views(app, &tab_id, &left_label, &right_label, req.bounds)?;
-    }
+    configure_native_webview(app, &left_webview, &left_label);
+    configure_native_webview(app, &right_webview, &right_label);
+    gtk_overlay::attach_split_views(app, &tab_id, &left_label, &right_label, req.bounds)?;
 
     left_webview.navigate(target_left_url).map_err(|e| e.to_string())?;
     right_webview.navigate(target_right_url).map_err(|e| e.to_string())?;
@@ -995,7 +976,6 @@ pub fn update_split_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(), S
         }
     }
 
-    #[cfg(target_os = "linux")]
     let _ = gtk_overlay::update_overlay_bounds(app, bounds);
 
     Ok(())
@@ -1150,32 +1130,20 @@ pub fn webview_reload(app: &AppHandle, target: &str) -> Result<(), String> {
     }
 }
 
-#[cfg(target_os = "linux")]
 unsafe extern "C" {
     fn malloc_trim(pad: usize) -> i32;
 }
 
 pub fn is_split_active(app: &AppHandle) -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        gtk_overlay::has_any_overlay(app)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        app.get_webview("single_view").is_some() ||
-        app.get_webview("split_left").is_some() ||
-        app.get_webview("split_right").is_some()
-    }
+    gtk_overlay::has_any_overlay(app)
 }
 
 pub fn hide_all_webviews(app: &AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
     gtk_overlay::hide_all_tab_views(app)?;
     Ok(())
 }
 
 pub fn close_tab_view(app: &AppHandle, tab_id: &str) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
     let has_remaining = gtk_overlay::remove_tab_view(app, tab_id)?;
 
     if let Some(view) = app.get_webview(tab_id) {
@@ -1193,7 +1161,6 @@ pub fn close_tab_view(app: &AppHandle, tab_id: &str) -> Result<(), String> {
         }
     }
 
-    #[cfg(target_os = "linux")]
     if !has_remaining {
         use webkit2gtk::WebContextExt;
         if let Some(context) = webkit2gtk::WebContext::default() {
@@ -1208,7 +1175,6 @@ pub fn close_tab_view(app: &AppHandle, tab_id: &str) -> Result<(), String> {
 }
 
 pub fn close_split_views(app: &AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
     let _ = gtk_overlay::cleanup_overlay(app);
 
     for (label, webview) in app.webviews() {
@@ -1217,15 +1183,12 @@ pub fn close_split_views(app: &AppHandle) -> Result<(), String> {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        use webkit2gtk::WebContextExt;
-        if let Some(context) = webkit2gtk::WebContext::default() {
-            context.clear_cache();
-        }
-        unsafe {
-            malloc_trim(0);
-        }
+    use webkit2gtk::WebContextExt;
+    if let Some(context) = webkit2gtk::WebContext::default() {
+        context.clear_cache();
+    }
+    unsafe {
+        malloc_trim(0);
     }
 
     Ok(())

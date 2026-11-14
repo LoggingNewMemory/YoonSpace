@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Clone)]
 pub struct DetectedGpu {
     pub card: String,
@@ -25,7 +24,6 @@ pub struct DetectedGpu {
     pub is_discrete: bool,
 }
 
-#[cfg(target_os = "linux")]
 pub fn detect_gpus() -> Vec<DetectedGpu> {
     let mut gpus = Vec::new();
     let entries = match std::fs::read_dir("/sys/class/drm") {
@@ -84,7 +82,6 @@ pub fn detect_gpus() -> Vec<DetectedGpu> {
 /// Automatically prioritizes the integrated GPU (Intel Iris/UHD, AMD Radeon Graphics, etc.)
 /// on hybrid systems to maximize battery life, keep laptop fans quiet, and utilize power-efficient
 /// hardware video decoders (VA-API / QuickSync), while leaving discrete GPUs asleep.
-#[cfg(target_os = "linux")]
 pub fn configure_universal_igpu() {
     // If the user explicitly opted into discrete GPU, respect it!
     if std::env::var("YOONSPACE_USE_DGPU").is_ok()
@@ -141,7 +138,6 @@ pub fn configure_universal_igpu() {
     }
 }
 
-#[cfg(target_os = "linux")]
 pub fn get_active_gpu_name() -> String {
     let pid = std::process::id();
     let fd_dir = format!("/proc/{}/fd", pid);
@@ -170,9 +166,4 @@ pub fn get_active_gpu_name() -> String {
         }
     }
     "Integrated GPU (Mesa)".to_string()
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn get_active_gpu_name() -> String {
-    "Integrated GPU".to_string()
 }
