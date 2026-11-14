@@ -219,9 +219,19 @@ pub mod gtk_overlay {
                 split_box.set_homogeneous(true);
 
                 if let Some(left) = &left_widget {
+                    left.set_widget_name(&left_label);
+                    left.set_halign(gtk::Align::Fill);
+                    left.set_valign(gtk::Align::Fill);
+                    left.set_hexpand(true);
+                    left.set_vexpand(true);
                     split_box.pack_start(left, true, true, 0);
                 }
                 if let Some(right) = &right_widget {
+                    right.set_widget_name(&right_label);
+                    right.set_halign(gtk::Align::Fill);
+                    right.set_valign(gtk::Align::Fill);
+                    right.set_hexpand(true);
+                    right.set_vexpand(true);
                     split_box.pack_start(right, true, true, 0);
                 }
 
@@ -487,7 +497,6 @@ pub fn normalize_url(raw: &str) -> String {
 
 #[cfg(target_os = "linux")]
 fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &str) {
-    use gtk::prelude::WidgetExt;
     use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt, URIRequestExt, WebResourceExt, UserContentManagerExt};
     let app_handle = app.clone();
     let tab_id_str = tab_id.to_string();
@@ -508,7 +517,7 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             settings.set_enable_webaudio(true);
             settings.set_enable_webgl(true);
             settings.set_enable_smooth_scrolling(true);
-            settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Always);
+            settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::OnDemand);
         }
 
         // 2. Unblock autoplay policy & filter popup ad windows via Brave adblock-rust
@@ -740,18 +749,25 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
     #[cfg(target_os = "linux")]
     gtk_overlay::hide_all_tab_views(app)?;
 
-    let url: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let target_url: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let blank_url: url::Url = "about:blank".parse().map_err(|e: url::ParseError| e.to_string())?;
     let app_title = app.clone();
     let app_load = app.clone();
     let tab_id_load = tab_id.clone();
     let shield_script = crate::core::shield::get_shield_injection_script(&tab_id);
-    let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(url))
+    let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(blank_url))
         .initialization_script(&shield_script)
         .on_document_title_changed(move |_webview, title| {
+            if title == "about:blank" || title.is_empty() {
+                return;
+            }
             use tauri::Emitter;
             let _ = app_title.emit("webview-title-changed", title);
         })
         .on_page_load(move |webview, payload| {
+            if payload.url().as_str() == "about:blank" {
+                return;
+            }
             use tauri::Emitter;
             #[derive(Clone, serde::Serialize)]
             struct UrlChangedPayload {
@@ -783,6 +799,8 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
         configure_native_webview(app, &single_view, &tab_id);
         gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
     }
+
+    single_view.navigate(target_url).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -841,20 +859,27 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let left_x = req.bounds.x;
     let right_x = req.bounds.x + half_width;
 
-    let left_url: url::Url = req.left_url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let right_url: url::Url = req.right_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let target_left_url: url::Url = req.left_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let target_right_url: url::Url = req.right_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let blank_url: url::Url = "about:blank".parse().map_err(|e: url::ParseError| e.to_string())?;
 
     let app_left = app.clone();
     let app_left_load = app.clone();
     let tab_id_left = tab_id.clone();
     let left_shield = crate::core::shield::get_shield_injection_script(&left_label);
-    let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(left_url))
+    let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(blank_url.clone()))
         .initialization_script(&left_shield)
         .on_document_title_changed(move |_webview, title| {
+            if title == "about:blank" || title.is_empty() {
+                return;
+            }
             use tauri::Emitter;
             let _ = app_left.emit("webview-split-left-title-changed", title);
         })
         .on_page_load(move |webview, payload| {
+            if payload.url().as_str() == "about:blank" {
+                return;
+            }
             use tauri::Emitter;
             #[derive(Clone, serde::Serialize)]
             struct SplitUrlPayload {
@@ -881,13 +906,19 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let app_right_load = app.clone();
     let tab_id_right = tab_id.clone();
     let right_shield = crate::core::shield::get_shield_injection_script(&right_label);
-    let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(right_url))
+    let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(blank_url))
         .initialization_script(&right_shield)
         .on_document_title_changed(move |_webview, title| {
+            if title == "about:blank" || title.is_empty() {
+                return;
+            }
             use tauri::Emitter;
             let _ = app_right.emit("webview-split-right-title-changed", title);
         })
         .on_page_load(move |webview, payload| {
+            if payload.url().as_str() == "about:blank" {
+                return;
+            }
             use tauri::Emitter;
             #[derive(Clone, serde::Serialize)]
             struct SplitUrlPayload {
@@ -928,6 +959,9 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
         configure_native_webview(app, &right_webview, &right_label);
         gtk_overlay::attach_split_views(app, &tab_id, &left_label, &right_label, req.bounds)?;
     }
+
+    left_webview.navigate(target_left_url).map_err(|e| e.to_string())?;
+    right_webview.navigate(target_right_url).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -1189,4 +1223,56 @@ pub fn close_split_views(app: &AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_bounds_calculations() {
+        let bounds = SplitBounds {
+            x: 64.0,
+            y: 108.0,
+            width: 1200.0,
+            height: 800.0,
+        };
+
+        let half_width = bounds.width / 2.0;
+        let left_x = bounds.x;
+        let right_x = bounds.x + half_width;
+
+        assert_eq!(half_width, 600.0);
+        assert_eq!(left_x, 64.0);
+        assert_eq!(right_x, 664.0);
+        assert_eq!(left_x + half_width, right_x);
+    }
+
+    #[test]
+    fn test_normalize_url() {
+        assert_eq!(normalize_url("google.com"), "https://google.com");
+        assert_eq!(normalize_url("https://github.com"), "https://github.com");
+        assert_eq!(normalize_url("http://localhost:3000"), "http://localhost:3000");
+    }
+
+    #[test]
+    fn test_split_view_request_serde() {
+        let json = r#"{
+            "tab_id": "test-split-1",
+            "left_url": "https://github.com",
+            "right_url": "https://atlassian.com",
+            "bounds": {
+                "x": 64.0,
+                "y": 108.0,
+                "width": 1200.0,
+                "height": 800.0
+            }
+        }"#;
+
+        let req: SplitViewRequest = serde_json::from_str(json).expect("Failed to deserialize SplitViewRequest");
+        assert_eq!(req.tab_id.as_deref(), Some("test-split-1"));
+        assert_eq!(req.left_url, "https://github.com");
+        assert_eq!(req.right_url, "https://atlassian.com");
+        assert_eq!(req.bounds.width, 1200.0);
+    }
 }
