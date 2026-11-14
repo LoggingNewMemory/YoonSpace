@@ -4,7 +4,6 @@ set -e
 TASKS=(
     "shields"
     "status-bar"
-    "keybinds"
     "freeze-fix"
     "caching"
     "dual-resize"

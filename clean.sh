@@ -6,18 +6,37 @@ SWARM_ROOT="$(dirname "$BASE_DIR")/.${REPO_NAME}-swarm"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SWARM_SH="$SCRIPT_DIR/swarm.sh"
 DELETE_BRANCHES=false
+REMOVE_FROM_SWARM=false
 
-TASKS=()
+load_tasks() {
+    TASKS=()
 
-if [ -f "$SWARM_SH" ]; then
-    eval "$(sed -n '/^TASKS=(/,/)/p' "$SWARM_SH")"
-fi
+    if [ -f "$SWARM_SH" ]; then
+        eval "$(sed -n '/^TASKS=(/,/)/p' "$SWARM_SH")"
+    fi
 
-if [ -d "$SWARM_ROOT" ]; then
-    for dir in "$SWARM_ROOT"/*/; do
-        [ -d "$dir" ] || continue
-        task="$(basename "$dir")"
-        found=false
+    if [ -d "$SWARM_ROOT" ]; then
+        for dir in "$SWARM_ROOT"/*/; do
+            [ -d "$dir" ] || continue
+            local task
+            task="$(basename "$dir")"
+            local found=false
+            for t in "${TASKS[@]}"; do
+                if [ "$t" = "$task" ]; then
+                    found=true
+                    break
+                fi
+            done
+            if [ "$found" = false ]; then
+                TASKS+=("$task")
+            fi
+        done
+    fi
+
+    while IFS= read -r branch; do
+        [ -n "$branch" ] || continue
+        local task="${branch#refs/heads/swarm/}"
+        local found=false
         for t in "${TASKS[@]}"; do
             if [ "$t" = "$task" ]; then
                 found=true
@@ -27,39 +46,204 @@ if [ -d "$SWARM_ROOT" ]; then
         if [ "$found" = false ]; then
             TASKS+=("$task")
         fi
-    done
-fi
+    done < <(git for-each-ref --format='%(refname)' refs/heads/swarm/ 2>/dev/null)
+}
 
-if [[ "$1" == "--delete-branches" || "$1" == "-d" ]]; then
-    DELETE_BRANCHES=true
-fi
+clean_task() {
+    local task="$1"
+    local del_branch="$2"
+    local rm_swarm="$3"
+    local wt_dir="$SWARM_ROOT/$task"
+    local branch_name="swarm/$task"
 
-echo "Memulai pembersihan laboratorium Swarm..."
+    echo "Membersihkan task: [$task]..."
 
-for task in "${TASKS[@]}"; do
-    WORKTREE_DIR="$SWARM_ROOT/$task"
-    BRANCH_NAME="swarm/$task"
-
-    if [ -L "$WORKTREE_DIR/node_modules" ]; then
-        rm "$WORKTREE_DIR/node_modules"
+    if [ -L "$wt_dir/node_modules" ]; then
+        rm -f "$wt_dir/node_modules"
     fi
 
-    if [ -d "$WORKTREE_DIR" ]; then
+    if [ -d "$wt_dir" ]; then
         echo "Menghapus worktree: $task..."
-        git worktree remove --force "$WORKTREE_DIR" 2>/dev/null || rm -rf "$WORKTREE_DIR"
+        git worktree remove --force "$wt_dir" 2>/dev/null || rm -rf "$wt_dir"
     else
         echo "Worktree $task sudah tidak ada."
     fi
 
-    if [ "$DELETE_BRANCHES" = true ]; then
-        if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
-            echo "Menghapus branch: $BRANCH_NAME"
-            git branch -D "$BRANCH_NAME"
+    if [ "$del_branch" = true ]; then
+        if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+            echo "Menghapus branch: $branch_name"
+            git branch -D "$branch_name"
+        else
+            echo "Branch $branch_name sudah tidak ada."
         fi
     fi
+
+    if [ "$rm_swarm" = true ]; then
+        if [ -f "$SWARM_SH" ]; then
+            sed -i "/^[[:space:]]*[\"']$task[\"']/d" "$SWARM_SH"
+            echo "Task [$task] dihapus dari daftar TASKS di swarm.sh."
+        fi
+    fi
+
+    git worktree prune
+    rmdir "$SWARM_ROOT" 2>/dev/null || true
+    echo "Pembersihan [$task] selesai!"
+}
+
+clean_all() {
+    local del_branch="$1"
+    local rm_swarm="$2"
+
+    echo "Memulai pembersihan semua task Swarm..."
+    load_tasks
+    for t in "${TASKS[@]}"; do
+        clean_task "$t" "$del_branch" "$rm_swarm"
+    done
+    git worktree prune
+    rmdir "$SWARM_ROOT" 2>/dev/null || true
+    echo "Beres! Laboratorium kembali bersih mengkilap, Assistant-kun!"
+}
+
+CLI_TASK=""
+CLI_ALL=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --delete-branches|-d)
+            DELETE_BRANCHES=true
+            ;;
+        --remove-swarm|-s)
+            REMOVE_FROM_SWARM=true
+            ;;
+        --all|-a)
+            CLI_ALL=true
+            ;;
+        *)
+            if [ -z "$CLI_TASK" ]; then
+                CLI_TASK="$arg"
+            fi
+            ;;
+    esac
 done
 
-git worktree prune
-rmdir "$SWARM_ROOT" 2>/dev/null || true
+if [ "$CLI_ALL" = true ]; then
+    clean_all "$DELETE_BRANCHES" "$REMOVE_FROM_SWARM"
+    exit 0
+fi
 
-echo "Beres! Laboratorium kembali bersih mengkilap, Assistant-kun!"
+if [ -n "$CLI_TASK" ]; then
+    if [ "$DELETE_BRANCHES" = false ] && [ -t 0 ]; then
+        read -rp "Hapus branch git swarm/$CLI_TASK juga? (y/N): " del_br_ans
+        if [[ "$del_br_ans" =~ ^[Yy]$ ]]; then
+            DELETE_BRANCHES=true
+        fi
+    fi
+
+    if [ "$REMOVE_FROM_SWARM" = false ] && [ -t 0 ]; then
+        read -rp "Hapus '$CLI_TASK' dari daftar TASKS di swarm.sh juga? (y/N): " rm_sw_ans
+        if [[ "$rm_sw_ans" =~ ^[Yy]$ ]]; then
+            REMOVE_FROM_SWARM=true
+        fi
+    fi
+
+    clean_task "$CLI_TASK" "$DELETE_BRANCHES" "$REMOVE_FROM_SWARM"
+    exit 0
+fi
+
+while true; do
+    load_tasks
+
+    if [ ${#TASKS[@]} -eq 0 ]; then
+        echo ""
+        echo "Tidak ada task swarm yang ditemukan!"
+        break
+    fi
+
+    echo ""
+    echo "=== MENU PEMBERSIHAN SWARM ==="
+    for i in "${!TASKS[@]}"; do
+        t="${TASKS[$i]}"
+        wt_dir="$SWARM_ROOT/$t"
+        branch_name="swarm/$t"
+
+        wt_status="Tidak ada"
+        if [ -d "$wt_dir" ]; then
+            wt_status="Ada"
+        fi
+
+        br_status="Tidak ada"
+        if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+            br_status="Ada"
+        fi
+
+        sw_status="Tidak ada"
+        if [ -f "$SWARM_SH" ] && grep -qE "^[[:space:]]*[\"']$t[\"']" "$SWARM_SH"; then
+            sw_status="Ada"
+        fi
+
+        printf "  [%d] %-14s (Worktree: %-9s | Branch: %-9s | swarm.sh: %s)\n" "$((i+1))" "$t" "$wt_status" "$br_status" "$sw_status"
+    done
+
+    echo "-------------------------------------------"
+    echo "  [a] Bersihkan SEMUA task sekaligus"
+    echo "  [q] Keluar"
+    echo "==========================================="
+    read -rp "Pilih task yang mau dibersihkan (1-${#TASKS[@]}/a/q): " choice
+
+    case "$choice" in
+        [1-9]*)
+            idx=$((choice - 1))
+            if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#TASKS[@]}" ]; then
+                target="${TASKS[$idx]}"
+                del_br="$DELETE_BRANCHES"
+                if [ "$del_br" = false ]; then
+                    read -rp "Hapus branch git swarm/$target juga? (y/N): " del_br_ans
+                    if [[ "$del_br_ans" =~ ^[Yy]$ ]]; then
+                        del_br=true
+                    fi
+                fi
+
+                rm_sw="$REMOVE_FROM_SWARM"
+                if [ "$rm_sw" = false ]; then
+                    read -rp "Hapus '$target' dari daftar TASKS di swarm.sh juga? (y/N): " rm_sw_ans
+                    if [[ "$rm_sw_ans" =~ ^[Yy]$ ]]; then
+                        rm_sw=true
+                    fi
+                fi
+
+                clean_task "$target" "$del_br" "$rm_sw"
+            else
+                echo "Nomor tidak valid, Assistant-kun!"
+            fi
+            ;;
+        a|A)
+            read -rp "Yakin mau membersihkan SEMUA task? (y/N): " confirm_all
+            if [[ "$confirm_all" =~ ^[Yy]$ ]]; then
+                del_br="$DELETE_BRANCHES"
+                if [ "$del_br" = false ]; then
+                    read -rp "Hapus SEMUA branch swarm/* juga? (y/N): " del_all_br
+                    if [[ "$del_all_br" =~ ^[Yy]$ ]]; then
+                        del_br=true
+                    fi
+                fi
+
+                rm_sw="$REMOVE_FROM_SWARM"
+                if [ "$rm_sw" = false ]; then
+                    read -rp "Hapus SEMUA task dari daftar swarm.sh juga? (y/N): " rm_all_sw
+                    if [[ "$rm_all_sw" =~ ^[Yy]$ ]]; then
+                        rm_sw=true
+                    fi
+                fi
+
+                clean_all "$del_br" "$rm_sw"
+            fi
+            ;;
+        q|Q)
+            echo "Keluar dari menu pembersihan Swarm."
+            break
+            ;;
+        *)
+            echo "Pilihan tidak dikenali!"
+            ;;
+    esac
+done
