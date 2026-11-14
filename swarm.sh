@@ -2,11 +2,6 @@
 set -e
 
 TASKS=(
-    "shields"
-    "status-bar"
-    "freeze-fix"
-    "caching"
-    "dual-resize"
 )
 
 BASE_DIR="$(pwd)"
