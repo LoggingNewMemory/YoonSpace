@@ -447,6 +447,12 @@ pub mod gtk_overlay {
 
 #[cfg(target_os = "linux")]
 pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
+    gtk::glib::log_set_default_handler(|log_domain, log_level, message| {
+        if message.contains("WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND") {
+            return;
+        }
+        gtk::glib::log_default_handler(log_domain, log_level, Some(message));
+    });
     gtk_overlay::ensure_overlay(app)
 }
 
