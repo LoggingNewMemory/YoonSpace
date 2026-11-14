@@ -5,8 +5,6 @@ REPO_NAME="$(basename "$BASE_DIR")"
 SWARM_ROOT="$(dirname "$BASE_DIR")/.${REPO_NAME}-swarm"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SWARM_SH="$SCRIPT_DIR/swarm.sh"
-DELETE_BRANCHES=false
-REMOVE_FROM_SWARM=false
 
 load_tasks() {
     TASKS=()
@@ -51,8 +49,8 @@ load_tasks() {
 
 clean_task() {
     local task="$1"
-    local del_branch="$2"
-    local rm_swarm="$3"
+    local del_branch="${2:-true}"
+    local rm_swarm="${3:-true}"
     local wt_dir="$SWARM_ROOT/$task"
     local branch_name="swarm/$task"
 
@@ -91,8 +89,8 @@ clean_task() {
 }
 
 clean_all() {
-    local del_branch="$1"
-    local rm_swarm="$2"
+    local del_branch="${1:-true}"
+    local rm_swarm="${2:-true}"
 
     echo "Memulai pembersihan semua task Swarm..."
     load_tasks
@@ -109,12 +107,6 @@ CLI_ALL=false
 
 for arg in "$@"; do
     case "$arg" in
-        --delete-branches|-d)
-            DELETE_BRANCHES=true
-            ;;
-        --remove-swarm|-s)
-            REMOVE_FROM_SWARM=true
-            ;;
         --all|-a)
             CLI_ALL=true
             ;;
@@ -127,26 +119,12 @@ for arg in "$@"; do
 done
 
 if [ "$CLI_ALL" = true ]; then
-    clean_all "$DELETE_BRANCHES" "$REMOVE_FROM_SWARM"
+    clean_all true true
     exit 0
 fi
 
 if [ -n "$CLI_TASK" ]; then
-    if [ "$DELETE_BRANCHES" = false ] && [ -t 0 ]; then
-        read -rp "Hapus branch git swarm/$CLI_TASK juga? (y/N): " del_br_ans
-        if [[ "$del_br_ans" =~ ^[Yy]$ ]]; then
-            DELETE_BRANCHES=true
-        fi
-    fi
-
-    if [ "$REMOVE_FROM_SWARM" = false ] && [ -t 0 ]; then
-        read -rp "Hapus '$CLI_TASK' dari daftar TASKS di swarm.sh juga? (y/N): " rm_sw_ans
-        if [[ "$rm_sw_ans" =~ ^[Yy]$ ]]; then
-            REMOVE_FROM_SWARM=true
-        fi
-    fi
-
-    clean_task "$CLI_TASK" "$DELETE_BRANCHES" "$REMOVE_FROM_SWARM"
+    clean_task "$CLI_TASK" true true
     exit 0
 fi
 
@@ -195,23 +173,7 @@ while true; do
             idx=$((choice - 1))
             if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#TASKS[@]}" ]; then
                 target="${TASKS[$idx]}"
-                del_br="$DELETE_BRANCHES"
-                if [ "$del_br" = false ]; then
-                    read -rp "Hapus branch git swarm/$target juga? (y/N): " del_br_ans
-                    if [[ "$del_br_ans" =~ ^[Yy]$ ]]; then
-                        del_br=true
-                    fi
-                fi
-
-                rm_sw="$REMOVE_FROM_SWARM"
-                if [ "$rm_sw" = false ]; then
-                    read -rp "Hapus '$target' dari daftar TASKS di swarm.sh juga? (y/N): " rm_sw_ans
-                    if [[ "$rm_sw_ans" =~ ^[Yy]$ ]]; then
-                        rm_sw=true
-                    fi
-                fi
-
-                clean_task "$target" "$del_br" "$rm_sw"
+                clean_task "$target" true true
             else
                 echo "Nomor tidak valid, Assistant-kun!"
             fi
@@ -219,23 +181,7 @@ while true; do
         a|A)
             read -rp "Yakin mau membersihkan SEMUA task? (y/N): " confirm_all
             if [[ "$confirm_all" =~ ^[Yy]$ ]]; then
-                del_br="$DELETE_BRANCHES"
-                if [ "$del_br" = false ]; then
-                    read -rp "Hapus SEMUA branch swarm/* juga? (y/N): " del_all_br
-                    if [[ "$del_all_br" =~ ^[Yy]$ ]]; then
-                        del_br=true
-                    fi
-                fi
-
-                rm_sw="$REMOVE_FROM_SWARM"
-                if [ "$rm_sw" = false ]; then
-                    read -rp "Hapus SEMUA task dari daftar swarm.sh juga? (y/N): " rm_all_sw
-                    if [[ "$rm_all_sw" =~ ^[Yy]$ ]]; then
-                        rm_sw=true
-                    fi
-                fi
-
-                clean_all "$del_br" "$rm_sw"
+                clean_all true true
             fi
             ;;
         q|Q)
