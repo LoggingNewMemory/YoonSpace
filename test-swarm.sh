@@ -10,7 +10,7 @@ SWARM_SH="$SCRIPT_DIR/swarm.sh"
 # "union"  = Gabungkan kode kedua agen tanpa tanda <<<<<<< (Default terbaik untuk gabung banyak task)
 # "theirs" = Menangkan baris milik agen yang baru ditarik (Timpa baris yang bentrok)
 # "force"  = Langsung copy-overwrite seluruh file dari agen ke Main Tree (100% identik dengan worktree agen)
-CONFLICT_MODE="force"
+CONFLICT_MODE="theirs"
 
 TASKS=()
 
@@ -46,6 +46,19 @@ prepare_worktree_diff() {
     git -C "$wt_dir" reset -q HEAD -- node_modules 2>/dev/null || true
 }
 
+get_base_commit() {
+    local wt_dir="$1"
+    local wt_head main_head base
+    wt_head="$(git -C "$wt_dir" rev-parse HEAD 2>/dev/null)" || { echo "HEAD"; return; }
+    main_head="$(git -C "$BASE_DIR" rev-parse HEAD 2>/dev/null)" || { echo "HEAD"; return; }
+    base="$(git -C "$BASE_DIR" merge-base "$main_head" "$wt_head" 2>/dev/null)"
+    if [ -n "$base" ]; then
+        echo "$base"
+    else
+        echo "HEAD"
+    fi
+}
+
 apply_task() {
     local task="$1"
     local wt_dir="$SWARM_ROOT/$task"
@@ -58,7 +71,10 @@ apply_task() {
     echo "Menarik perubahan dari agen [$task] ke Main Tree (Mode: $CONFLICT_MODE)..."
     prepare_worktree_diff "$wt_dir"
 
-    mapfile -t changed_files < <(git -C "$wt_dir" diff --name-only HEAD -- . ':(exclude)node_modules')
+    local base_commit
+    base_commit="$(get_base_commit "$wt_dir")"
+
+    mapfile -t changed_files < <(git -C "$wt_dir" diff --name-only "$base_commit" -- . ':(exclude)node_modules')
 
     if [ ${#changed_files[@]} -eq 0 ]; then
         echo "Agen [$task] belum membuat perubahan kode apa pun (kosong)."
@@ -85,7 +101,7 @@ apply_task() {
 
         local tmp_base
         tmp_base="$(mktemp)"
-        if git -C "$wt_dir" show "HEAD:$file" > "$tmp_base" 2>/dev/null; then
+        if git -C "$wt_dir" show "$base_commit:$file" > "$tmp_base" 2>/dev/null; then
             if [ "$CONFLICT_MODE" = "theirs" ]; then
                 git merge-file --theirs -q "$main_file" "$tmp_base" "$wt_file"
                 echo "  [M] Digabung (Auto-Theirs, 0 conflict): $file"
@@ -112,12 +128,15 @@ unapply_task() {
     echo "Mencabut kembali perubahan [$task] dari Main Tree..."
     prepare_worktree_diff "$wt_dir"
 
-    if git -C "$wt_dir" diff HEAD -- . ':(exclude)node_modules' | git apply -R --3way --whitespace=nowarn - 2>/dev/null; then
+    local base_commit
+    base_commit="$(get_base_commit "$wt_dir")"
+
+    if git -C "$wt_dir" diff "$base_commit" -- . ':(exclude)node_modules' | git apply -R --3way --whitespace=nowarn - 2>/dev/null; then
         git reset -q HEAD 2>/dev/null || true
         echo "Perubahan dari [$task] berhasil dilepas dari Main Tree!"
     else
         echo "Gagal melepas patch dengan git apply -R, mengembalikan file yang disentuh [$task] ke HEAD..."
-        mapfile -t changed_files < <(git -C "$wt_dir" diff --name-only HEAD -- . ':(exclude)node_modules')
+        mapfile -t changed_files < <(git -C "$wt_dir" diff --name-only "$base_commit" -- . ':(exclude)node_modules')
         for file in "${changed_files[@]}"; do
             if git cat-file -e "HEAD:$file" 2>/dev/null; then
                 git checkout HEAD -- "$file" 2>/dev/null
@@ -137,11 +156,13 @@ show_summary() {
         local wt_dir="$SWARM_ROOT/$t"
         if [ -d "$wt_dir" ]; then
             prepare_worktree_diff "$wt_dir"
+            local base_commit
+            base_commit="$(get_base_commit "$wt_dir")"
             local stat
-            stat="$(git -C "$wt_dir" diff --shortstat HEAD -- . ':(exclude)node_modules')"
+            stat="$(git -C "$wt_dir" diff --shortstat "$base_commit" -- . ':(exclude)node_modules')"
             if [ -n "$stat" ]; then
                 echo "  [$((i+1))] $t :$stat"
-                git -C "$wt_dir" status -s -- . ':(exclude)node_modules' | sed 's/^/       /'
+                git -C "$wt_dir" diff --name-status "$base_commit" -- . ':(exclude)node_modules' | sed 's/^/       /'
             else
                 echo "  [$((i+1))] $t : (Tidak ada perubahan)"
             fi
@@ -163,7 +184,8 @@ while true; do
         status_badge="Kosong"
         if [ -d "$wt_dir" ]; then
             prepare_worktree_diff "$wt_dir"
-            changes_count=$(git -C "$wt_dir" status -s -- . ':(exclude)node_modules' | wc -l)
+            base_commit="$(get_base_commit "$wt_dir")"
+            changes_count=$(git -C "$wt_dir" diff --name-only "$base_commit" -- . ':(exclude)node_modules' | sed '/^\s*$/d' | wc -l)
             if [ "$changes_count" -gt 0 ]; then
                 status_badge="$changes_count file diubah"
             fi
