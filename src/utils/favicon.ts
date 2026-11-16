@@ -18,42 +18,43 @@ export function getDomain(rawUrl?: string): string {
   if (!rawUrl) return "";
   try {
     let urlStr = rawUrl.trim();
-    if (!/^https?:\/\//i.test(urlStr)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//i.test(urlStr)) {
       urlStr = "https://" + urlStr;
     }
     const u = new URL(urlStr);
-    return u.hostname.replace(/^www\./, "");
+    return u.hostname.replace(/^www\d*\./i, "").toLowerCase();
   } catch {
-    return rawUrl;
+    return rawUrl.trim().toLowerCase();
   }
+}
+
+// Detects whether a domain or host is local development.
+export function isLocalHost(domainOrUrl?: string): boolean {
+  if (!domainOrUrl) return false;
+  const host = getDomain(domainOrUrl);
+  return host === "localhost" || host.startsWith("127.") || host === "0.0.0.0" || host === "::1";
 }
 
 export function getFaviconUrl(rawUrl?: string): string {
   if (!rawUrl) return "";
-  const domain = getDomain(rawUrl);
-  if (!domain || domain === "localhost" || domain.startsWith("127.0.0.1")) {
+  try {
+    let urlStr = rawUrl.trim();
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//i.test(urlStr)) {
+      urlStr = "https://" + urlStr;
+    }
+    const u = new URL(urlStr);
+    if (isLocalHost(u.hostname)) {
+      return `${u.origin}/favicon.ico`;
+    }
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(u.hostname)}&sz=64`;
+  } catch {
     return "";
   }
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
 }
 
-export function getFallbackIcon(rawUrl?: string, title?: string): string {
-  const domain = getDomain(rawUrl).toLowerCase();
-  const lowerTitle = (title || "").toLowerCase();
-
-  if (domain.includes("github") || lowerTitle.includes("github")) return "code";
-  if (domain.includes("youtube") || lowerTitle.includes("youtube")) return "play_circle";
-  if (domain.includes("jira") || domain.includes("atlassian")) return "troubleshoot";
-  if (
-    domain.includes("claude") ||
-    domain.includes("openai") ||
-    domain.includes("chatgpt") ||
-    domain.includes("gemini")
-  ) {
-    return "smart_toy";
+export function getFallbackIcon(rawUrl?: string, _title?: string): string {
+  if (isLocalHost(rawUrl)) {
+    return "terminal";
   }
-  if (domain.includes("google") || lowerTitle.includes("search")) return "search";
-  if (domain.includes("stack") || domain.includes("reddit")) return "forum";
-  if (domain.includes("localhost") || domain.startsWith("127.0.0.1")) return "terminal";
   return "language";
 }
