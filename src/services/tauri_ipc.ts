@@ -171,6 +171,14 @@ export const tauriIpc = {
     }
   },
 
+  async setSplitRatio(ratio: number, tabId?: string): Promise<void> {
+    try {
+      await invoke("set_split_ratio", { tabId, ratio });
+    } catch (e) {
+      console.warn("set_split_ratio failed:", e);
+    }
+  },
+
   async navigateSplit(pane: "left" | "right", url: string): Promise<void> {
     try {
       await invoke("navigate_split", { pane, url });

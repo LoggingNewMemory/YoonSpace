@@ -17,7 +17,8 @@
 use tauri::AppHandle;
 use crate::core::webview::{
     close_split_views, close_tab_view, hide_all_webviews, is_split_active, navigate_split_view,
-    navigate_tab_view, spawn_single_view as core_spawn_single_view, spawn_split_views,
+    navigate_tab_view, set_split_ratio as core_set_split_ratio,
+    spawn_single_view as core_spawn_single_view, spawn_split_views,
     update_split_bounds, webview_go_back as core_webview_go_back,
     webview_go_forward as core_webview_go_forward, webview_reload as core_webview_reload,
     SingleViewRequest, SplitBounds, SplitViewRequest,
@@ -36,6 +37,11 @@ pub fn spawn_split(app: AppHandle, req: SplitViewRequest) -> Result<(), String> 
 #[tauri::command]
 pub fn update_split_layout(app: AppHandle, bounds: SplitBounds) -> Result<(), String> {
     update_split_bounds(&app, bounds)
+}
+
+#[tauri::command]
+pub fn set_split_ratio(app: AppHandle, tab_id: Option<String>, ratio: f64) -> Result<(), String> {
+    core_set_split_ratio(&app, tab_id.as_deref(), ratio)
 }
 
 #[tauri::command]

@@ -43,6 +43,7 @@ pub fn run() {
             commands::webview::spawn_single_view,
             commands::webview::spawn_split,
             commands::webview::update_split_layout,
+            commands::webview::set_split_ratio,
             commands::webview::navigate_split,
             commands::webview::navigate_tab,
             commands::webview::webview_go_back,

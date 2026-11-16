@@ -26,7 +26,9 @@ export interface WebBarCallbacks {
 export interface WebBarController {
   element: HTMLElement;
   setSingleMode: (title: string) => void;
-  setSplitMode: (leftTitle: string, rightTitle: string) => void;
+  setSplitMode: (leftTitle: string, rightTitle: string, initialRatio?: number) => void;
+  setSplitRatio: (ratio: number) => void;
+  getSplitRatio: () => number;
   setTitle: (title: string) => void;
   setLeftTitle: (title: string) => void;
   setRightTitle: (title: string) => void;
@@ -99,9 +101,9 @@ export function createWebBar(
     </div>
 
     <!-- Dual Split View Header Bar -->
-    <div id="web-bar-split" class="hidden w-full h-full flex items-center">
-      <!-- Left Pane Header (50% Width) -->
-      <div class="w-1/2 h-full flex items-center justify-between px-3 border-r border-[#353535]/80 min-w-0">
+    <div id="web-bar-split" class="hidden w-full h-full flex items-center relative overflow-hidden">
+      <!-- Left Pane Header -->
+      <div id="web-bar-left-pane" class="h-full flex items-center justify-between px-3 border-r border-[#353535]/80 min-w-0" style="width: 50%;">
         <div class="w-16 flex items-center flex-shrink-0"></div>
         <div class="flex-1 flex items-center justify-center text-center px-2 overflow-hidden">
           <span id="web-bar-left-title" class="text-xs font-medium tracking-wide text-[#d1d5db] truncate max-w-xs">
@@ -135,8 +137,8 @@ export function createWebBar(
         </div>
       </div>
 
-      <!-- Right Pane Header (50% Width) -->
-      <div class="w-1/2 h-full flex items-center justify-between px-3 min-w-0">
+      <!-- Right Pane Header -->
+      <div id="web-bar-right-pane" class="h-full flex items-center justify-between px-3 min-w-0" style="width: 50%;">
         <div class="w-16 flex items-center flex-shrink-0"></div>
         <div class="flex-1 flex items-center justify-center text-center px-2 overflow-hidden">
           <span id="web-bar-right-title" class="text-xs font-medium tracking-wide text-[#d1d5db] truncate max-w-xs">
@@ -175,10 +177,22 @@ export function createWebBar(
   const singleBar = container.querySelector("#web-bar-single") as HTMLElement;
   const splitBar = container.querySelector("#web-bar-split") as HTMLElement;
   const singleTitleEl = container.querySelector("#web-bar-title") as HTMLElement;
+  const leftPaneEl = container.querySelector("#web-bar-left-pane") as HTMLElement;
+  const rightPaneEl = container.querySelector("#web-bar-right-pane") as HTMLElement;
   const leftTitleEl = container.querySelector("#web-bar-left-title") as HTMLElement;
   const rightTitleEl = container.querySelector("#web-bar-right-title") as HTMLElement;
 
   let currentMode: "single" | "split" = "single";
+  let currentSplitRatio = 0.5;
+
+  const setSplitRatio = (ratio: number) => {
+    currentSplitRatio = Math.max(0.20, Math.min(0.80, ratio));
+    const percent = currentSplitRatio * 100;
+    if (leftPaneEl) leftPaneEl.style.width = `${percent}%`;
+    if (rightPaneEl) rightPaneEl.style.width = `${100 - percent}%`;
+  };
+
+  const getSplitRatio = () => currentSplitRatio;
 
   // Event handlers
   container.querySelector("#btn-web-min")?.addEventListener("click", (e) => {
@@ -239,12 +253,15 @@ export function createWebBar(
     }
   };
 
-  const setSplitMode = (leftTitle: string, rightTitle: string) => {
+  const setSplitMode = (leftTitle: string, rightTitle: string, initialRatio?: number) => {
     currentMode = "split";
     singleBar.classList.add("hidden");
     singleBar.classList.remove("flex");
     splitBar.classList.remove("hidden");
     splitBar.classList.add("flex");
+    if (initialRatio !== undefined) {
+      setSplitRatio(initialRatio);
+    }
     if (leftTitleEl) {
       leftTitleEl.textContent = leftTitle || "Left Pane";
       leftTitleEl.title = leftTitle || "";
@@ -259,6 +276,8 @@ export function createWebBar(
     element: container,
     setSingleMode,
     setSplitMode,
+    setSplitRatio,
+    getSplitRatio,
     setTitle: (title: string) => {
       if (currentMode === "split") {
         if (title.includes("|")) {

@@ -21,7 +21,7 @@ import { createDock, type DockController } from "./components/dock";
 import { createWebBar, type WebBarController } from "./components/web_bar";
 import { createWelcomeScreen } from "./components/welcome";
 import { createSplitPresetsSection } from "./components/split_presets";
-import type { AppConfig, MinimizedTab, SplitBounds, SplitPreset } from "./types";
+import type { AppConfig, MinimizedTab, SplitBounds, SplitPreset, SplitRatioChangedEvent } from "./types";
 
 let currentConfig: AppConfig;
 let isViewOpen = false;
@@ -42,6 +42,7 @@ function getSplitBounds(): SplitBounds {
     y: topOffset,
     width: Math.max(300, window.innerWidth - dockWidth - rightOffset),
     height: Math.max(300, window.innerHeight - topOffset),
+    split_ratio: activeTab?.isSplit ? (activeTab.splitRatio ?? 0.5) : undefined,
   };
 }
 
@@ -142,6 +143,7 @@ async function handleSpawnPreset(preset: SplitPreset) {
     rightUrl: preset.right_url,
     leftTitle,
     rightTitle,
+    splitRatio: 0.5,
   };
 
   dock.addTab(activeTab);
@@ -158,7 +160,7 @@ async function handleSpawnPreset(preset: SplitPreset) {
       mainCanvas.classList.add("hidden");
     }
 
-    webBar.setSplitMode(leftTitle, rightTitle);
+    webBar.setSplitMode(leftTitle, rightTitle, 0.5);
     webBar.show();
     updateShieldForTab(activeTab);
   } catch (e) {
@@ -472,7 +474,7 @@ async function handleRestoreTab(tab: MinimizedTab) {
         leftTitle = parts[0] || leftTitle;
         rightTitle = parts[1] || rightTitle;
       }
-      webBar.setSplitMode(leftTitle, rightTitle);
+      webBar.setSplitMode(leftTitle, rightTitle, tab.splitRatio ?? 0.5);
       webBar.show();
     } else {
       await tauriIpc.spawnSingleView(tab.url || "", bounds, tab.id);
@@ -761,6 +763,20 @@ async function init() {
   tauriIpc.onShieldBlocked((event) => {
     if (activeTab && (activeTab.id === event.tab_id || event.tab_id.startsWith(activeTab.id))) {
       (titlebar as any).shieldController?.updateBreakdown(event.tab_breakdown);
+    }
+  });
+
+  // 8. Real-time Split Ratio synchronization (when dragging native GTK Paned splitter)
+  tauriIpc.listen<SplitRatioChangedEvent>("split-ratio-changed", (event) => {
+    const { tab_id, ratio } = event.payload;
+    const clampedRatio = Math.max(0.20, Math.min(0.80, ratio));
+    const tab = dock.getTab(tab_id);
+    if (tab) {
+      tab.splitRatio = clampedRatio;
+    }
+    if (activeTab && activeTab.isSplit && (activeTab.id === tab_id || !tab_id)) {
+      activeTab.splitRatio = clampedRatio;
+      webBar.setSplitRatio(clampedRatio);
     }
   });
 

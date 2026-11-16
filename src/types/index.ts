@@ -49,6 +49,14 @@ export interface SplitBounds {
   y: number;
   width: number;
   height: number;
+  split_ratio?: number;
+}
+
+export interface SplitRatioChangedEvent {
+  tab_id: string;
+  ratio: number;
+  left_width: number;
+  right_width: number;
 }
 
 export interface ShieldSettings {
@@ -107,4 +115,5 @@ export interface MinimizedTab {
   icon?: string;
   leftIcon?: string;
   rightIcon?: string;
+  splitRatio?: number;
 }

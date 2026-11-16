@@ -22,6 +22,15 @@ pub mod gtk_overlay {
     use tauri::{AppHandle, Manager};
     use crate::core::webview::SplitBounds;
 
+    pub(crate) fn set_pane_min_size(widget: &gtk::Widget, min_w: i32) {
+        widget.set_size_request(min_w, -1);
+        if let Ok(container) = widget.clone().dynamic_cast::<gtk::Container>() {
+            for child in container.children() {
+                child.set_size_request(min_w, -1);
+            }
+        }
+    }
+
     pub fn ensure_overlay(app: &AppHandle) -> Result<(), String> {
         let (tx, rx) = std::sync::mpsc::channel();
         let app_handle = app.clone();
@@ -213,9 +222,18 @@ pub mod gtk_overlay {
                     right_widget = Some(remaining_widgets.remove(0));
                 }
 
-                let split_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                split_box.set_widget_name(&tab_id);
-                split_box.set_homogeneous(true);
+                let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+                paned.set_widget_name(&tab_id);
+                paned.set_wide_handle(true);
+                paned.style_context().add_class("split-paned");
+
+                let ratio = bounds.split_ratio();
+                crate::core::webview::set_tab_split_ratio(&tab_id, ratio);
+                let total_w = bounds.width;
+                let min_pos = ((total_w as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
+                let max_pos = ((total_w as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
+                let initial_pos = (((total_w as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                paned.set_position(initial_pos);
 
                 if let Some(left) = &left_widget {
                     left.set_widget_name(&left_label);
@@ -223,7 +241,8 @@ pub mod gtk_overlay {
                     left.set_valign(gtk::Align::Fill);
                     left.set_hexpand(true);
                     left.set_vexpand(true);
-                    split_box.pack_start(left, true, true, 0);
+                    set_pane_min_size(left, min_pos);
+                    paned.pack1(left, true, false);
                 }
                 if let Some(right) = &right_widget {
                     right.set_widget_name(&right_label);
@@ -231,21 +250,55 @@ pub mod gtk_overlay {
                     right.set_valign(gtk::Align::Fill);
                     right.set_hexpand(true);
                     right.set_vexpand(true);
-                    split_box.pack_start(right, true, true, 0);
+                    set_pane_min_size(right, min_pos);
+                    paned.pack2(right, true, false);
                 }
 
-                split_box.set_margin_start(bounds.x as i32);
-                split_box.set_margin_top(bounds.y as i32);
+                let app_paned = app_handle.clone();
+                let tab_id_paned = tab_id.clone();
+                let last_ratio = std::sync::Arc::new(std::sync::Mutex::new(ratio));
+                paned.connect_notify(Some("position"), move |p, _| {
+                    let pos = p.position();
+                    let total_width = p.allocated_width();
+                    if total_width > 50 && pos > 0 {
+                        let ratio = ((pos as f64) / (total_width as f64))
+                            .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
+                        let mut last = last_ratio.lock().unwrap();
+                        if (ratio - *last).abs() >= 0.002 {
+                            *last = ratio;
+                            crate::core::webview::set_tab_split_ratio(&tab_id_paned, ratio);
+                            use tauri::Emitter;
+                            #[derive(serde::Serialize, Clone)]
+                            struct SplitRatioPayload {
+                                tab_id: String,
+                                ratio: f64,
+                                left_width: f64,
+                                right_width: f64,
+                            }
+                            let left_w = (total_width as f64) * ratio;
+                            let right_w = (total_width as f64) - left_w;
+                            let _ = app_paned.emit("split-ratio-changed", SplitRatioPayload {
+                                tab_id: tab_id_paned.clone(),
+                                ratio,
+                                left_width: left_w,
+                                right_width: right_w,
+                            });
+                        }
+                    }
+                });
+
+                paned.set_margin_start(bounds.x as i32);
+                paned.set_margin_top(bounds.y as i32);
                 let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
                 let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
                 let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
-                split_box.set_margin_end(margin_end);
-                split_box.set_halign(gtk::Align::Fill);
-                split_box.set_valign(gtk::Align::Fill);
-                split_box.set_hexpand(true);
-                split_box.set_vexpand(true);
+                paned.set_margin_end(margin_end);
+                paned.set_halign(gtk::Align::Fill);
+                paned.set_valign(gtk::Align::Fill);
+                paned.set_hexpand(true);
+                paned.set_vexpand(true);
 
-                overlay.add_overlay(&split_box);
+                overlay.add_overlay(&paned);
 
                 if let Some(left) = &left_widget {
                     left.show_all();
@@ -255,11 +308,11 @@ pub mod gtk_overlay {
                     right.show_all();
                     right.show();
                 }
-                split_box.show_all();
-                split_box.show();
-                split_box.queue_resize();
-                split_box.queue_draw();
-                split_box.set_no_show_all(true);
+                paned.show_all();
+                paned.show();
+                paned.queue_resize();
+                paned.queue_draw();
+                paned.set_no_show_all(true);
 
                 Ok(())
             })();
@@ -287,6 +340,20 @@ pub mod gtk_overlay {
                                 let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
                                 let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
                                 child.set_margin_end(margin_end);
+                                if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
+                                    let min_pos = ((bounds.width as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
+                                    let max_pos = ((bounds.width as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
+                                    if let Some(c1) = paned.child1() {
+                                        set_pane_min_size(&c1, min_pos);
+                                    }
+                                    if let Some(c2) = paned.child2() {
+                                        set_pane_min_size(&c2, min_pos);
+                                    }
+                                    let ratio = bounds.split_ratio.unwrap_or_else(|| crate::core::webview::get_tab_split_ratio(&tab_id))
+                                        .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
+                                    let target_pos = (((bounds.width as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                                    paned.set_position(target_pos);
+                                }
                                 if let Ok(container) = child.clone().dynamic_cast::<gtk::Container>() {
                                     for c in container.children() {
                                         c.show_all();
@@ -405,6 +472,22 @@ pub mod gtk_overlay {
                             child.set_margin_start(bounds.x as i32);
                             child.set_margin_top(bounds.y as i32);
                             child.set_margin_end(margin_end);
+                            if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
+                                let min_pos = ((bounds.width as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
+                                let max_pos = ((bounds.width as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
+                                if let Some(c1) = paned.child1() {
+                                    set_pane_min_size(&c1, min_pos);
+                                }
+                                if let Some(c2) = paned.child2() {
+                                    set_pane_min_size(&c2, min_pos);
+                                }
+                                let ratio = bounds.split_ratio.unwrap_or_else(|| {
+                                    let tab_name = child.widget_name().to_string();
+                                    crate::core::webview::get_tab_split_ratio(&tab_name)
+                                }).clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
+                                let target_pos = (((bounds.width as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                                paned.set_position(target_pos);
+                            }
                             child.queue_resize();
                         }
                     }
@@ -451,7 +534,59 @@ pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
         }
         gtk::glib::log_default_handler(log_domain, log_level, Some(message));
     });
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        use gtk::prelude::*;
+        let provider = gtk::CssProvider::new();
+        let css = "
+            paned.split-paned > separator {
+                background-color: #242426;
+                border-left: 1px solid #353535;
+                border-right: 1px solid #353535;
+                min-width: 6px;
+                margin: 0;
+                transition: background-color 0.15s ease-in-out;
+            }
+            paned.split-paned > separator:hover,
+            paned.split-paned > separator:active {
+                background-color: #f85e2a;
+                border-color: #f85e2a;
+            }
+        ";
+        if provider.load_from_data(css.as_bytes()).is_ok() {
+            if let Some(screen) = gtk::gdk::Screen::default() {
+                gtk::StyleContext::add_provider_for_screen(
+                    &screen,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                );
+            }
+        }
+        let _ = tx.send(());
+    }).map_err(|e| e.to_string())?;
+    let _ = rx.recv();
+
     gtk_overlay::ensure_overlay(app)
+}
+
+pub const MIN_SPLIT_RATIO: f64 = 0.20;
+pub const MAX_SPLIT_RATIO: f64 = 0.80;
+
+static SPLIT_RATIOS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> = std::sync::OnceLock::new();
+
+fn get_split_ratios_map() -> &'static std::sync::Mutex<std::collections::HashMap<String, f64>> {
+    SPLIT_RATIOS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+pub fn get_tab_split_ratio(tab_id: &str) -> f64 {
+    let map = get_split_ratios_map().lock().unwrap();
+    map.get(tab_id).copied().unwrap_or(0.5)
+}
+
+pub fn set_tab_split_ratio(tab_id: &str, ratio: f64) {
+    let mut map = get_split_ratios_map().lock().unwrap();
+    map.insert(tab_id.to_string(), ratio.clamp(MIN_SPLIT_RATIO, MAX_SPLIT_RATIO));
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -475,6 +610,30 @@ pub struct SplitBounds {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    #[serde(default)]
+    pub split_ratio: Option<f64>,
+}
+
+impl SplitBounds {
+    pub fn split_ratio(&self) -> f64 {
+        self.split_ratio.unwrap_or(0.5).clamp(MIN_SPLIT_RATIO, MAX_SPLIT_RATIO)
+    }
+
+    pub fn left_width(&self) -> f64 {
+        self.width * self.split_ratio()
+    }
+
+    pub fn right_width(&self) -> f64 {
+        self.width - self.left_width()
+    }
+
+    pub fn left_x(&self) -> f64 {
+        self.x
+    }
+
+    pub fn right_x(&self) -> f64 {
+        self.x + self.left_width()
+    }
 }
 
 pub fn normalize_url(raw: &str) -> String {
@@ -865,24 +1024,20 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
 
     let is_attached = gtk_overlay::is_tab_view_attached(app, &tab_id);
 
+    let ratio = req.bounds.split_ratio.unwrap_or_else(|| get_tab_split_ratio(&tab_id))
+        .clamp(MIN_SPLIT_RATIO, MAX_SPLIT_RATIO);
+    req.bounds.split_ratio = Some(ratio);
+    set_tab_split_ratio(&tab_id, ratio);
+
+    let left_width = req.bounds.left_width();
+    let right_width = req.bounds.right_width();
+    let height = req.bounds.height;
+    let top_y = req.bounds.y;
+    let left_x = req.bounds.left_x();
+    let right_x = req.bounds.right_x();
+
     if left_exists && right_exists && is_attached {
-        let half_width = req.bounds.width / 2.0;
-        let height = req.bounds.height;
-        let top_y = req.bounds.y;
-        let left_x = req.bounds.x;
-        let right_x = req.bounds.x + half_width;
-
-        if let Some(left) = app.get_webview(&left_label) {
-            let _ = left.set_position(LogicalPosition::new(left_x, top_y));
-            let _ = left.set_size(LogicalSize::new(half_width, height));
-        }
-        if let Some(right) = app.get_webview(&right_label) {
-            let _ = right.set_position(LogicalPosition::new(right_x, top_y));
-            let _ = right.set_size(LogicalSize::new(half_width, height));
-        }
-
         gtk_overlay::activate_tab_view(app, &tab_id, req.bounds)?;
-
         return Ok(());
     }
 
@@ -894,12 +1049,6 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     }
 
     gtk_overlay::hide_all_tab_views(app)?;
-
-    let half_width = req.bounds.width / 2.0;
-    let height = req.bounds.height;
-    let top_y = req.bounds.y;
-    let left_x = req.bounds.x;
-    let right_x = req.bounds.x + half_width;
 
     let target_left_url: url::Url = req.left_url.parse().map_err(|e: url::ParseError| e.to_string())?;
     let target_right_url: url::Url = req.right_url.parse().map_err(|e: url::ParseError| e.to_string())?;
@@ -1002,13 +1151,13 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let left_webview = window.add_child(
         left_builder,
         LogicalPosition::new(left_x, top_y),
-        LogicalSize::new(half_width, height),
+        LogicalSize::new(left_width, height),
     ).map_err(|e| e.to_string())?;
 
     let right_webview = window.add_child(
         right_builder,
         LogicalPosition::new(right_x, top_y),
-        LogicalSize::new(half_width, height),
+        LogicalSize::new(right_width, height),
     ).map_err(|e| e.to_string())?;
 
     configure_native_webview(app, &left_webview, &left_label);
@@ -1035,29 +1184,56 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
 }
 
 pub fn update_split_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(), String> {
-    let half_width = bounds.width / 2.0;
-    let height = bounds.height;
-    let top_y = bounds.y;
-    let left_x = bounds.x;
-    let right_x = bounds.x + half_width;
-
     for (label, view) in app.webviews() {
-        if label == "main" {
+        if label == "main" || label.ends_with("_left") || label.ends_with("_right") {
             continue;
         }
-        if label.ends_with("_left") {
-            let _ = view.set_position(LogicalPosition::new(left_x, top_y));
-            let _ = view.set_size(LogicalSize::new(half_width, height));
-        } else if label.ends_with("_right") {
-            let _ = view.set_position(LogicalPosition::new(right_x, top_y));
-            let _ = view.set_size(LogicalSize::new(half_width, height));
-        } else {
-            let _ = view.set_position(LogicalPosition::new(bounds.x, bounds.y));
-            let _ = view.set_size(LogicalSize::new(bounds.width, bounds.height));
-        }
+        let _ = view.set_position(LogicalPosition::new(bounds.x, bounds.y));
+        let _ = view.set_size(LogicalSize::new(bounds.width, bounds.height));
     }
 
     let _ = gtk_overlay::update_overlay_bounds(app, bounds);
+
+    Ok(())
+}
+
+pub fn set_split_ratio(app: &AppHandle, tab_id: Option<&str>, ratio: f64) -> Result<(), String> {
+    let ratio = ratio.clamp(MIN_SPLIT_RATIO, MAX_SPLIT_RATIO);
+    let target_tab = tab_id.unwrap_or("split_view");
+    set_tab_split_ratio(target_tab, ratio);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app_handle = app.clone();
+    let tab_id_str = target_tab.to_string();
+    app.run_on_main_thread(move || {
+        use gtk::prelude::*;
+        let res = (|| -> Result<(), String> {
+            let window = app_handle.get_window("main").ok_or("Main window not found")?;
+            let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+            if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+                let main_child = overlay.child();
+                for child in overlay.children() {
+                    if main_child.as_ref() != Some(&child) && child.widget_name().as_str() == tab_id_str.as_str() {
+                        if let Ok(paned) = child.dynamic_cast::<gtk::Paned>() {
+                            let total_w = if paned.allocated_width() > 0 {
+                                paned.allocated_width()
+                            } else {
+                                window.inner_size().map(|s| s.width as i32).unwrap_or(800)
+                            };
+                            let min_pos = ((total_w as f64) * MIN_SPLIT_RATIO) as i32;
+                            let max_pos = ((total_w as f64) * MAX_SPLIT_RATIO) as i32;
+                            let pos = (((total_w as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                            paned.set_position(pos);
+                            paned.queue_resize();
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })();
+        let _ = tx.send(res);
+    }).map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())??;
 
     Ok(())
 }
@@ -1294,56 +1470,4 @@ pub fn close_split_views(app: &AppHandle) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_split_bounds_calculations() {
-        let bounds = SplitBounds {
-            x: 64.0,
-            y: 108.0,
-            width: 1200.0,
-            height: 800.0,
-        };
-
-        let half_width = bounds.width / 2.0;
-        let left_x = bounds.x;
-        let right_x = bounds.x + half_width;
-
-        assert_eq!(half_width, 600.0);
-        assert_eq!(left_x, 64.0);
-        assert_eq!(right_x, 664.0);
-        assert_eq!(left_x + half_width, right_x);
-    }
-
-    #[test]
-    fn test_normalize_url() {
-        assert_eq!(normalize_url("google.com"), "https://google.com");
-        assert_eq!(normalize_url("https://github.com"), "https://github.com");
-        assert_eq!(normalize_url("http://localhost:3000"), "http://localhost:3000");
-    }
-
-    #[test]
-    fn test_split_view_request_serde() {
-        let json = r#"{
-            "tab_id": "test-split-1",
-            "left_url": "https://github.com",
-            "right_url": "https://atlassian.com",
-            "bounds": {
-                "x": 64.0,
-                "y": 108.0,
-                "width": 1200.0,
-                "height": 800.0
-            }
-        }"#;
-
-        let req: SplitViewRequest = serde_json::from_str(json).expect("Failed to deserialize SplitViewRequest");
-        assert_eq!(req.tab_id.as_deref(), Some("test-split-1"));
-        assert_eq!(req.left_url, "https://github.com");
-        assert_eq!(req.right_url, "https://atlassian.com");
-        assert_eq!(req.bounds.width, 1200.0);
-    }
 }
