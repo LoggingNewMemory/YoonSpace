@@ -23,7 +23,7 @@ export interface TitlebarElement extends HTMLElement {
 
 export function createTitlebar(
   onNavigate: (url: string) => void,
-  onHomeClick: () => void,
+  _onHomeClick?: () => void,
   onBack?: () => void,
   onForward?: () => void,
   onReload?: () => void,
@@ -94,7 +94,7 @@ export function createTitlebar(
 
     <!-- Navigation / Omnibar Row -->
     <div class="h-12 px-4 flex items-center justify-center bg-[#1b1b1c]/95 border-t border-[#202020]/60 relative">
-      <!-- Left Edge: Navigation Controls (Back, Forward, Reload) & Split Indicator -->
+      <!-- Left Edge: Navigation Controls (Back, Forward, Reload) -->
       <div class="absolute left-2 flex items-center gap-1.5 z-10">
         <div class="flex items-center gap-0.5">
           <button
@@ -123,14 +123,6 @@ export function createTitlebar(
             class="w-7 h-7 rounded-lg flex items-center justify-center text-[#9c9a98] hover:text-[#e5e2e1] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer"
           >
             <span class="material-symbols-outlined text-[18px]">refresh</span>
-          </button>
-        </div>
-
-        <div id="split-active-indicator" class="hidden items-center gap-1.5 px-2 py-0.5 rounded bg-[#f85e2a]/20 border border-[#f85e2a]/40 text-[#ffb59e] text-[11px] font-medium">
-          <span class="material-symbols-outlined text-[14px]">splitscreen</span>
-          <span>Dual Split Active</span>
-          <button id="btn-close-split" class="ml-1 hover:text-white cursor-pointer" title="Close Split View">
-            <span class="material-symbols-outlined text-[12px]">close</span>
           </button>
         </div>
       </div>
@@ -324,14 +316,6 @@ export function createTitlebar(
     if (query) {
       onNavigate(query);
     }
-  });
-
-  container.querySelector("#btn-close-split")?.addEventListener("click", async () => {
-    await tauriIpc.closeSplit();
-    const indicator = container.querySelector("#split-active-indicator");
-    indicator?.classList.add("hidden");
-    indicator?.classList.remove("flex");
-    onHomeClick();
   });
 
   // Query actual RAM immediately so it shows real memory usage on startup

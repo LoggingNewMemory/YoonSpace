@@ -148,13 +148,6 @@ async function handleSpawnPreset(preset: SplitPreset) {
 
     webBar.setSplitMode(leftTitle, rightTitle);
     webBar.show();
-
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.remove("hidden");
-      indicator.classList.add("flex");
-      indicator.querySelector("span:nth-child(2)")!.textContent = preset.title;
-    }
     updateShieldForTab(activeTab);
   } catch (e) {
     console.error("Failed to spawn preset:", e);
@@ -228,11 +221,6 @@ async function handleSearch(query: string, engineId: string) {
       omnibarInput.value = query;
     }
 
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.add("hidden");
-      indicator.classList.remove("flex");
-    }
     updateShieldForTab(activeTab);
   } catch (e) {
     console.error("Failed to spawn single view:", e);
@@ -297,12 +285,6 @@ async function handleCloseTab(tabId: string) {
       mainCanvas.classList.remove("hidden");
     }
 
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.add("hidden");
-      indicator.classList.remove("flex");
-    }
-
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
     if (omnibarInput) {
       omnibarInput.value = "";
@@ -355,11 +337,6 @@ async function handleMinimizeLeft() {
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.add("hidden");
-      indicator.classList.remove("flex");
-    }
   } catch (e) {
     console.error("Failed to minimize left tab:", e);
   }
@@ -391,11 +368,6 @@ async function handleCloseLeft() {
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.add("hidden");
-      indicator.classList.remove("flex");
-    }
   } catch (e) {
     console.error("Failed to convert split to single on close left:", e);
   }
@@ -435,11 +407,6 @@ async function handleMinimizeRight() {
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.add("hidden");
-      indicator.classList.remove("flex");
-    }
   } catch (e) {
     console.error("Failed to minimize right tab:", e);
   }
@@ -471,11 +438,6 @@ async function handleCloseRight() {
     webBar.setSingleMode(remainingTitle);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.add("hidden");
-      indicator.classList.remove("flex");
-    }
   } catch (e) {
     console.error("Failed to convert split to single on close right:", e);
   }
@@ -491,12 +453,6 @@ async function handleRestoreTab(tab: MinimizedTab) {
   try {
     if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
       await tauriIpc.spawnSplit(tab.leftUrl, tab.rightUrl, bounds, tab.id);
-      const indicator = document.getElementById("split-active-indicator");
-      if (indicator) {
-        indicator.classList.remove("hidden");
-        indicator.classList.add("flex");
-        indicator.querySelector("span:nth-child(2)")!.textContent = tab.title;
-      }
       let leftTitle = tab.leftTitle || "Left Pane";
       let rightTitle = tab.rightTitle || "Right Pane";
       if (!tab.leftTitle && tab.title.includes("|")) {
@@ -508,11 +464,6 @@ async function handleRestoreTab(tab: MinimizedTab) {
       webBar.show();
     } else {
       await tauriIpc.spawnSingleView(tab.url || "", bounds, tab.id);
-      const indicator = document.getElementById("split-active-indicator");
-      if (indicator) {
-        indicator.classList.add("hidden");
-        indicator.classList.remove("flex");
-      }
       webBar.setSingleMode(tab.title);
       webBar.show();
     }
@@ -554,12 +505,6 @@ async function handleHomeClick() {
     const mainCanvas = document.getElementById("main-canvas");
     if (mainCanvas) {
       mainCanvas.classList.remove("hidden");
-    }
-
-    const indicator = document.getElementById("split-active-indicator");
-    if (indicator) {
-      indicator.classList.add("hidden");
-      indicator.classList.remove("flex");
     }
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
