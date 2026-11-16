@@ -83,6 +83,21 @@ pub fn detect_gpus() -> Vec<DetectedGpu> {
 /// on hybrid systems to maximize battery life, keep laptop fans quiet, and utilize power-efficient
 /// hardware video decoders (VA-API / QuickSync), while leaving discrete GPUs asleep.
 pub fn configure_universal_igpu() {
+    // 1. Mitigate WebKitGTK DMA-BUF renderer deadlocks and Wayland explicit sync driver freezes on Linux
+    if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err()
+        && std::env::var("YOONSPACE_FORCE_DMABUF").is_err()
+    {
+        // SAFETY: Called single-threaded at process startup in main() before libraries initialize
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+    if std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err() {
+        unsafe {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        }
+    }
+
     // If the user explicitly opted into discrete GPU, respect it!
     if std::env::var("YOONSPACE_USE_DGPU").is_ok()
         || std::env::var("__NV_PRIME_RENDER_OFFLOAD").is_ok()

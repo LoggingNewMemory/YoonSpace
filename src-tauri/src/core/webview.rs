@@ -520,7 +520,6 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             settings.set_enable_webaudio(true);
             settings.set_enable_webgl(true);
             settings.set_enable_smooth_scrolling(true);
-            settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::OnDemand);
         }
 
         // 2. Unblock autoplay policy & filter popup ad windows via Brave adblock-rust
@@ -724,7 +723,10 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
     });
 }
 
+static SPAWN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<(), String> {
+    let _guard = SPAWN_LOCK.lock().map_err(|e| e.to_string())?;
     req.url = normalize_url(&req.url);
     let window = app.get_window("main").ok_or("Main window not found")?;
     let tab_id = req.tab_id.unwrap_or_else(|| "single_view".to_string());
@@ -795,12 +797,17 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
     configure_native_webview(app, &single_view, &tab_id);
     gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
 
-    single_view.navigate(target_url).map_err(|e| e.to_string())?;
+    let single_clone = single_view.clone();
+    gtk::glib::idle_add_local(move || {
+        let _ = single_clone.navigate(target_url.clone());
+        gtk::glib::ControlFlow::Break
+    });
 
     Ok(())
 }
 
 pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(), String> {
+    let _guard = SPAWN_LOCK.lock().map_err(|e| e.to_string())?;
     req.left_url = normalize_url(&req.left_url);
     req.right_url = normalize_url(&req.right_url);
     let window = app.get_window("main").ok_or("Main window not found")?;
@@ -947,8 +954,21 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     configure_native_webview(app, &right_webview, &right_label);
     gtk_overlay::attach_split_views(app, &tab_id, &left_label, &right_label, req.bounds)?;
 
-    left_webview.navigate(target_left_url).map_err(|e| e.to_string())?;
-    right_webview.navigate(target_right_url).map_err(|e| e.to_string())?;
+    let left_clone = left_webview.clone();
+    let left_url_clone = target_left_url.clone();
+    let right_clone = right_webview.clone();
+    let right_url_clone = target_right_url.clone();
+
+    // Idle-navigate the left pane once GTK finishes mapping the split overlay
+    gtk::glib::idle_add_local(move || {
+        let _ = left_clone.navigate(left_url_clone.clone());
+        gtk::glib::ControlFlow::Break
+    });
+
+    // Stagger the right pane slightly (120ms) to prevent simultaneous GPU context and driver lock contention
+    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(120), move || {
+        let _ = right_clone.navigate(right_url_clone);
+    });
 
     Ok(())
 }

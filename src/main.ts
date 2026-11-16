@@ -29,6 +29,7 @@ let activeTab: MinimizedTab | null = null;
 let dock: DockController;
 let webBar: WebBarController;
 let isShieldOpen = false;
+let isSpawning = false;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
@@ -104,6 +105,11 @@ function deriveTitleFromInput(input: string): string {
 }
 
 async function handleSpawnPreset(preset: SplitPreset) {
+  if (isSpawning) {
+    console.warn("[YoonSpace] Spawn ignored: already initializing a view");
+    return;
+  }
+  isSpawning = true;
   const tabId = "preset-" + preset.id;
 
   let leftTitle = "Left View";
@@ -152,6 +158,8 @@ async function handleSpawnPreset(preset: SplitPreset) {
     updateShieldForTab(activeTab);
   } catch (e) {
     console.error("Failed to spawn preset:", e);
+  } finally {
+    isSpawning = false;
   }
 }
 
@@ -181,6 +189,12 @@ async function handleSearch(query: string, engineId: string) {
     }
     return;
   }
+
+  if (isSpawning) {
+    console.warn("[YoonSpace] Spawn single view ignored: already initializing a view");
+    return;
+  }
+  isSpawning = true;
 
   const tabId = "tab-" + Date.now();
 
@@ -222,6 +236,8 @@ async function handleSearch(query: string, engineId: string) {
     updateShieldForTab(activeTab);
   } catch (e) {
     console.error("Failed to spawn single view:", e);
+  } finally {
+    isSpawning = false;
   }
 }
 
