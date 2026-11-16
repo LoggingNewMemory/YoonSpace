@@ -49,16 +49,28 @@ function updateShieldForTab(tab: MinimizedTab | null) {
   const header = document.querySelector("header") as any;
   if (!header || !header.shieldController) return;
   if (!tab) {
+    header.shieldController.setTabId(null);
     header.shieldController.setDomain("YoonSpace");
     header.shieldController.updateBreakdown({ total: 0, trackers: 0, ads: 0, miners: 0 });
     return;
   }
-  const targetUrl = tab.url || tab.leftUrl || "";
-  try {
-    const domain = new URL(targetUrl).hostname;
-    header.shieldController.setDomain(domain);
-  } catch {
-    header.shieldController.setDomain("Current Website");
+  header.shieldController.setTabId(tab.id);
+  if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
+    try {
+      const leftDomain = new URL(tab.leftUrl).hostname.replace(/^www\./, "");
+      const rightDomain = new URL(tab.rightUrl).hostname.replace(/^www\./, "");
+      header.shieldController.setDomain(`${leftDomain} | ${rightDomain}`);
+    } catch {
+      header.shieldController.setDomain("Split View");
+    }
+  } else {
+    const targetUrl = tab.url || tab.leftUrl || "";
+    try {
+      const domain = new URL(targetUrl).hostname.replace(/^www\./, "");
+      header.shieldController.setDomain(domain);
+    } catch {
+      header.shieldController.setDomain("Current Website");
+    }
   }
   tauriIpc.getTabShieldBreakdown(tab.id).then((breakdown) => {
     header.shieldController.updateBreakdown(breakdown);

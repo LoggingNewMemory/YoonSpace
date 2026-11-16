@@ -37,6 +37,27 @@ fn broadcast_shield_state(app: &AppHandle, settings: &ShieldSettings) {
     for (_label, view) in app.webviews() {
         let _ = view.eval(&eval_code);
     }
+
+    let app_clone = app.clone();
+    let enabled_copy = settings.enabled;
+    let trackers_copy = settings.block_trackers;
+    let _ = app.run_on_main_thread(move || {
+        for (_label, view) in app_clone.webviews() {
+            let _ = view.with_webview(move |platform_webview| {
+                use webkit2gtk::{CookieManagerExt, WebViewExt, WebsiteDataManagerExt};
+                let inner_wv = platform_webview.inner();
+                if let Some(data_manager) = inner_wv.website_data_manager() {
+                    if let Some(cookie_mgr) = data_manager.cookie_manager() {
+                        if enabled_copy && trackers_copy {
+                            cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::NoThirdParty);
+                        } else {
+                            cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::Always);
+                        }
+                    }
+                }
+            });
+        }
+    });
 }
 
 #[command]

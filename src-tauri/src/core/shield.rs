@@ -338,6 +338,20 @@ impl ShieldManager {
         self.update_settings(settings)
     }
 
+    fn heuristic_category(&self, url: &str) -> ShieldCategory {
+        let lower = url.to_lowercase();
+        if lower.contains("coin") || lower.contains("miner") || lower.contains("cryptoloot") || lower.contains("monero") {
+            ShieldCategory::Miner
+        } else if lower.contains("analytics") || lower.contains("telemetry") || lower.contains("tracking")
+            || lower.contains("tracker") || lower.contains("pixel") || lower.contains("beacon")
+            || lower.contains("tagmanager") || lower.contains("facebook.net/tr")
+        {
+            ShieldCategory::Tracker
+        } else {
+            ShieldCategory::Ad
+        }
+    }
+
     /// Check if a network request should be blocked according to the Brave adblock-rust engine and category settings.
     pub fn check_url(&self, url: &str, source_url: &str, req_type: &str) -> bool {
         self.check_url_categorized(url, source_url, req_type).0
@@ -370,10 +384,10 @@ impl ShieldManager {
                                 ShieldCategory::Ad
                             }
                         } else {
-                            ShieldCategory::Ad
+                            self.heuristic_category(url)
                         }
                     } else {
-                        ShieldCategory::Ad
+                        self.heuristic_category(url)
                     };
 
                     // If user disabled tracker blocking and this was identified by adblock-rust as a tracker:
@@ -550,23 +564,44 @@ impl ShieldManager {
         self.get_tab_breakdown(tab_id).total
     }
 
-    pub fn reset_tab(&self, tab_id: &str) {
+    pub fn reset_tab(&self, tab_id: &str) -> (String, TabBreakdown) {
         if let Ok(mut state) = self.state.lock() {
             let root_id = if let Some(base) = tab_id.strip_suffix("_left") {
-                base
+                state.tab_blocked.remove(tab_id);
+                state.tab_breakdown.remove(tab_id);
+                base.to_string()
             } else if let Some(base) = tab_id.strip_suffix("_right") {
-                base
+                state.tab_blocked.remove(tab_id);
+                state.tab_breakdown.remove(tab_id);
+                base.to_string()
             } else {
-                tab_id
+                state.tab_blocked.remove(tab_id);
+                state.tab_breakdown.remove(tab_id);
+                let left_id = format!("{}_left", tab_id);
+                let right_id = format!("{}_right", tab_id);
+                state.tab_blocked.remove(&left_id);
+                state.tab_breakdown.remove(&left_id);
+                state.tab_blocked.remove(&right_id);
+                state.tab_breakdown.remove(&right_id);
+                tab_id.to_string()
             };
-            state.tab_blocked.remove(root_id);
-            state.tab_breakdown.remove(root_id);
+
             let left_id = format!("{}_left", root_id);
             let right_id = format!("{}_right", root_id);
-            state.tab_blocked.remove(&left_id);
-            state.tab_breakdown.remove(&left_id);
-            state.tab_blocked.remove(&right_id);
-            state.tab_breakdown.remove(&right_id);
+            let main_stat = state.tab_breakdown.get(&root_id).cloned().unwrap_or_default();
+            let left_stat = state.tab_breakdown.get(&left_id).cloned().unwrap_or_default();
+            let right_stat = state.tab_breakdown.get(&right_id).cloned().unwrap_or_default();
+
+            let breakdown = TabBreakdown {
+                total: main_stat.total + left_stat.total + right_stat.total,
+                trackers: main_stat.trackers + left_stat.trackers + right_stat.trackers,
+                ads: main_stat.ads + left_stat.ads + right_stat.ads,
+                miners: main_stat.miners + left_stat.miners + right_stat.miners,
+            };
+
+            (root_id, breakdown)
+        } else {
+            (tab_id.to_string(), TabBreakdown::default())
         }
     }
 
@@ -884,43 +919,119 @@ pub fn get_shield_injection_script(tab_id: &str) -> String {
     return el;
   };
 
-  // 5. Aggressive Script Sandboxing
-  if (window.__YOONSPACE_SHIELD_SANDBOX__) {
+  // 4b. Upgrade anchor clicks to HTTPS
+  document.addEventListener("click", function(e) {
+    if (!window.__YOONSPACE_SHIELD_ENABLED__ || !window.__YOONSPACE_SHIELD_HTTPS__) return;
     try {
-      const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-      HTMLCanvasElement.prototype.toDataURL = function() {
+      const a = e.target && e.target.closest ? e.target.closest("a") : null;
+      if (a && a.href && typeof a.href === "string" && a.href.startsWith("http://") && !a.href.startsWith("http://localhost") && !a.href.startsWith("http://127.0.0.1")) {
+        a.href = "https://" + a.href.slice(7);
+      }
+    } catch (err) {}
+  }, true);
+
+  // 5. Aggressive Script Sandboxing
+  try {
+    const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+    CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {
+      const res = origGetImageData.apply(this, arguments);
+      if (window.__YOONSPACE_SHIELD_ENABLED__ && window.__YOONSPACE_SHIELD_SANDBOX__ && res && res.data && res.data.length > 0) {
+        res.data[0] = (res.data[0] ^ 1);
+      }
+      return res;
+    };
+
+    const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function() {
+      if (window.__YOONSPACE_SHIELD_ENABLED__ && window.__YOONSPACE_SHIELD_SANDBOX__) {
         try {
           const ctx = this.getContext("2d");
           if (ctx) {
-            const imgData = ctx.getImageData(0, 0, Math.min(8, this.width || 1), Math.min(8, this.height || 1));
+            const imgData = origGetImageData.call(ctx, 0, 0, Math.min(2, this.width || 1), Math.min(2, this.height || 1));
             imgData.data[0] = (imgData.data[0] ^ 1);
             ctx.putImageData(imgData, 0, 0);
           }
         } catch(e) {}
-        return origToDataURL.apply(this, arguments);
-      };
-
-      if (window.AudioBuffer) {
-        const origGetChannelData = AudioBuffer.prototype.getChannelData;
-        AudioBuffer.prototype.getChannelData = function(channel) {
-          const data = origGetChannelData.apply(this, arguments);
-          if (data && data.length > 0) {
-            data[0] = data[0] + 0.0000001;
-          }
-          return data;
-        };
       }
+      return origToDataURL.apply(this, arguments);
+    };
 
-      const origOpen = window.open;
-      window.open = function(url, target, features) {
-        if (url && (checkFastMatch(url) || !window.event || !window.event.isTrusted)) {
+    const origToBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+      if (window.__YOONSPACE_SHIELD_ENABLED__ && window.__YOONSPACE_SHIELD_SANDBOX__) {
+        try {
+          const ctx = this.getContext("2d");
+          if (ctx) {
+            const imgData = origGetImageData.call(ctx, 0, 0, Math.min(2, this.width || 1), Math.min(2, this.height || 1));
+            imgData.data[0] = (imgData.data[0] ^ 1);
+            ctx.putImageData(imgData, 0, 0);
+          }
+        } catch(e) {}
+      }
+      return origToBlob.apply(this, arguments);
+    };
+
+    if (window.AudioBuffer) {
+      const origGetChannelData = AudioBuffer.prototype.getChannelData;
+      AudioBuffer.prototype.getChannelData = function(channel) {
+        const data = origGetChannelData.apply(this, arguments);
+        if (window.__YOONSPACE_SHIELD_ENABLED__ && window.__YOONSPACE_SHIELD_SANDBOX__ && data && data.length > 0) {
+          data[0] = data[0] + 0.0000001;
+        }
+        return data;
+      };
+    }
+
+    if (window.AnalyserNode) {
+      const origGetFloatFreq = AnalyserNode.prototype.getFloatFrequencyData;
+      AnalyserNode.prototype.getFloatFrequencyData = function(array) {
+        origGetFloatFreq.apply(this, arguments);
+        if (window.__YOONSPACE_SHIELD_ENABLED__ && window.__YOONSPACE_SHIELD_SANDBOX__ && array && array.length > 0) {
+          array[0] = array[0] + 0.0001;
+        }
+      };
+    }
+
+    if (window.WebGLRenderingContext) {
+      const origGetParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(param) {
+        if (window.__YOONSPACE_SHIELD_ENABLED__ && window.__YOONSPACE_SHIELD_SANDBOX__) {
+          if (param === 37445) return "Generic Vendor";
+          if (param === 37446) return "Generic Renderer";
+        }
+        return origGetParameter.apply(this, arguments);
+      };
+    }
+
+    if (window.WebGL2RenderingContext) {
+      const origGetParameter2 = WebGL2RenderingContext.prototype.getParameter;
+      WebGL2RenderingContext.prototype.getParameter = function(param) {
+        if (window.__YOONSPACE_SHIELD_ENABLED__ && window.__YOONSPACE_SHIELD_SANDBOX__) {
+          if (param === 37445) return "Generic Vendor";
+          if (param === 37446) return "Generic Renderer";
+        }
+        return origGetParameter2.apply(this, arguments);
+      };
+    }
+
+    const origOpen = window.open;
+    window.open = function(url, target, features) {
+      if (window.__YOONSPACE_SHIELD_ENABLED__) {
+        if (url && checkFastMatch(url)) {
           reportBlock(url, "ad");
           return null;
         }
-        return origOpen.apply(this, arguments);
-      };
-    } catch(e) {}
-  }
+        if (window.__YOONSPACE_SHIELD_SANDBOX__) {
+          const isUserAction = window.event && (window.event.isTrusted || window.event.type === "click");
+          if (!isUserAction) {
+            reportBlock(url || "untrusted-popup", "ad");
+            return null;
+          }
+        }
+      }
+      return origOpen.apply(this, arguments);
+    };
+  } catch(e) {}
 
   // 6. Inject cosmetic stylesheet generated by adblock-rust
   function injectCosmeticStyles() {
@@ -1067,6 +1178,22 @@ mod tests {
         assert_eq!(batch_breakdown.ads, 6);
         assert_eq!(batch_breakdown.total, 9);
         assert_eq!(manager.get_tab_count("test_split_tab"), 9);
+
+        manager.reset_tab("test_split_tab");
+        assert_eq!(manager.get_tab_count("test_split_tab"), 0);
+
+        // Test independent pane reset in split view
+        manager.record_block("test_split_tab_left", "https://googleads.g.doubleclick.net/pagead/ads", Some(ShieldCategory::Ad));
+        manager.record_block("test_split_tab_right", "https://coin-hive.com/lib/coinhive.min.js", Some(ShieldCategory::Miner));
+        assert_eq!(manager.get_tab_count("test_split_tab"), 2);
+
+        // Resetting only left pane retains right pane's count
+        let (root, rem) = manager.reset_tab("test_split_tab_left");
+        assert_eq!(root, "test_split_tab");
+        assert_eq!(rem.total, 1);
+        assert_eq!(rem.miners, 1);
+        assert_eq!(rem.ads, 0);
+        assert_eq!(manager.get_tab_count("test_split_tab"), 1);
 
         manager.reset_tab("test_split_tab");
         assert_eq!(manager.get_tab_count("test_split_tab"), 0);

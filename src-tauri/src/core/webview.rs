@@ -500,7 +500,7 @@ pub fn normalize_url(raw: &str) -> String {
 }
 
 fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &str) {
-    use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt, URIRequestExt, WebResourceExt, UserContentManagerExt};
+    use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt, URIRequestExt, WebResourceExt, UserContentManagerExt, CookieManagerExt, WebsiteDataManagerExt};
     let app_handle = app.clone();
     let tab_id_str = tab_id.to_string();
 
@@ -522,10 +522,22 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             settings.set_enable_smooth_scrolling(true);
         }
 
+        // 1b. Set cookie policy based on shield tracker blocking
+        if let Some(data_manager) = inner_wv.website_data_manager() {
+            if let Some(cookie_mgr) = data_manager.cookie_manager() {
+                let manager = crate::core::shield::get_shield_manager();
+                if manager.is_enabled() && manager.is_block_trackers() {
+                    cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::NoThirdParty);
+                } else {
+                    cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::Always);
+                }
+            }
+        }
+
         // 2. Unblock autoplay policy & filter popup ad windows via Brave adblock-rust
         let app_popup = app_handle.clone();
         let tab_id_popup = tab_id_str.clone();
-        inner_wv.connect_decide_policy(move |_wv, decision, decision_type| {
+        inner_wv.connect_decide_policy(move |wv, decision, decision_type| {
             if decision_type == webkit2gtk::PolicyDecisionType::NewWindowAction {
                 use gtk::prelude::Cast;
                 use webkit2gtk::{NavigationPolicyDecisionExt, URIRequestExt};
@@ -537,7 +549,7 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
                             let manager = crate::core::shield::get_shield_manager();
                             if manager.is_enabled() {
                                 let (should_block, category) = manager.check_url_categorized(uri.as_str(), "", "subdocument");
-                                if should_block {
+                                if should_block || manager.is_aggressive_sandbox() {
                                     decision.ignore();
                                     crate::commands::shield::record_and_emit_block(
                                         &app_popup,
@@ -548,6 +560,31 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
                                     );
                                     return true;
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction {
+                use gtk::prelude::Cast;
+                use webkit2gtk::{NavigationPolicyDecisionExt, URIRequestExt, WebViewExt};
+                if let Some(nav_action) = decision.dynamic_cast_ref::<webkit2gtk::NavigationPolicyDecision>() {
+                    #[allow(deprecated)]
+                    let req_opt = nav_action.navigation_action().and_then(|na| na.request()).or_else(|| nav_action.request());
+                    if let Some(req) = req_opt {
+                        if let Some(uri) = req.uri() {
+                            let uri_str = uri.as_str();
+                            let manager = crate::core::shield::get_shield_manager();
+                            if manager.is_enabled() && manager.is_upgrade_https()
+                                && uri_str.starts_with("http://")
+                                && !uri_str.starts_with("http://localhost")
+                                && !uri_str.starts_with("http://127.0.0.1")
+                            {
+                                let upgraded = format!("https://{}", &uri_str[7..]);
+                                decision.ignore();
+                                wv.load_uri(&upgraded);
+                                return true;
                             }
                         }
                     }
@@ -780,7 +817,15 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
             });
 
             if payload.event() == tauri::webview::PageLoadEvent::Started {
-                crate::core::shield::get_shield_manager().reset_tab(&tab_id_load);
+                let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_load);
+                let _ = app_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
+                    tab_id: root_tab,
+                    url: "reset".to_string(),
+                    category: "reset".to_string(),
+                    tab_count: combined_breakdown.total,
+                    total_count: crate::core::shield::get_shield_manager().get_stats().total_blocked,
+                    tab_breakdown: combined_breakdown,
+                });
             }
 
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
@@ -891,7 +936,15 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             });
 
             if payload.event() == tauri::webview::PageLoadEvent::Started {
-                crate::core::shield::get_shield_manager().reset_tab(&tab_id_left);
+                let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_left);
+                let _ = app_left_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
+                    tab_id: root_tab,
+                    url: "reset".to_string(),
+                    category: "reset".to_string(),
+                    tab_count: combined_breakdown.total,
+                    total_count: crate::core::shield::get_shield_manager().get_stats().total_blocked,
+                    tab_breakdown: combined_breakdown,
+                });
             }
 
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
@@ -930,7 +983,15 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             });
 
             if payload.event() == tauri::webview::PageLoadEvent::Started {
-                crate::core::shield::get_shield_manager().reset_tab(&tab_id_right);
+                let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_right);
+                let _ = app_right_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
+                    tab_id: root_tab,
+                    url: "reset".to_string(),
+                    category: "reset".to_string(),
+                    tab_count: combined_breakdown.total,
+                    total_count: crate::core::shield::get_shield_manager().get_stats().total_blocked,
+                    tab_breakdown: combined_breakdown,
+                });
             }
 
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
@@ -1118,6 +1179,10 @@ pub fn webview_go_forward(app: &AppHandle, target: &str) -> Result<(), String> {
 
 pub fn webview_reload(app: &AppHandle, target: &str) -> Result<(), String> {
     if let Some(view) = app.get_webview(target) {
+        let _ = view.with_webview(|platform_webview| {
+            use webkit2gtk::WebViewExt;
+            platform_webview.inner().reload();
+        });
         let _ = view.eval("window.location.reload()");
         return Ok(());
     }
@@ -1125,10 +1190,18 @@ pub fn webview_reload(app: &AppHandle, target: &str) -> Result<(), String> {
     let right_label = format!("{}_right", target);
     let mut found = false;
     if let Some(view) = app.get_webview(&left_label) {
+        let _ = view.with_webview(|platform_webview| {
+            use webkit2gtk::WebViewExt;
+            platform_webview.inner().reload();
+        });
         let _ = view.eval("window.location.reload()");
         found = true;
     }
     if let Some(view) = app.get_webview(&right_label) {
+        let _ = view.with_webview(|platform_webview| {
+            use webkit2gtk::WebViewExt;
+            platform_webview.inner().reload();
+        });
         let _ = view.eval("window.location.reload()");
         found = true;
     }
@@ -1136,10 +1209,18 @@ pub fn webview_reload(app: &AppHandle, target: &str) -> Result<(), String> {
         return Ok(());
     }
     if let Some(view) = app.get_webview("split_left") {
+        let _ = view.with_webview(|platform_webview| {
+            use webkit2gtk::WebViewExt;
+            platform_webview.inner().reload();
+        });
         let _ = view.eval("window.location.reload()");
         found = true;
     }
     if let Some(view) = app.get_webview("split_right") {
+        let _ = view.with_webview(|platform_webview| {
+            use webkit2gtk::WebViewExt;
+            platform_webview.inner().reload();
+        });
         let _ = view.eval("window.location.reload()");
         found = true;
     }
@@ -1164,6 +1245,7 @@ pub fn hide_all_webviews(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn close_tab_view(app: &AppHandle, tab_id: &str) -> Result<(), String> {
+    crate::core::shield::get_shield_manager().reset_tab(tab_id);
     let has_remaining = gtk_overlay::remove_tab_view(app, tab_id)?;
 
     if let Some(view) = app.get_webview(tab_id) {

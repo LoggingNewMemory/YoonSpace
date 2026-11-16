@@ -28,6 +28,7 @@ export interface ShieldController {
   updateCount: (count: number) => void;
   updateBreakdown: (breakdown: TabBreakdown) => void;
   setDomain: (domain: string) => void;
+  setTabId: (tabId: string | null) => void;
   togglePopover: () => void;
   closePopover: () => void;
 }
@@ -41,12 +42,17 @@ export function initShieldUI(
   onReload?: () => void
 ): ShieldController {
   let isShieldEnabled = true;
+  let activeTabId: string | null = null;
   let currentBreakdown: TabBreakdown = { total: 0, trackers: 0, ads: 0, miners: 0 };
 
   const toggleInput = sidebar.querySelector("#shield-toggle-input") as HTMLInputElement | null;
   const optTrackers = sidebar.querySelector("#shield-opt-trackers") as HTMLInputElement | null;
   const optHttps = sidebar.querySelector("#shield-opt-https") as HTMLInputElement | null;
   const optSandbox = sidebar.querySelector("#shield-opt-sandbox") as HTMLInputElement | null;
+
+  const statusBadge = sidebar.querySelector("#shield-status-badge") as HTMLElement | null;
+  const optionsContainer = sidebar.querySelector("#shield-options-container") as HTMLElement | null;
+  const closeBtn = sidebar.querySelector("#btn-close-shields") as HTMLButtonElement | null;
 
   const siteDomainEl = sidebar.querySelector("#shield-site-domain") as HTMLElement | null;
   const statCountEl = sidebar.querySelector("#shield-stat-count") as HTMLElement | null;
@@ -69,7 +75,31 @@ export function initShieldUI(
       toggleInput.checked = isShieldEnabled;
     }
 
-    const total = currentBreakdown.total;
+    if (statusBadge) {
+      if (isShieldEnabled) {
+        statusBadge.textContent = "SHIELDS UP";
+        statusBadge.className =
+          "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#e95420]/20 text-[#e95420] border border-[#e95420]/30";
+      } else {
+        statusBadge.textContent = "SHIELDS DOWN";
+        statusBadge.className =
+          "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-neutral-800 text-neutral-400 border border-neutral-700";
+      }
+    }
+
+    if (optionsContainer) {
+      if (isShieldEnabled) {
+        optionsContainer.classList.remove("opacity-40", "pointer-events-none");
+      } else {
+        optionsContainer.classList.add("opacity-40", "pointer-events-none");
+      }
+    }
+
+    if (optTrackers) optTrackers.disabled = !isShieldEnabled;
+    if (optHttps) optHttps.disabled = !isShieldEnabled;
+    if (optSandbox) optSandbox.disabled = !isShieldEnabled;
+
+    const total = isShieldEnabled ? currentBreakdown.total : 0;
 
     if (isShieldEnabled) {
       shieldIcon.textContent = "shield";
@@ -83,23 +113,31 @@ export function initShieldUI(
           "w-7 h-7 rounded-lg flex items-center justify-center text-[#f85e2a] hover:text-[#ff7e4f] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
         countBadge.classList.add("hidden");
       }
+      shieldBtn.title = total > 0 ? `YoonSpace Shields - Shields UP (${total} blocked)` : "YoonSpace Shields - Shields UP";
     } else {
       shieldBtn.className =
         "w-7 h-7 rounded-lg flex items-center justify-center text-[#716f6d] hover:text-[#9c9a98] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0";
-      shieldIcon.textContent = "shield_with_heart";
+      shieldIcon.textContent = "shield";
       countBadge.classList.add("hidden");
+      shieldBtn.title = "YoonSpace Shields - Shields DOWN";
     }
 
     if (statCountEl) {
       statCountEl.textContent = total.toString();
     }
 
-    if (statTrackersEl) statTrackersEl.textContent = currentBreakdown.trackers.toString();
-    if (statAdsEl) statAdsEl.textContent = currentBreakdown.ads.toString();
-    if (statMinersEl) statMinersEl.textContent = currentBreakdown.miners.toString();
+    if (statTrackersEl) {
+      statTrackersEl.textContent = (isShieldEnabled ? currentBreakdown.trackers : 0).toString();
+    }
+    if (statAdsEl) {
+      statAdsEl.textContent = (isShieldEnabled ? currentBreakdown.ads : 0).toString();
+    }
+    if (statMinersEl) {
+      statMinersEl.textContent = (isShieldEnabled ? currentBreakdown.miners : 0).toString();
+    }
   }
 
-  // Toggles connected to backend
+  // Master Shield Toggle
   toggleInput?.addEventListener("change", async () => {
     const nextState = toggleInput.checked;
     isShieldEnabled = await tauriIpc.toggleShield(nextState);
@@ -107,23 +145,27 @@ export function initShieldUI(
     onReload?.();
   });
 
+  // Sub-features Toggles
   optTrackers?.addEventListener("change", async () => {
     if (optTrackers) {
-      await tauriIpc.toggleShieldTrackers(optTrackers.checked);
+      const res = await tauriIpc.toggleShieldTrackers(optTrackers.checked);
+      optTrackers.checked = res;
       onReload?.();
     }
   });
 
   optHttps?.addEventListener("change", async () => {
     if (optHttps) {
-      await tauriIpc.toggleShieldHttps(optHttps.checked);
+      const res = await tauriIpc.toggleShieldHttps(optHttps.checked);
+      optHttps.checked = res;
       onReload?.();
     }
   });
 
   optSandbox?.addEventListener("change", async () => {
     if (optSandbox) {
-      await tauriIpc.toggleShieldSandbox(optSandbox.checked);
+      const res = await tauriIpc.toggleShieldSandbox(optSandbox.checked);
+      optSandbox.checked = res;
       onReload?.();
     }
   });
@@ -138,6 +180,11 @@ export function initShieldUI(
       if (optTrackers) optTrackers.checked = stats.block_trackers;
       if (optHttps) optHttps.checked = stats.upgrade_https;
       if (optSandbox) optSandbox.checked = stats.aggressive_sandbox;
+
+      if (activeTabId) {
+        const tabBreakdown = await tauriIpc.getTabShieldBreakdown(activeTabId);
+        currentBreakdown = { ...tabBreakdown };
+      }
       updateVisualState();
     } catch {}
   }
@@ -160,6 +207,20 @@ export function initShieldUI(
     togglePopover();
   });
 
+  closeBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closePopover();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!sidebar.classList.contains("hidden")) {
+      const target = e.target as HTMLElement;
+      if (!sidebar.contains(target) && !shieldBtn.contains(target)) {
+        closePopover();
+      }
+    }
+  });
+
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !sidebar.classList.contains("hidden")) {
       closePopover();
@@ -179,6 +240,9 @@ export function initShieldUI(
       if (siteDomainEl) {
         siteDomainEl.textContent = domain || "Current Website";
       }
+    },
+    setTabId: (tabId: string | null) => {
+      activeTabId = tabId;
     },
     togglePopover,
     closePopover,

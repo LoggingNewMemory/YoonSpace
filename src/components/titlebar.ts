@@ -167,12 +167,22 @@ export function createTitlebar(
       <div class="flex items-center justify-between px-4 py-3 border-b border-[#2e2e30] bg-[#1a1a1c]">
         <div class="flex items-center gap-2.5">
           <div>
-            <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-2">
               <h2 class="font-label-code-md text-sm font-semibold text-white tracking-tight">YoonSpace Shields</h2>
+              <span id="shield-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#e95420]/20 text-[#e95420] border border-[#e95420]/30">SHIELDS UP</span>
             </div>
-            <p id="shield-site-domain" class="text-[11px] text-neutral-400 font-mono flex items-center gap-1 mt-0.5">Current Website</p>
+            <p id="shield-site-domain" class="text-[11px] text-neutral-400 font-mono flex items-center gap-1 mt-0.5 truncate max-w-[240px]">Current Website</p>
           </div>
         </div>
+        <button
+          id="btn-close-shields"
+          type="button"
+          aria-label="Close Shields"
+          title="Close Shields"
+          class="w-7 h-7 rounded-lg flex items-center justify-center text-[#9c9a98] hover:text-[#e5e2e1] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none"
+        >
+          <span class="material-symbols-outlined text-[18px]">close</span>
+        </button>
       </div>
 
       <!-- Body / Scrollable Content -->
@@ -215,10 +225,13 @@ export function createTitlebar(
         </div>
 
         <!-- Privacy Protections Card -->
-        <div class="p-3.5 rounded-xl bg-[#202022] border border-[#2e2e32] shadow-sm space-y-3">
+        <div id="shield-options-container" class="p-3.5 rounded-xl bg-[#202022] border border-[#2e2e32] shadow-sm space-y-3.5 transition-all duration-200">
           <!-- Block Trackers -->
           <label class="flex items-center justify-between text-xs cursor-pointer select-none group">
-            <span class="text-neutral-300 group-hover:text-neutral-100 transition-colors">Block cross-site trackers</span>
+            <div class="flex flex-col pr-2">
+              <span class="text-neutral-200 font-medium group-hover:text-white transition-colors">Block cross-site trackers</span>
+              <span class="text-[10px] text-neutral-400 mt-0.5">Prevents analytics, telemetry &amp; 3rd-party cookies</span>
+            </div>
             <div class="relative flex items-center justify-center shrink-0">
               <input id="shield-opt-trackers" type="checkbox" checked class="sr-only peer">
               <div class="w-[18px] h-[18px] rounded-[5px] border border-[#3e3e44] bg-[#18181b] peer-checked:bg-[#e95420] peer-checked:border-[#e95420] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-all duration-150 shadow-inner group-hover:border-[#5a5a64] shrink-0">
@@ -230,8 +243,11 @@ export function createTitlebar(
           </label>
 
           <!-- HTTPS Upgrade -->
-          <label class="flex items-center justify-between text-xs cursor-pointer select-none group">
-            <span class="text-neutral-300 group-hover:text-neutral-100 transition-colors">Upgrade connections to HTTPS</span>
+          <label class="flex items-center justify-between text-xs cursor-pointer select-none group pt-2.5 border-t border-[#2a2a2e]">
+            <div class="flex flex-col pr-2">
+              <span class="text-neutral-200 font-medium group-hover:text-white transition-colors">Upgrade connections to HTTPS</span>
+              <span class="text-[10px] text-neutral-400 mt-0.5">Forces encrypted secure connections across all requests</span>
+            </div>
             <div class="relative flex items-center justify-center shrink-0">
               <input id="shield-opt-https" type="checkbox" checked class="sr-only peer">
               <div class="w-[18px] h-[18px] rounded-[5px] border border-[#3e3e44] bg-[#18181b] peer-checked:bg-[#e95420] peer-checked:border-[#e95420] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-all duration-150 shadow-inner group-hover:border-[#5a5a64] shrink-0">
@@ -243,8 +259,11 @@ export function createTitlebar(
           </label>
 
           <!-- Aggressive Sandboxing -->
-          <label class="flex items-center justify-between text-xs cursor-pointer select-none group">
-            <span class="text-neutral-300 group-hover:text-neutral-100 transition-colors">Aggressive script sandboxing</span>
+          <label class="flex items-center justify-between text-xs cursor-pointer select-none group pt-2.5 border-t border-[#2a2a2e]">
+            <div class="flex flex-col pr-2">
+              <span class="text-neutral-200 font-medium group-hover:text-white transition-colors">Aggressive script sandboxing</span>
+              <span class="text-[10px] text-neutral-400 mt-0.5">Mitigates canvas, audio &amp; WebGL fingerprinting</span>
+            </div>
             <div class="relative flex items-center justify-center shrink-0">
               <input id="shield-opt-sandbox" type="checkbox" class="sr-only peer">
               <div class="w-[18px] h-[18px] rounded-[5px] border border-[#3e3e44] bg-[#18181b] peer-checked:bg-[#e95420] peer-checked:border-[#e95420] peer-checked:[&>svg]:opacity-100 flex items-center justify-center transition-all duration-150 shadow-inner group-hover:border-[#5a5a64] shrink-0">
