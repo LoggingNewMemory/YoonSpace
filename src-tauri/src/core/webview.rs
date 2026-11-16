@@ -22,15 +22,6 @@ pub mod gtk_overlay {
     use tauri::{AppHandle, Manager};
     use crate::core::webview::SplitBounds;
 
-    pub(crate) fn set_pane_min_size(widget: &gtk::Widget, min_w: i32) {
-        widget.set_size_request(min_w, -1);
-        if let Ok(container) = widget.clone().dynamic_cast::<gtk::Container>() {
-            for child in container.children() {
-                child.set_size_request(min_w, -1);
-            }
-        }
-    }
-
     pub fn ensure_overlay(app: &AppHandle) -> Result<(), String> {
         let (tx, rx) = std::sync::mpsc::channel();
         let app_handle = app.clone();
@@ -241,8 +232,7 @@ pub mod gtk_overlay {
                     left.set_valign(gtk::Align::Fill);
                     left.set_hexpand(true);
                     left.set_vexpand(true);
-                    set_pane_min_size(left, min_pos);
-                    paned.pack1(left, true, false);
+                    paned.pack1(left, true, true);
                 }
                 if let Some(right) = &right_widget {
                     right.set_widget_name(&right_label);
@@ -250,8 +240,7 @@ pub mod gtk_overlay {
                     right.set_valign(gtk::Align::Fill);
                     right.set_hexpand(true);
                     right.set_vexpand(true);
-                    set_pane_min_size(right, min_pos);
-                    paned.pack2(right, true, false);
+                    paned.pack2(right, true, true);
                 }
 
                 let app_paned = app_handle.clone();
@@ -264,7 +253,7 @@ pub mod gtk_overlay {
                         let ratio = ((pos as f64) / (total_width as f64))
                             .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
                         let mut last = last_ratio.lock().unwrap();
-                        if (ratio - *last).abs() >= 0.002 {
+                        if (ratio - *last).abs() >= 0.005 {
                             *last = ratio;
                             crate::core::webview::set_tab_split_ratio(&tab_id_paned, ratio);
                             use tauri::Emitter;
@@ -343,12 +332,6 @@ pub mod gtk_overlay {
                                 if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
                                     let min_pos = ((bounds.width as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
                                     let max_pos = ((bounds.width as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
-                                    if let Some(c1) = paned.child1() {
-                                        set_pane_min_size(&c1, min_pos);
-                                    }
-                                    if let Some(c2) = paned.child2() {
-                                        set_pane_min_size(&c2, min_pos);
-                                    }
                                     let ratio = bounds.split_ratio.unwrap_or_else(|| crate::core::webview::get_tab_split_ratio(&tab_id))
                                         .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
                                     let target_pos = (((bounds.width as f64) * ratio) as i32).clamp(min_pos, max_pos);
@@ -475,12 +458,6 @@ pub mod gtk_overlay {
                             if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
                                 let min_pos = ((bounds.width as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
                                 let max_pos = ((bounds.width as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
-                                if let Some(c1) = paned.child1() {
-                                    set_pane_min_size(&c1, min_pos);
-                                }
-                                if let Some(c2) = paned.child2() {
-                                    set_pane_min_size(&c2, min_pos);
-                                }
                                 let ratio = bounds.split_ratio.unwrap_or_else(|| {
                                     let tab_name = child.widget_name().to_string();
                                     crate::core::webview::get_tab_split_ratio(&tab_name)
@@ -794,13 +771,18 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
                     let (should_block, category) = manager.check_url_categorized(uri_str, &page_url, "other");
                     if should_block {
                         req.set_uri("about:blank");
-                        crate::commands::shield::record_and_emit_block(
-                            &app_resource,
-                            &tab_id_resource,
-                            uri_str,
-                            Some(category),
-                            1,
-                        );
+                        let app_res = app_resource.clone();
+                        let tab_res = tab_id_resource.clone();
+                        let uri_owned = uri_str.to_string();
+                        tauri::async_runtime::spawn(async move {
+                            crate::commands::shield::record_and_emit_block(
+                                &app_res,
+                                &tab_res,
+                                &uri_owned,
+                                Some(category),
+                                1,
+                            );
+                        });
                     }
                 }
             }
@@ -1169,15 +1151,11 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let right_clone = right_webview.clone();
     let right_url_clone = target_right_url.clone();
 
-    // Idle-navigate the left pane once GTK finishes mapping the split overlay
+    // Idle-navigate panes once GTK finishes mapping the split overlay
     gtk::glib::idle_add_local(move || {
         let _ = left_clone.navigate(left_url_clone.clone());
+        let _ = right_clone.navigate(right_url_clone.clone());
         gtk::glib::ControlFlow::Break
-    });
-
-    // Stagger the right pane slightly (120ms) to prevent simultaneous GPU context and driver lock contention
-    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(120), move || {
-        let _ = right_clone.navigate(right_url_clone);
     });
 
     Ok(())
