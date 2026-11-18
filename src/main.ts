@@ -32,6 +32,10 @@ import {
   createDragSplitOverlay,
   type DragSplitOverlayController,
 } from "./components/split/drag_overlay";
+import {
+  createSettingsPage,
+  type SettingsPageController,
+} from "./components/settings_page";
 
 let currentConfig: AppConfig;
 let isViewOpen = false;
@@ -41,7 +45,11 @@ let webBar: WebBarController;
 let isShieldOpen = false;
 let isSpawning = false;
 let dragOverlay: DragSplitOverlayController;
+let settingsPage: SettingsPageController;
+let isSettingsOpen = false;
+let previousViewBeforeSettings: "tab" | "welcome" = "welcome";
 let isDropHandled = false;
+let mainWrapper: HTMLElement;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
@@ -95,6 +103,10 @@ function normalizeUrl(input: string, activeEngineId: string): string {
 }
 
 async function handleSpawnPreset(preset: SplitPreset) {
+  if (isSettingsOpen) {
+    isSettingsOpen = false;
+    settingsPage?.hide();
+  }
   if (isSpawning) {
     console.warn("[YoonSpace] Spawn ignored: already initializing a view");
     return;
@@ -148,6 +160,10 @@ async function handleSpawnPreset(preset: SplitPreset) {
 }
 
 async function handleSearch(query: string, engineId: string) {
+  if (isSettingsOpen) {
+    isSettingsOpen = false;
+    settingsPage?.hide();
+  }
   const targetUrl = normalizeUrl(query, engineId);
   const displayTitle = deriveTitleFromInput(query);
 
@@ -522,6 +538,10 @@ async function handleCloseRight() {
 
 // User clicked on a tab on the sidebar dock -> restores / activates it
 async function handleRestoreTab(tab: MinimizedTab) {
+  if (isSettingsOpen) {
+    isSettingsOpen = false;
+    settingsPage?.hide();
+  }
   activeTab = tab;
   dock.setActiveTabId(tab.id);
 
@@ -788,6 +808,10 @@ async function handleTabDropOnTab(sourceTabId: string, targetTabId: string) {
 
 // User clicked Home / Workspaces in dock
 async function handleHomeClick() {
+  if (isSettingsOpen) {
+    isSettingsOpen = false;
+    settingsPage?.hide();
+  }
   if (isViewOpen) {
     try {
       await tauriIpc.hideWebviews();
@@ -814,6 +838,10 @@ async function handleHomeClick() {
 
     dock.setActiveTabId(null);
   } else {
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.remove("hidden");
+    }
     dock.setActiveTabId(null);
   }
 }
@@ -855,6 +883,63 @@ window.addEventListener("resize", () => {
   dragOverlay?.updateBounds(getSplitBounds());
 });
 
+async function handleOpenSettings() {
+  if (isSettingsOpen) return;
+
+  previousViewBeforeSettings = isViewOpen ? "tab" : "welcome";
+  isSettingsOpen = true;
+
+  if (isViewOpen) {
+    try {
+      await tauriIpc.hideWebviews();
+      setTimeout(refreshTelemetry, 100);
+      setTimeout(refreshTelemetry, 300);
+    } catch (e) {
+      console.error("Failed to hide webviews for settings page:", e);
+    }
+  }
+
+  webBar.hide();
+
+  const mainCanvas = document.getElementById("main-canvas");
+  if (mainCanvas) {
+    mainCanvas.classList.add("hidden");
+  }
+
+  dock.setActiveTabId("settings");
+  settingsPage.show();
+  settingsPage.refreshCacheSize().catch(console.error);
+}
+
+async function handleBackFromSettings() {
+  if (!isSettingsOpen) return;
+
+  isSettingsOpen = false;
+  settingsPage.hide();
+
+  if (previousViewBeforeSettings === "tab" && activeTab) {
+    isViewOpen = true;
+    webBar.show();
+    dock.setActiveTabId(activeTab.id);
+    const bounds = getSplitBounds();
+    try {
+      await tauriIpc.showTabView(activeTab.id, bounds);
+      setTimeout(refreshTelemetry, 100);
+      setTimeout(refreshTelemetry, 300);
+    } catch (e) {
+      console.error("Failed to restore active tab from settings:", e);
+    }
+  } else {
+    isViewOpen = false;
+    webBar.hide();
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.remove("hidden");
+    }
+    dock.setActiveTabId(null);
+  }
+}
+
 async function init() {
   const app = document.getElementById("app")!;
   app.innerHTML = "";
@@ -862,6 +947,10 @@ async function init() {
   currentConfig = await tauriIpc.getAppConfig();
 
   const handleBack = () => {
+    if (isSettingsOpen) {
+      handleBackFromSettings();
+      return;
+    }
     if (isViewOpen && activeTab) {
       tauriIpc.goBack(activeTab.id);
     }
@@ -914,15 +1003,25 @@ async function init() {
   app.appendChild(webBar.element);
 
   // 4. Main Canvas & Welcome Screen
-  const mainWrapper = document.createElement("div");
+  mainWrapper = document.createElement("div");
   mainWrapper.className =
-    "pl-16 min-h-screen pt-20 flex flex-col justify-center items-center bg-[#131313] overflow-y-auto transition-[padding] duration-200 ease-out";
+    "pl-16 min-h-screen pt-20 flex flex-col justify-start items-center bg-[#131313] overflow-y-auto transition-[padding] duration-200 ease-out";
 
   // 3. Dock with Arc / Zen Collapsible Sidebar
   dock = createDock(
     (tabId) => {
       if (tabId === "home" || tabId === "workspaces") {
+        if (isSettingsOpen) {
+          isSettingsOpen = false;
+          settingsPage?.hide();
+        }
         handleHomeClick();
+      } else if (tabId === "settings") {
+        if (isSettingsOpen) {
+          handleBackFromSettings();
+        } else {
+          handleOpenSettings();
+        }
       }
     },
     handleRestoreTab,
@@ -953,24 +1052,58 @@ async function init() {
   dragOverlay = createDragSplitOverlay();
   app.appendChild(dragOverlay.element);
 
-  // Navigation keyboard shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left), Forward (Alt+Right)
+  // Settings Page with Cache, Search Engine, Shields & Preferences
+  settingsPage = createSettingsPage(
+    currentConfig,
+    async (newConfig) => {
+      currentConfig = newConfig;
+      await tauriIpc.updateAppConfig(newConfig);
+    },
+    handleBackFromSettings
+  );
+  mainWrapper.appendChild(settingsPage.element);
+
+  // Navigation keyboard shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left), Forward (Alt+Right), Settings (Ctrl+,)
   window.addEventListener("keydown", (e) => {
-    // 1. Reload (Ctrl+R / Cmd+R / F5)
-    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))) {
+    // 0. Settings (Ctrl+, / Cmd+,)
+    if ((e.ctrlKey || e.metaKey) && e.key === ",") {
       e.preventDefault();
-      if (isViewOpen && activeTab) {
+      if (isSettingsOpen) {
+        handleBackFromSettings();
+      } else {
+        handleOpenSettings();
+      }
+    }
+    // Escape closes Settings if open
+    else if (e.key === "Escape" && isSettingsOpen) {
+      e.preventDefault();
+      handleBackFromSettings();
+    }
+    // 1. Reload (Ctrl+R / Cmd+R / F5)
+    else if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))) {
+      if (isSettingsOpen) {
+        e.preventDefault();
+        settingsPage.refreshCacheSize().catch(console.error);
+      } else if (isViewOpen && activeTab) {
+        e.preventDefault();
         handleReload();
       } else {
+        e.preventDefault();
         window.location.reload();
       }
     }
     // 2. Back (Alt+Left / Alt+ArrowLeft / Cmd+[)
-    else if (((e.altKey && (e.key === "ArrowLeft" || e.key === "Left")) || (e.metaKey && e.key === "[")) && isViewOpen && activeTab) {
-      e.preventDefault();
-      handleBack();
+    else if (((e.altKey && (e.key === "ArrowLeft" || e.key === "Left")) || (e.metaKey && e.key === "["))) {
+      if (isSettingsOpen) {
+        e.preventDefault();
+        handleBackFromSettings();
+      } else if (isViewOpen && activeTab) {
+        e.preventDefault();
+        handleBack();
+      }
     }
     // 3. Forward (Alt+Right / Alt+ArrowRight / Cmd+])
-    else if (((e.altKey && (e.key === "ArrowRight" || e.key === "Right")) || (e.metaKey && e.key === "]")) && isViewOpen && activeTab) {
+    else if (((e.altKey && (e.key === "ArrowRight" || e.key === "Right")) || (e.metaKey && e.key === "]")) && isViewOpen && activeTab && !isSettingsOpen) {
       e.preventDefault();
       handleForward();
     }

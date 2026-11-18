@@ -866,6 +866,13 @@ pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
                 );
             }
         }
+
+        // Enable WebBrowser CacheModel on application startup for fast page loading
+        use webkit2gtk::WebContextExt;
+        if let Some(context) = webkit2gtk::WebContext::default() {
+            context.set_cache_model(webkit2gtk::CacheModel::WebBrowser);
+        }
+
         let _ = tx.send(());
     }).map_err(|e| e.to_string())?;
     let _ = rx.recv();

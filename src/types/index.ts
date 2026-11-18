@@ -117,3 +117,8 @@ export interface MinimizedTab {
   rightIcon?: string;
   splitRatio?: number;
 }
+
+export interface CacheInfo {
+  size_bytes: number;
+  formatted_size: string;
+}

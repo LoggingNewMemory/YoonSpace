@@ -16,7 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AppConfig, MemoryStats, ShieldBlockEvent, ShieldSettings, ShieldStats, SplitBounds, TabBreakdown } from "../types";
+import type { AppConfig, CacheInfo, MemoryStats, ShieldBlockEvent, ShieldSettings, ShieldStats, SplitBounds, TabBreakdown } from "../types";
 
 export const tauriIpc = {
   // Event listening
@@ -410,5 +410,24 @@ export const tauriIpc = {
 
   async onShieldBlocked(callback: (event: ShieldBlockEvent) => void): Promise<UnlistenFn> {
     return listen<ShieldBlockEvent>("shield-blocked-event", (e) => callback(e.payload));
+  },
+
+  // Cache management
+  async getCacheInfo(): Promise<CacheInfo> {
+    try {
+      return await invoke<CacheInfo>("get_cache_info");
+    } catch (e) {
+      console.warn("get_cache_info failed:", e);
+      return { size_bytes: 0, formatted_size: "0 B" };
+    }
+  },
+
+  async clearBrowserCache(): Promise<CacheInfo> {
+    try {
+      return await invoke<CacheInfo>("clear_browser_cache");
+    } catch (e) {
+      console.warn("clear_browser_cache failed:", e);
+      return { size_bytes: 0, formatted_size: "0 B" };
+    }
   },
 };

@@ -15,11 +15,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 pub mod builder;
+pub mod cache;
 pub mod gtk_overlay;
 pub mod navigation;
 pub mod split;
 
 pub use builder::*;
+pub use cache::*;
 pub use gtk_overlay::init_gtk_overlay;
 pub use navigation::*;
 pub use split::*;

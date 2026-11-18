@@ -57,6 +57,8 @@ pub fn run() {
             commands::webview::merge_tabs_to_split,
             commands::webview::close_tab,
             commands::webview::close_split,
+            commands::webview::get_cache_info,
+            commands::webview::clear_browser_cache,
             commands::config::get_app_config,
             commands::config::update_app_config,
             commands::shield::get_shield_stats,

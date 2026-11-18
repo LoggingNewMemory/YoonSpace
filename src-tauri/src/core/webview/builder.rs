@@ -50,9 +50,16 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             settings.set_enable_webaudio(true);
             settings.set_enable_webgl(true);
             settings.set_enable_smooth_scrolling(true);
+            settings.set_enable_page_cache(true);
+            settings.set_enable_dns_prefetching(true);
+            settings.set_enable_offline_web_application_cache(true);
         }
 
-        // 1b. Set cookie policy based on shield tracker blocking
+        // 1c. Enable WebBrowser CacheModel for aggressive disk & memory caching
+        use webkit2gtk::WebContextExt;
+        if let Some(context) = webkit2gtk::WebContext::default() {
+            context.set_cache_model(webkit2gtk::CacheModel::WebBrowser);
+        }
         if let Some(data_manager) = inner_wv.website_data_manager() {
             if let Some(cookie_mgr) = data_manager.cookie_manager() {
                 let manager = crate::core::shield::get_shield_manager();

@@ -304,10 +304,6 @@ pub fn close_tab_view(app: &AppHandle, tab_id: &str) -> Result<(), String> {
     }
 
     if !has_remaining {
-        use webkit2gtk::WebContextExt;
-        if let Some(context) = webkit2gtk::WebContext::default() {
-            context.clear_cache();
-        }
         unsafe {
             malloc_trim(0);
         }
@@ -325,10 +321,6 @@ pub fn close_split_views(app: &AppHandle) -> Result<(), String> {
         }
     }
 
-    use webkit2gtk::WebContextExt;
-    if let Some(context) = webkit2gtk::WebContext::default() {
-        context.clear_cache();
-    }
     unsafe {
         malloc_trim(0);
     }

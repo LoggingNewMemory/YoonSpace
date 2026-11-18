@@ -16,12 +16,13 @@
 
 use tauri::AppHandle;
 use crate::core::webview::{
-    close_split_views, close_tab_view, hide_all_webviews, is_split_active, navigate_split_view,
-    navigate_tab_view, set_split_ratio as core_set_split_ratio,
-    spawn_single_view as core_spawn_single_view, spawn_split_views,
-    update_split_bounds, webview_go_back as core_webview_go_back,
-    webview_go_forward as core_webview_go_forward, webview_reload as core_webview_reload,
-    SingleViewRequest, SplitBounds, SplitViewRequest,
+    clear_browser_cache as core_clear_browser_cache, close_split_views, close_tab_view,
+    get_cache_info as core_get_cache_info, hide_all_webviews, is_split_active,
+    navigate_split_view, navigate_tab_view, set_split_ratio as core_set_split_ratio,
+    spawn_single_view as core_spawn_single_view, spawn_split_views, update_split_bounds,
+    webview_go_back as core_webview_go_back, webview_go_forward as core_webview_go_forward,
+    webview_reload as core_webview_reload, CacheInfo, SingleViewRequest, SplitBounds,
+    SplitViewRequest,
 };
 
 #[tauri::command]
@@ -131,4 +132,14 @@ pub fn close_tab(app: AppHandle, tab_id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn close_split(app: AppHandle) -> Result<(), String> {
     close_split_views(&app)
+}
+
+#[tauri::command]
+pub fn get_cache_info() -> Result<CacheInfo, String> {
+    Ok(core_get_cache_info())
+}
+
+#[tauri::command]
+pub fn clear_browser_cache(app: AppHandle) -> Result<CacheInfo, String> {
+    core_clear_browser_cache(&app)
 }

@@ -589,6 +589,17 @@ export function createDock(
       }
     }
 
+    const settingsBtn = aside.querySelector("#dock-btn-settings");
+    if (settingsBtn) {
+      if (activeId === "settings") {
+        settingsBtn.classList.add("bg-[#222224]", "text-[#f85e2a]", "shadow-sm");
+        settingsBtn.classList.remove("text-[#e2bfb4]");
+      } else {
+        settingsBtn.classList.remove("bg-[#222224]", "text-[#f85e2a]", "shadow-sm");
+        settingsBtn.classList.add("text-[#e2bfb4]");
+      }
+    }
+
     renderTabs();
   };
 
