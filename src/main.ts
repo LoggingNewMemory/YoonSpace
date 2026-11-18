@@ -1233,7 +1233,7 @@ async function init() {
   // 8. Real-time Split Ratio synchronization (when dragging native GTK Paned splitter)
   tauriIpc.listen<SplitRatioChangedEvent>("split-ratio-changed", (event) => {
     const { tab_id, ratio } = event.payload;
-    const clampedRatio = Math.max(0.20, Math.min(0.80, ratio));
+    const clampedRatio = Math.max(0.30, Math.min(0.70, ratio));
     const tab = dock.getTab(tab_id);
     if (tab) {
       tab.splitRatio = clampedRatio;

@@ -232,7 +232,8 @@ pub mod gtk_overlay {
                     left.set_valign(gtk::Align::Fill);
                     left.set_hexpand(true);
                     left.set_vexpand(true);
-                    paned.pack1(left, true, true);
+                    left.set_size_request(min_pos, -1);
+                    paned.pack1(left, true, false);
                 }
                 if let Some(right) = &right_widget {
                     right.set_widget_name(&right_label);
@@ -240,17 +241,31 @@ pub mod gtk_overlay {
                     right.set_valign(gtk::Align::Fill);
                     right.set_hexpand(true);
                     right.set_vexpand(true);
-                    paned.pack2(right, true, true);
+                    right.set_size_request(min_pos, -1);
+                    paned.pack2(right, true, false);
                 }
 
                 let app_paned = app_handle.clone();
                 let tab_id_paned = tab_id.clone();
                 let last_ratio = std::sync::Arc::new(std::sync::Mutex::new(ratio));
+                let is_clamping = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let is_clamping_clone = is_clamping.clone();
                 paned.connect_notify(Some("position"), move |p, _| {
+                    if is_clamping_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                        return;
+                    }
                     let pos = p.position();
                     let total_width = p.allocated_width();
                     if total_width > 50 && pos > 0 {
-                        let ratio = ((pos as f64) / (total_width as f64))
+                        let min_pos = ((total_width as f64) * crate::core::webview::MIN_SPLIT_RATIO).round() as i32;
+                        let max_pos = ((total_width as f64) * crate::core::webview::MAX_SPLIT_RATIO).round() as i32;
+                        let clamped_pos = pos.clamp(min_pos, max_pos);
+                        if pos != clamped_pos {
+                            is_clamping_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+                            p.set_position(clamped_pos);
+                            is_clamping_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        let ratio = ((clamped_pos as f64) / (total_width as f64))
                             .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
                         let mut last = last_ratio.lock().unwrap();
                         if (ratio - *last).abs() >= 0.005 {
@@ -272,6 +287,19 @@ pub mod gtk_overlay {
                                 left_width: left_w,
                                 right_width: right_w,
                             });
+                        }
+                    }
+                });
+
+                paned.connect_size_allocate(|p, alloc| {
+                    let total_width = alloc.width();
+                    if total_width > 50 {
+                        let min_pos = ((total_width as f64) * crate::core::webview::MIN_SPLIT_RATIO).round() as i32;
+                        if let Some(c1) = p.child1() {
+                            c1.set_size_request(min_pos, -1);
+                        }
+                        if let Some(c2) = p.child2() {
+                            c2.set_size_request(min_pos, -1);
                         }
                     }
                 });
@@ -334,17 +362,20 @@ pub mod gtk_overlay {
                                 let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
                                 child.set_margin_end(margin_end);
                                 if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
-                                    let min_pos = ((bounds.width as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
-                                    let max_pos = ((bounds.width as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
+                                    let total_w = if paned.allocated_width() > 0 { paned.allocated_width() } else { bounds.width as i32 };
+                                    let min_pos = ((total_w as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
+                                    let max_pos = ((total_w as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
                                     let ratio = bounds.split_ratio.unwrap_or_else(|| crate::core::webview::get_tab_split_ratio(&tab_id))
                                         .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
-                                    let target_pos = (((bounds.width as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                                    let target_pos = (((total_w as f64) * ratio) as i32).clamp(min_pos, max_pos);
                                     paned.set_position(target_pos);
                                     if let Some(c1) = paned.child1() {
+                                        c1.set_size_request(min_pos, -1);
                                         c1.show_all();
                                         c1.show();
                                     }
                                     if let Some(c2) = paned.child2() {
+                                        c2.set_size_request(min_pos, -1);
                                         c2.show_all();
                                         c2.show();
                                     }
@@ -479,6 +510,7 @@ pub mod gtk_overlay {
                 let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
 
                 if let Some(rem) = remaining_widget {
+                    rem.set_size_request(-1, -1);
                     rem.set_widget_name(&tab_id);
                     rem.set_margin_start(bounds.x as i32);
                     rem.set_margin_top(bounds.y as i32);
@@ -497,6 +529,7 @@ pub mod gtk_overlay {
                 }
 
                 if let Some(min) = minimized_widget {
+                    min.set_size_request(-1, -1);
                     min.set_widget_name(&min_id);
                     min.set_margin_start(0);
                     min.set_margin_top(0);
@@ -612,9 +645,10 @@ pub mod gtk_overlay {
                 left_w.set_hexpand(true);
                 left_w.set_vexpand(true);
                 left_w.set_opacity(1.0);
+                left_w.set_size_request(min_pos, -1);
                 let left_label = format!("{}_left", active_tab_id);
                 left_w.set_widget_name(&left_label);
-                paned.pack1(&left_w, true, true);
+                paned.pack1(&left_w, true, false);
 
                 right_w.set_margin_start(0);
                 right_w.set_margin_top(0);
@@ -625,18 +659,32 @@ pub mod gtk_overlay {
                 right_w.set_hexpand(true);
                 right_w.set_vexpand(true);
                 right_w.set_opacity(1.0);
+                right_w.set_size_request(min_pos, -1);
                 let right_label = format!("{}_right", active_tab_id);
                 right_w.set_widget_name(&right_label);
-                paned.pack2(&right_w, true, true);
+                paned.pack2(&right_w, true, false);
 
                 let app_paned = app_handle.clone();
                 let tab_id_paned = active_tab_id.clone();
                 let last_ratio = std::sync::Arc::new(std::sync::Mutex::new(ratio));
+                let is_clamping = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let is_clamping_clone = is_clamping.clone();
                 paned.connect_notify(Some("position"), move |p, _| {
+                    if is_clamping_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                        return;
+                    }
                     let pos = p.position();
                     let total_width = p.allocated_width();
                     if total_width > 50 && pos > 0 {
-                        let ratio = ((pos as f64) / (total_width as f64))
+                        let min_pos = ((total_width as f64) * crate::core::webview::MIN_SPLIT_RATIO).round() as i32;
+                        let max_pos = ((total_width as f64) * crate::core::webview::MAX_SPLIT_RATIO).round() as i32;
+                        let clamped_pos = pos.clamp(min_pos, max_pos);
+                        if pos != clamped_pos {
+                            is_clamping_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+                            p.set_position(clamped_pos);
+                            is_clamping_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        let ratio = ((clamped_pos as f64) / (total_width as f64))
                             .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
                         let mut last = last_ratio.lock().unwrap();
                         if (ratio - *last).abs() >= 0.005 {
@@ -658,6 +706,19 @@ pub mod gtk_overlay {
                                 left_width: left_w,
                                 right_width: right_w,
                             });
+                        }
+                    }
+                });
+
+                paned.connect_size_allocate(|p, alloc| {
+                    let total_width = alloc.width();
+                    if total_width > 50 {
+                        let min_pos = ((total_width as f64) * crate::core::webview::MIN_SPLIT_RATIO).round() as i32;
+                        if let Some(c1) = p.child1() {
+                            c1.set_size_request(min_pos, -1);
+                        }
+                        if let Some(c2) = p.child2() {
+                            c2.set_size_request(min_pos, -1);
                         }
                     }
                 });
@@ -767,14 +828,21 @@ pub mod gtk_overlay {
                             child.set_margin_top(bounds.y as i32);
                             child.set_margin_end(margin_end);
                             if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
-                                let min_pos = ((bounds.width as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
-                                let max_pos = ((bounds.width as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
+                                let total_w = if paned.allocated_width() > 0 { paned.allocated_width() } else { bounds.width as i32 };
+                                let min_pos = ((total_w as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
+                                let max_pos = ((total_w as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
                                 let ratio = bounds.split_ratio.unwrap_or_else(|| {
                                     let tab_name = child.widget_name().to_string();
                                     crate::core::webview::get_tab_split_ratio(&tab_name)
                                 }).clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
-                                let target_pos = (((bounds.width as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                                let target_pos = (((total_w as f64) * ratio) as i32).clamp(min_pos, max_pos);
                                 paned.set_position(target_pos);
+                                if let Some(c1) = paned.child1() {
+                                    c1.set_size_request(min_pos, -1);
+                                }
+                                if let Some(c2) = paned.child2() {
+                                    c2.set_size_request(min_pos, -1);
+                                }
                             }
                             child.queue_resize();
                         }
@@ -858,8 +926,8 @@ pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
     gtk_overlay::ensure_overlay(app)
 }
 
-pub const MIN_SPLIT_RATIO: f64 = 0.20;
-pub const MAX_SPLIT_RATIO: f64 = 0.80;
+pub const MIN_SPLIT_RATIO: f64 = 0.30;
+pub const MAX_SPLIT_RATIO: f64 = 0.70;
 
 static SPLIT_RATIOS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> = std::sync::OnceLock::new();
 
@@ -1521,6 +1589,12 @@ pub fn set_split_ratio(app: &AppHandle, tab_id: Option<&str>, ratio: f64) -> Res
                             let min_pos = ((total_w as f64) * MIN_SPLIT_RATIO) as i32;
                             let max_pos = ((total_w as f64) * MAX_SPLIT_RATIO) as i32;
                             let pos = (((total_w as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                            if let Some(c1) = paned.child1() {
+                                c1.set_size_request(min_pos, -1);
+                            }
+                            if let Some(c2) = paned.child2() {
+                                c2.set_size_request(min_pos, -1);
+                            }
                             paned.set_position(pos);
                             paned.queue_resize();
                         }

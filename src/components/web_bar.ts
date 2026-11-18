@@ -103,7 +103,7 @@ export function createWebBar(
     <!-- Dual Split View Header Bar -->
     <div id="web-bar-split" class="hidden w-full h-full flex items-center relative overflow-hidden">
       <!-- Left Pane Header -->
-      <div id="web-bar-left-pane" class="h-full flex items-center justify-between px-3 border-r border-[#353535]/80 min-w-0" style="width: 50%;">
+      <div id="web-bar-left-pane" class="h-full flex items-center justify-between px-3 min-w-0" style="width: 50%;">
         <div class="w-16 flex items-center flex-shrink-0"></div>
         <div class="flex-1 flex items-center justify-center text-center px-2 overflow-hidden">
           <span id="web-bar-left-title" class="text-xs font-medium tracking-wide text-[#d1d5db] truncate max-w-xs">
@@ -186,7 +186,7 @@ export function createWebBar(
   let currentSplitRatio = 0.5;
 
   const setSplitRatio = (ratio: number) => {
-    currentSplitRatio = Math.max(0.20, Math.min(0.80, ratio));
+    currentSplitRatio = Math.max(0.30, Math.min(0.70, ratio));
     const percent = currentSplitRatio * 100;
     if (leftPaneEl) leftPaneEl.style.width = `${percent}%`;
     if (rightPaneEl) rightPaneEl.style.width = `${100 - percent}%`;
