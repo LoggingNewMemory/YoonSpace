@@ -356,8 +356,11 @@ async function handleMinimizeLeft() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.closeTab(tabId);
-    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    const minimized = await tauriIpc.minimizeSplitPane(tabId, "left", leftTab.id, bounds);
+    if (!minimized) {
+      await tauriIpc.closeTab(tabId);
+      await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    }
     webBar.setSingleMode(remainingTitle);
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
@@ -404,8 +407,14 @@ async function handleCloseLeft() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.closeTab(tabId);
-    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    const tempCloseId = "close-" + Date.now();
+    const minimized = await tauriIpc.minimizeSplitPane(tabId, "left", tempCloseId, bounds);
+    if (minimized) {
+      await tauriIpc.closeTab(tempCloseId);
+    } else {
+      await tauriIpc.closeTab(tabId);
+      await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    }
     webBar.setSingleMode(remainingTitle);
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
@@ -460,8 +469,11 @@ async function handleMinimizeRight() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.closeTab(tabId);
-    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    const minimized = await tauriIpc.minimizeSplitPane(tabId, "right", rightTab.id, bounds);
+    if (!minimized) {
+      await tauriIpc.closeTab(tabId);
+      await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    }
     webBar.setSingleMode(remainingTitle);
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
@@ -508,8 +520,14 @@ async function handleCloseRight() {
   const bounds = getSplitBounds();
 
   try {
-    await tauriIpc.closeTab(tabId);
-    await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    const tempCloseId = "close-" + Date.now();
+    const minimized = await tauriIpc.minimizeSplitPane(tabId, "right", tempCloseId, bounds);
+    if (minimized) {
+      await tauriIpc.closeTab(tempCloseId);
+    } else {
+      await tauriIpc.closeTab(tabId);
+      await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
+    }
     webBar.setSingleMode(remainingTitle);
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
@@ -535,8 +553,16 @@ async function handleRestoreTab(tab: MinimizedTab) {
   const bounds = getSplitBounds();
 
   try {
+    const shown = await tauriIpc.showTabView(tab.id, bounds);
+    if (!shown) {
+      if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
+        await tauriIpc.spawnSplit(tab.leftUrl, tab.rightUrl, bounds, tab.id);
+      } else {
+        await tauriIpc.spawnSingleView(tab.url || "", bounds, tab.id);
+      }
+    }
+
     if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
-      await tauriIpc.spawnSplit(tab.leftUrl, tab.rightUrl, bounds, tab.id);
       let leftTitle = tab.leftTitle || "Left Pane";
       let rightTitle = tab.rightTitle || "Right Pane";
       if (!tab.leftTitle && tab.title.includes("|")) {
@@ -547,7 +573,6 @@ async function handleRestoreTab(tab: MinimizedTab) {
       webBar.setSplitMode(leftTitle, rightTitle, tab.splitRatio ?? 0.5);
       webBar.show();
     } else {
-      await tauriIpc.spawnSingleView(tab.url || "", bounds, tab.id);
       webBar.setSingleMode(tab.title);
       webBar.show();
     }
@@ -613,7 +638,7 @@ function setSnapZoneHover(zone: HTMLElement, hovered: boolean) {
   }
 }
 
-function handleTabDragStart(tab: MinimizedTab) {
+async function handleTabDragStart(tab: MinimizedTab) {
   isDropHandled = false;
   activeSnapZone = "none";
 
@@ -632,7 +657,7 @@ function handleTabDragStart(tab: MinimizedTab) {
       dragSplitOverlay.classList.remove("hidden");
       dragSplitOverlay.classList.add("flex");
     }
-    tauriIpc.hideWebviews();
+    await tauriIpc.setDragMode(true);
   }
 }
 
@@ -668,6 +693,7 @@ async function handleTabDragEnd(tab: MinimizedTab, x: number, y: number, targetT
   // 1. Dropped directly onto another dock tab
   if (targetTabId && targetTabId !== tab.id) {
     isDropHandled = true;
+    await tauriIpc.setDragMode(false);
     await handleTabDropOnTab(tab.id, targetTabId);
     return;
   }
@@ -689,20 +715,16 @@ async function handleTabDragEnd(tab: MinimizedTab, x: number, y: number, targetT
     return;
   }
 
-  // 3. Dropped onto canvas while on Welcome screen -> open the tab
-  if (
-    !isViewOpen &&
-    x >= bounds.x &&
-    x <= bounds.x + bounds.width &&
-    y >= bounds.y &&
-    y <= bounds.y + bounds.height
-  ) {
+  // 3. Dropped onto canvas while on Welcome screen -> open / restore the tab without reload
+  if (!isViewOpen && x >= bounds.x) {
     isDropHandled = true;
+    await tauriIpc.setDragMode(false);
     await handleRestoreTab(tab);
     return;
   }
 
   // 4. Dropped outside or cancelled drag -> restore the active view instantaneously without reloading!
+  await tauriIpc.setDragMode(false);
   if (!isDropHandled && isViewOpen && activeTab) {
     await tauriIpc.showTabView(activeTab.id, bounds);
   }
@@ -718,6 +740,7 @@ async function handleTabDragCancel() {
     if (overlayRightZone) setSnapZoneHover(overlayRightZone, false);
   }
 
+  await tauriIpc.setDragMode(false);
   if (!isDropHandled && isViewOpen && activeTab) {
     const bounds = getSplitBounds();
     await tauriIpc.showTabView(activeTab.id, bounds);
@@ -726,9 +749,15 @@ async function handleTabDragCancel() {
 
 async function handleSplitWithActive(draggedTab: MinimizedTab, pane: "left" | "right") {
   isDropHandled = true;
-  if (!activeTab || activeTab.id === draggedTab.id) return;
+  if (!activeTab || activeTab.id === draggedTab.id) {
+    await tauriIpc.setDragMode(false);
+    return;
+  }
 
-  if (isSpawning) return;
+  if (isSpawning) {
+    await tauriIpc.setDragMode(false);
+    return;
+  }
   isSpawning = true;
 
   if (dragSplitOverlay) {
@@ -744,13 +773,8 @@ async function handleSplitWithActive(draggedTab: MinimizedTab, pane: "left" | "r
   const rightUrl = getTabEffectiveUrl(rightTab, "right");
   const rightTitle = getTabEffectiveTitle(rightTab, "right");
 
-  // Remove dragged tab from dock & close its webview in backend
+  // Remove dragged tab from dock
   dock.removeTab(draggedTab.id);
-  try {
-    await tauriIpc.closeTab(draggedTab.id);
-  } catch (e) {
-    console.warn("closeTab for draggedTab failed:", e);
-  }
 
   // If activeTab was already a split view, preserve replaced pane back to dock
   if (activeTab.isSplit) {
@@ -781,8 +805,17 @@ async function handleSplitWithActive(draggedTab: MinimizedTab, pane: "left" | "r
 
   const bounds = getSplitBounds();
   try {
-    await tauriIpc.closeTab(activeTab.id);
-    await tauriIpc.spawnSplit(leftUrl, rightUrl, bounds, activeTab.id);
+    const merged = await tauriIpc.mergeTabsToSplit(activeTab.id, draggedTab.id, pane, bounds);
+    if (!merged) {
+      try {
+        await tauriIpc.closeTab(draggedTab.id);
+      } catch {}
+      try {
+        await tauriIpc.closeTab(activeTab.id);
+      } catch {}
+      await tauriIpc.spawnSplit(leftUrl, rightUrl, bounds, activeTab.id);
+    }
+    await tauriIpc.setDragMode(false);
     isViewOpen = true;
 
     const mainCanvas = document.getElementById("main-canvas");
@@ -819,11 +852,6 @@ async function handleTabDropOnTab(sourceTabId: string, targetTabId: string) {
   const rightTitle = getTabEffectiveTitle(sourceTab, "right");
 
   dock.removeTab(sourceTabId);
-  try {
-    await tauriIpc.closeTab(sourceTabId);
-  } catch (e) {
-    console.warn("closeTab for sourceTab failed:", e);
-  }
 
   targetTab.isSplit = true;
   targetTab.leftUrl = leftUrl;
@@ -840,14 +868,39 @@ async function handleTabDropOnTab(sourceTabId: string, targetTabId: string) {
     dragSplitOverlay.classList.remove("flex");
   }
 
+  const bounds = getSplitBounds();
   try {
-    await tauriIpc.closeTab(targetTab.id);
-  } catch {
-    // ignore
-  }
+    const merged = await tauriIpc.mergeTabsToSplit(targetTab.id, sourceTab.id, "right", bounds);
+    if (!merged) {
+      try {
+        await tauriIpc.closeTab(sourceTab.id);
+      } catch {}
+      try {
+        await tauriIpc.closeTab(targetTab.id);
+      } catch {}
+      await tauriIpc.spawnSplit(leftUrl, rightUrl, bounds, targetTab.id);
+    }
+    await tauriIpc.setDragMode(false);
 
-  isSpawning = false;
-  await handleRestoreTab(targetTab);
+    activeTab = targetTab;
+    dock.setActiveTabId(targetTab.id);
+    isViewOpen = true;
+
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.add("hidden");
+    }
+
+    webBar.setSplitMode(leftTitle, rightTitle, 0.5);
+    webBar.show();
+    updateShieldForTab(targetTab);
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
+  } catch (e) {
+    console.error("Failed to merge dropped tabs:", e);
+  } finally {
+    isSpawning = false;
+  }
 }
 
 function initDragSplitOverlay(): HTMLElement {

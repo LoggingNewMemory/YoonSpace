@@ -80,8 +80,47 @@ pub fn hide_webviews(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn show_tab_view(app: AppHandle, tab_id: String, bounds: SplitBounds) -> Result<(), String> {
+pub fn set_drag_mode(app: AppHandle, active: bool) -> Result<(), String> {
+    crate::core::webview::gtk_overlay::set_drag_mode(&app, active)
+}
+
+#[tauri::command]
+pub fn show_tab_view(app: AppHandle, tab_id: String, bounds: SplitBounds) -> Result<bool, String> {
     crate::core::webview::gtk_overlay::activate_tab_view(&app, &tab_id, bounds)
+}
+
+#[tauri::command]
+pub fn minimize_split_pane(
+    app: AppHandle,
+    tab_id: String,
+    pane_to_minimize: String,
+    minimized_tab_id: String,
+    bounds: SplitBounds,
+) -> Result<bool, String> {
+    crate::core::webview::gtk_overlay::minimize_split_pane(
+        &app,
+        &tab_id,
+        &pane_to_minimize,
+        &minimized_tab_id,
+        bounds,
+    )
+}
+
+#[tauri::command]
+pub fn merge_tabs_to_split(
+    app: AppHandle,
+    active_tab_id: String,
+    other_tab_id: String,
+    other_pane: String,
+    bounds: SplitBounds,
+) -> Result<bool, String> {
+    crate::core::webview::gtk_overlay::merge_tabs_to_split(
+        &app,
+        &active_tab_id,
+        &other_tab_id,
+        &other_pane,
+        bounds,
+    )
 }
 
 #[tauri::command]

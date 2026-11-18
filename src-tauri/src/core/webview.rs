@@ -310,20 +310,23 @@ pub mod gtk_overlay {
         rx.recv().map_err(|e| e.to_string())?
     }
 
-    pub fn activate_tab_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> Result<(), String> {
+    pub fn activate_tab_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> Result<bool, String> {
         let (tx, rx) = std::sync::mpsc::channel();
         let app_handle = app.clone();
         let tab_id = tab_id.to_string();
         app.run_on_main_thread(move || {
-            let res = (|| -> Result<(), String> {
+            let res = (|| -> Result<bool, String> {
                 let window = app_handle.get_window("main").ok_or("Main window not found")?;
                 let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+                let mut found = false;
                 if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
                     let main_child = overlay.child();
                     for child in overlay.children() {
                         if main_child.as_ref() != Some(&child) {
                             if child.widget_name().as_str() == tab_id.as_str() {
+                                found = true;
                                 overlay.set_overlay_pass_through(&child, false);
+                                child.set_opacity(1.0);
                                 child.set_margin_start(bounds.x as i32);
                                 child.set_margin_top(bounds.y as i32);
                                 let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
@@ -357,12 +360,13 @@ pub mod gtk_overlay {
                                 child.queue_resize();
                                 child.queue_draw();
                             } else {
+                                overlay.set_overlay_pass_through(&child, true);
                                 child.hide();
                             }
                         }
                     }
                 }
-                Ok(())
+                Ok(found)
             })();
             let _ = tx.send(res);
         }).map_err(|e| e.to_string())?;
@@ -386,6 +390,303 @@ pub mod gtk_overlay {
                     }
                 }
                 Ok(())
+            })();
+            let _ = tx.send(res);
+        }).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+
+    pub fn set_drag_mode(app: &AppHandle, active: bool) -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_handle = app.clone();
+        app.run_on_main_thread(move || {
+            let res = (|| -> Result<(), String> {
+                let window = app_handle.get_window("main").ok_or("Main window not found")?;
+                let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+                if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+                    let main_child = overlay.child();
+                    for child in overlay.children() {
+                        if main_child.as_ref() != Some(&child) {
+                            if active {
+                                if child.is_visible() {
+                                    overlay.set_overlay_pass_through(&child, true);
+                                    child.set_opacity(0.25);
+                                }
+                            } else {
+                                overlay.set_overlay_pass_through(&child, false);
+                                child.set_opacity(1.0);
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            })();
+            let _ = tx.send(res);
+        }).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+
+    pub fn minimize_split_pane(
+        app: &AppHandle,
+        tab_id: &str,
+        pane_to_minimize: &str,
+        minimized_tab_id: &str,
+        bounds: SplitBounds,
+    ) -> Result<bool, String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_handle = app.clone();
+        let tab_id = tab_id.to_string();
+        let pane = pane_to_minimize.to_string();
+        let min_id = minimized_tab_id.to_string();
+        app.run_on_main_thread(move || {
+            let res = (|| -> Result<bool, String> {
+                let window = app_handle.get_window("main").ok_or("Main window not found")?;
+                let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+                let overlay = vbox.children()
+                    .into_iter()
+                    .find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok())
+                    .ok_or("Overlay not found in vbox")?;
+
+                let main_child = overlay.child();
+                let paned_opt = overlay.children()
+                    .into_iter()
+                    .find(|c| main_child.as_ref() != Some(c) && c.widget_name().as_str() == tab_id.as_str());
+
+                let paned = match paned_opt.and_then(|w| w.dynamic_cast::<gtk::Paned>().ok()) {
+                    Some(p) => p,
+                    None => return Ok(false),
+                };
+
+                let c1 = paned.child1();
+                let c2 = paned.child2();
+
+                let (minimized_widget, remaining_widget) = if pane == "left" {
+                    (c1, c2)
+                } else {
+                    (c2, c1)
+                };
+
+                if let Some(w) = &minimized_widget {
+                    paned.remove(w);
+                }
+                if let Some(w) = &remaining_widget {
+                    paned.remove(w);
+                }
+                overlay.remove(&paned);
+
+                let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
+                let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
+                let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
+
+                if let Some(rem) = remaining_widget {
+                    rem.set_widget_name(&tab_id);
+                    rem.set_margin_start(bounds.x as i32);
+                    rem.set_margin_top(bounds.y as i32);
+                    rem.set_margin_end(margin_end);
+                    rem.set_halign(gtk::Align::Fill);
+                    rem.set_valign(gtk::Align::Fill);
+                    rem.set_hexpand(true);
+                    rem.set_vexpand(true);
+                    overlay.add_overlay(&rem);
+                    overlay.set_overlay_pass_through(&rem, false);
+                    rem.set_opacity(1.0);
+                    rem.show_all();
+                    rem.show();
+                    rem.queue_resize();
+                    rem.queue_draw();
+                }
+
+                if let Some(min) = minimized_widget {
+                    min.set_widget_name(&min_id);
+                    min.set_margin_start(0);
+                    min.set_margin_top(0);
+                    min.set_margin_end(0);
+                    min.set_margin_bottom(0);
+                    overlay.add_overlay(&min);
+                    overlay.set_overlay_pass_through(&min, true);
+                    min.hide();
+                }
+
+                Ok(true)
+            })();
+            let _ = tx.send(res);
+        }).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+
+    pub fn merge_tabs_to_split(
+        app: &AppHandle,
+        active_tab_id: &str,
+        other_tab_id: &str,
+        other_pane: &str,
+        bounds: SplitBounds,
+    ) -> Result<bool, String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_handle = app.clone();
+        let active_tab_id = active_tab_id.to_string();
+        let other_tab_id = other_tab_id.to_string();
+        let other_pane = other_pane.to_string();
+        app.run_on_main_thread(move || {
+            let res = (|| -> Result<bool, String> {
+                let window = app_handle.get_window("main").ok_or("Main window not found")?;
+                let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+                let overlay = vbox.children()
+                    .into_iter()
+                    .find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok())
+                    .ok_or("Overlay not found in vbox")?;
+
+                let main_child = overlay.child();
+                let active_widget = overlay.children()
+                    .into_iter()
+                    .find(|c| main_child.as_ref() != Some(c) && c.widget_name().as_str() == active_tab_id.as_str());
+
+                let other_widget = overlay.children()
+                    .into_iter()
+                    .find(|c| main_child.as_ref() != Some(c) && c.widget_name().as_str() == other_tab_id.as_str());
+
+                let (act, oth) = match (active_widget, other_widget) {
+                    (Some(a), Some(o)) => (a, o),
+                    _ => return Ok(false),
+                };
+
+                let act_resolved = if let Ok(act_paned) = act.clone().dynamic_cast::<gtk::Paned>() {
+                    let c1 = act_paned.child1();
+                    let c2 = act_paned.child2();
+                    let (replaced_child, kept_child) = if other_pane == "left" {
+                        (c1, c2)
+                    } else {
+                        (c2, c1)
+                    };
+                    if let Some(w) = &replaced_child {
+                        act_paned.remove(w);
+                        let parked_id = format!("{}_parked", active_tab_id);
+                        w.set_widget_name(&parked_id);
+                        w.set_margin_start(0);
+                        w.set_margin_top(0);
+                        w.set_margin_end(0);
+                        w.set_margin_bottom(0);
+                        overlay.add_overlay(w);
+                        overlay.set_overlay_pass_through(w, true);
+                        w.hide();
+                    }
+                    if let Some(w) = &kept_child {
+                        act_paned.remove(w);
+                    }
+                    overlay.remove(&act_paned);
+                    match kept_child {
+                        Some(w) => w,
+                        None => return Ok(false),
+                    }
+                } else {
+                    overlay.remove(&act);
+                    act
+                };
+
+                overlay.remove(&oth);
+
+                let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+                paned.set_widget_name(&active_tab_id);
+                paned.set_wide_handle(true);
+                paned.style_context().add_class("split-paned");
+
+                let ratio = bounds.split_ratio();
+                crate::core::webview::set_tab_split_ratio(&active_tab_id, ratio);
+                let total_w = bounds.width;
+                let min_pos = ((total_w as f64) * crate::core::webview::MIN_SPLIT_RATIO) as i32;
+                let max_pos = ((total_w as f64) * crate::core::webview::MAX_SPLIT_RATIO) as i32;
+                let initial_pos = (((total_w as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                paned.set_position(initial_pos);
+
+                let (left_w, right_w) = if other_pane == "left" {
+                    (oth, act_resolved)
+                } else {
+                    (act_resolved, oth)
+                };
+
+                left_w.set_margin_start(0);
+                left_w.set_margin_top(0);
+                left_w.set_margin_end(0);
+                left_w.set_margin_bottom(0);
+                left_w.set_halign(gtk::Align::Fill);
+                left_w.set_valign(gtk::Align::Fill);
+                left_w.set_hexpand(true);
+                left_w.set_vexpand(true);
+                left_w.set_opacity(1.0);
+                let left_label = format!("{}_left", active_tab_id);
+                left_w.set_widget_name(&left_label);
+                paned.pack1(&left_w, true, true);
+
+                right_w.set_margin_start(0);
+                right_w.set_margin_top(0);
+                right_w.set_margin_end(0);
+                right_w.set_margin_bottom(0);
+                right_w.set_halign(gtk::Align::Fill);
+                right_w.set_valign(gtk::Align::Fill);
+                right_w.set_hexpand(true);
+                right_w.set_vexpand(true);
+                right_w.set_opacity(1.0);
+                let right_label = format!("{}_right", active_tab_id);
+                right_w.set_widget_name(&right_label);
+                paned.pack2(&right_w, true, true);
+
+                let app_paned = app_handle.clone();
+                let tab_id_paned = active_tab_id.clone();
+                let last_ratio = std::sync::Arc::new(std::sync::Mutex::new(ratio));
+                paned.connect_notify(Some("position"), move |p, _| {
+                    let pos = p.position();
+                    let total_width = p.allocated_width();
+                    if total_width > 50 && pos > 0 {
+                        let ratio = ((pos as f64) / (total_width as f64))
+                            .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
+                        let mut last = last_ratio.lock().unwrap();
+                        if (ratio - *last).abs() >= 0.005 {
+                            *last = ratio;
+                            crate::core::webview::set_tab_split_ratio(&tab_id_paned, ratio);
+                            use tauri::Emitter;
+                            #[derive(serde::Serialize, Clone)]
+                            struct SplitRatioPayload {
+                                tab_id: String,
+                                ratio: f64,
+                                left_width: f64,
+                                right_width: f64,
+                            }
+                            let left_w = (total_width as f64) * ratio;
+                            let right_w = (total_width as f64) - left_w;
+                            let _ = app_paned.emit("split-ratio-changed", SplitRatioPayload {
+                                tab_id: tab_id_paned.clone(),
+                                ratio,
+                                left_width: left_w,
+                                right_width: right_w,
+                            });
+                        }
+                    }
+                });
+
+                paned.set_margin_start(bounds.x as i32);
+                paned.set_margin_top(bounds.y as i32);
+                let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
+                let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
+                let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
+                paned.set_margin_end(margin_end);
+                paned.set_halign(gtk::Align::Fill);
+                paned.set_valign(gtk::Align::Fill);
+                paned.set_hexpand(true);
+                paned.set_vexpand(true);
+
+                overlay.add_overlay(&paned);
+                overlay.set_overlay_pass_through(&paned, false);
+                paned.set_opacity(1.0);
+
+                left_w.show_all();
+                left_w.show();
+                right_w.show_all();
+                right_w.show();
+                paned.show_all();
+                paned.show();
+                paned.queue_resize();
+                paned.queue_draw();
+
+                Ok(true)
             })();
             let _ = tx.send(res);
         }).map_err(|e| e.to_string())?;

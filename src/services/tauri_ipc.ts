@@ -236,11 +236,62 @@ export const tauriIpc = {
     }
   },
 
-  async showTabView(tabId: string, bounds: SplitBounds): Promise<void> {
+  async setDragMode(active: boolean): Promise<void> {
     try {
-      await invoke("show_tab_view", { tabId, bounds });
+      await invoke("set_drag_mode", { active });
+    } catch (e) {
+      console.warn("set_drag_mode failed:", e);
+    }
+  },
+
+  async showTabView(tabId: string, bounds: SplitBounds): Promise<boolean> {
+    try {
+      return (await invoke<boolean>("show_tab_view", { tabId, bounds })) ?? false;
     } catch (e) {
       console.warn("show_tab_view failed:", e);
+      return false;
+    }
+  },
+
+  async minimizeSplitPane(
+    tabId: string,
+    paneToMinimize: "left" | "right",
+    minimizedTabId: string,
+    bounds: SplitBounds
+  ): Promise<boolean> {
+    try {
+      return (
+        (await invoke<boolean>("minimize_split_pane", {
+          tabId,
+          paneToMinimize,
+          minimizedTabId,
+          bounds,
+        })) ?? false
+      );
+    } catch (e) {
+      console.warn("minimize_split_pane failed:", e);
+      return false;
+    }
+  },
+
+  async mergeTabsToSplit(
+    activeTabId: string,
+    otherTabId: string,
+    otherPane: "left" | "right",
+    bounds: SplitBounds
+  ): Promise<boolean> {
+    try {
+      return (
+        (await invoke<boolean>("merge_tabs_to_split", {
+          activeTabId,
+          otherTabId,
+          otherPane,
+          bounds,
+        })) ?? false
+      );
+    } catch (e) {
+      console.warn("merge_tabs_to_split failed:", e);
+      return false;
     }
   },
 
