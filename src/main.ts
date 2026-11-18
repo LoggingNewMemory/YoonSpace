@@ -22,6 +22,16 @@ import { createWebBar, type WebBarController } from "./components/web_bar";
 import { createWelcomeScreen } from "./components/welcome";
 import { createSplitPresetsSection } from "./components/split_presets";
 import type { AppConfig, MinimizedTab, SplitBounds, SplitPreset, SplitRatioChangedEvent } from "./types";
+import {
+  normalizeUrl as normalizeUrlHelper,
+  deriveTitleFromInput,
+  getTabEffectiveUrl,
+  getTabEffectiveTitle,
+} from "./utils/url";
+import {
+  createDragSplitOverlay,
+  type DragSplitOverlayController,
+} from "./components/split/drag_overlay";
 
 let currentConfig: AppConfig;
 let isViewOpen = false;
@@ -30,7 +40,7 @@ let dock: DockController;
 let webBar: WebBarController;
 let isShieldOpen = false;
 let isSpawning = false;
-let dragSplitOverlay: HTMLElement | null = null;
+let dragOverlay: DragSplitOverlayController;
 let isDropHandled = false;
 
 function getSplitBounds(): SplitBounds {
@@ -81,42 +91,7 @@ function updateShieldForTab(tab: MinimizedTab | null) {
 }
 
 function normalizeUrl(input: string, activeEngineId: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return "https://google.com";
-
-  // If already starts with a protocol scheme (http://, https://, etc.)
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
-    return trimmed;
-  }
-
-  // Detect domain names (with or without subdomains, e.g. youtube.com, www.youtube.com), localhost, or IPv4
-  const isDomainOrHost =
-    !/\s/.test(trimmed) &&
-    (/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(\/.*)?$/i.test(trimmed) ||
-      /^localhost(:\d+)?(\/.*)?$/i.test(trimmed) ||
-      /^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/.*)?$/.test(trimmed));
-
-  if (isDomainOrHost) {
-    return `https://${trimmed}`;
-  }
-
-  const engine =
-    currentConfig.search_engines.find((e) => e.id === activeEngineId) ||
-    currentConfig.search_engines[0];
-  return `${engine.query_url}${encodeURIComponent(trimmed)}`;
-}
-
-function deriveTitleFromInput(input: string): string {
-  const trimmed = input.trim();
-  try {
-    if (/^https?:\/\//i.test(trimmed)) {
-      const u = new URL(trimmed);
-      return u.hostname.replace(/^www\./, "");
-    }
-  } catch {
-    // fallback
-  }
-  return trimmed;
+  return normalizeUrlHelper(input, currentConfig.search_engines, activeEngineId);
 }
 
 async function handleSpawnPreset(preset: SplitPreset) {
@@ -595,100 +570,21 @@ async function handleRestoreTab(tab: MinimizedTab) {
   }
 }
 
-function getTabEffectiveUrl(tab: MinimizedTab, preferPane: "left" | "right" = "left"): string {
-  if (tab.isSplit) {
-    if (preferPane === "right") {
-      return tab.rightUrl || tab.leftUrl || tab.url || "https://google.com";
-    }
-    return tab.leftUrl || tab.rightUrl || tab.url || "https://google.com";
-  }
-  return tab.url || tab.leftUrl || tab.rightUrl || "https://google.com";
-}
-
-function getTabEffectiveTitle(tab: MinimizedTab, preferPane: "left" | "right" = "left"): string {
-  if (tab.isSplit) {
-    if (preferPane === "right") {
-      return tab.rightTitle || tab.leftTitle || tab.title || "Web View";
-    }
-    return tab.leftTitle || tab.rightTitle || tab.title || "Web View";
-  }
-  return tab.title || tab.leftTitle || tab.rightTitle || "Web View";
-}
-
-function updateDragOverlayBounds() {
-  if (!dragSplitOverlay) return;
-  const bounds = getSplitBounds();
-  dragSplitOverlay.style.left = `${bounds.x}px`;
-  dragSplitOverlay.style.top = `${bounds.y}px`;
-  dragSplitOverlay.style.width = `${bounds.width}px`;
-  dragSplitOverlay.style.height = `${bounds.height}px`;
-}
-
-let overlayLeftZone: HTMLElement | null = null;
-let overlayRightZone: HTMLElement | null = null;
-let activeSnapZone: "left" | "right" | "none" = "none";
-
-function setSnapZoneHover(zone: HTMLElement, hovered: boolean) {
-  if (hovered) {
-    zone.className =
-      "flex-1 h-full rounded-2xl border-2 border-solid border-[#f85e2a] bg-[#f85e2a]/15 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#ffb59e] opacity-100 shadow-[0_0_30px_rgba(248,94,42,0.3)]";
-  } else {
-    zone.className =
-      "flex-1 h-full rounded-2xl border-2 border-dashed border-[#f85e2a]/30 bg-[#141416]/85 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#aa8a80] opacity-40";
-  }
-}
-
 async function handleTabDragStart(tab: MinimizedTab) {
   isDropHandled = false;
-  activeSnapZone = "none";
 
   if (isViewOpen && activeTab && activeTab.id !== tab.id) {
-    updateDragOverlayBounds();
-    if (dragSplitOverlay) {
-      if (overlayLeftZone) setSnapZoneHover(overlayLeftZone, false);
-      if (overlayRightZone) setSnapZoneHover(overlayRightZone, false);
-
-      const leftSubtitle = dragSplitOverlay.querySelector("#drag-drop-left-subtitle");
-      if (leftSubtitle) leftSubtitle.textContent = `Tile "${tab.title}" on the left`;
-
-      const rightSubtitle = dragSplitOverlay.querySelector("#drag-drop-right-subtitle");
-      if (rightSubtitle) rightSubtitle.textContent = `Tile "${tab.title}" on the right`;
-
-      dragSplitOverlay.classList.remove("hidden");
-      dragSplitOverlay.classList.add("flex");
-    }
+    dragOverlay.show(tab.title, getSplitBounds());
     await tauriIpc.setDragMode(true);
   }
 }
 
 function handleTabDragMove(_tab: MinimizedTab, x: number, y: number) {
-  if (dragSplitOverlay && !dragSplitOverlay.classList.contains("hidden")) {
-    const bounds = getSplitBounds();
-    let newZone: "left" | "right" | "none" = "none";
-
-    if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
-      newZone = x < bounds.x + bounds.width / 2 ? "left" : "right";
-    }
-
-    if (newZone !== activeSnapZone) {
-      activeSnapZone = newZone;
-      if (overlayLeftZone && overlayRightZone) {
-        setSnapZoneHover(overlayLeftZone, newZone === "left");
-        setSnapZoneHover(overlayRightZone, newZone === "right");
-      }
-    }
-  }
+  dragOverlay.updateDragPosition(x, y, getSplitBounds());
 }
 
 async function handleTabDragEnd(tab: MinimizedTab, x: number, y: number, targetTabId?: string) {
-  activeSnapZone = "none";
-
-  if (dragSplitOverlay && !dragSplitOverlay.classList.contains("hidden")) {
-    dragSplitOverlay.classList.add("hidden");
-    dragSplitOverlay.classList.remove("flex");
-    if (overlayLeftZone) setSnapZoneHover(overlayLeftZone, false);
-    if (overlayRightZone) setSnapZoneHover(overlayRightZone, false);
-  }
+  dragOverlay.hide();
 
   // 1. Dropped directly onto another dock tab
   if (targetTabId && targetTabId !== tab.id) {
@@ -731,14 +627,7 @@ async function handleTabDragEnd(tab: MinimizedTab, x: number, y: number, targetT
 }
 
 async function handleTabDragCancel() {
-  activeSnapZone = "none";
-
-  if (dragSplitOverlay && !dragSplitOverlay.classList.contains("hidden")) {
-    dragSplitOverlay.classList.add("hidden");
-    dragSplitOverlay.classList.remove("flex");
-    if (overlayLeftZone) setSnapZoneHover(overlayLeftZone, false);
-    if (overlayRightZone) setSnapZoneHover(overlayRightZone, false);
-  }
+  dragOverlay.hide();
 
   await tauriIpc.setDragMode(false);
   if (!isDropHandled && isViewOpen && activeTab) {
@@ -760,10 +649,7 @@ async function handleSplitWithActive(draggedTab: MinimizedTab, pane: "left" | "r
   }
   isSpawning = true;
 
-  if (dragSplitOverlay) {
-    dragSplitOverlay.classList.add("hidden");
-    dragSplitOverlay.classList.remove("flex");
-  }
+  dragOverlay.hide();
 
   const leftTab = pane === "left" ? draggedTab : activeTab;
   const rightTab = pane === "left" ? activeTab : draggedTab;
@@ -863,10 +749,7 @@ async function handleTabDropOnTab(sourceTabId: string, targetTabId: string) {
 
   dock.addTab(targetTab);
 
-  if (dragSplitOverlay) {
-    dragSplitOverlay.classList.add("hidden");
-    dragSplitOverlay.classList.remove("flex");
-  }
+  dragOverlay.hide();
 
   const bounds = getSplitBounds();
   try {
@@ -901,52 +784,6 @@ async function handleTabDropOnTab(sourceTabId: string, targetTabId: string) {
   } finally {
     isSpawning = false;
   }
-}
-
-function initDragSplitOverlay(): HTMLElement {
-  const overlay = document.createElement("div");
-  overlay.id = "drag-split-overlay";
-  overlay.className =
-    "hidden fixed z-50 p-4 flex gap-4 pointer-events-none select-none";
-
-  overlay.innerHTML = `
-    <!-- Left Snap Zone -->
-    <div
-      id="drag-drop-left"
-      class="flex-1 h-full rounded-2xl border-2 border-dashed border-[#f85e2a]/30 bg-[#141416]/85 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#aa8a80] opacity-40"
-    >
-      <div class="w-16 h-16 rounded-2xl bg-[#222224] flex items-center justify-center text-[#ffb59e] shadow-lg">
-        <span class="material-symbols-outlined text-4xl">dock_to_left</span>
-      </div>
-      <div class="text-center px-4">
-        <div class="text-lg font-semibold text-[#e5e2e1]">Tile Left</div>
-        <div id="drag-drop-left-subtitle" class="text-xs text-[#a09e9d] mt-1 max-w-xs truncate">
-          Snap to left half of screen
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Snap Zone -->
-    <div
-      id="drag-drop-right"
-      class="flex-1 h-full rounded-2xl border-2 border-dashed border-[#f85e2a]/30 bg-[#141416]/85 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#aa8a80] opacity-40"
-    >
-      <div class="w-16 h-16 rounded-2xl bg-[#222224] flex items-center justify-center text-[#ffb59e] shadow-lg">
-        <span class="material-symbols-outlined text-4xl">dock_to_right</span>
-      </div>
-      <div class="text-center px-4">
-        <div class="text-lg font-semibold text-[#e5e2e1]">Tile Right</div>
-        <div id="drag-drop-right-subtitle" class="text-xs text-[#a09e9d] mt-1 max-w-xs truncate">
-          Snap to right half of screen
-        </div>
-      </div>
-    </div>
-  `;
-
-  overlayLeftZone = overlay.querySelector("#drag-drop-left") as HTMLElement;
-  overlayRightZone = overlay.querySelector("#drag-drop-right") as HTMLElement;
-
-  return overlay;
 }
 
 // User clicked Home / Workspaces in dock
@@ -1015,7 +852,7 @@ window.addEventListener("resize", () => {
     const bounds = getSplitBounds();
     tauriIpc.updateSplitLayout(bounds);
   }
-  updateDragOverlayBounds();
+  dragOverlay?.updateBounds(getSplitBounds());
 });
 
 async function init() {
@@ -1051,7 +888,7 @@ async function init() {
       const bounds = getSplitBounds();
       tauriIpc.updateSplitLayout(bounds);
     }
-    updateDragOverlayBounds();
+    dragOverlay?.updateBounds(getSplitBounds());
   };
 
   // 1. Titlebar (Fixed at top, height: 80px default)
@@ -1099,7 +936,7 @@ async function init() {
         const bounds = getSplitBounds();
         tauriIpc.updateSplitLayout(bounds);
       }
-      updateDragOverlayBounds();
+      dragOverlay?.updateBounds(getSplitBounds());
     },
     handleTabDragStart,
     handleTabDragEnd,
@@ -1113,8 +950,8 @@ async function init() {
   app.appendChild(dock.element);
 
   // Drag Split Overlay for dropping tab onto active view
-  dragSplitOverlay = initDragSplitOverlay();
-  app.appendChild(dragSplitOverlay);
+  dragOverlay = createDragSplitOverlay();
+  app.appendChild(dragOverlay.element);
 
   // Navigation keyboard shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left), Forward (Alt+Right)
   window.addEventListener("keydown", (e) => {
