@@ -122,3 +122,34 @@ export interface CacheInfo {
   size_bytes: number;
   formatted_size: string;
 }
+
+export interface SavedCredential {
+  id: string;
+  origin: string;
+  username: string;
+  password: string;
+  title?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface EngineerToken {
+  id: string;
+  service: string;
+  label: string;
+  token: string;
+  notes?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface VaultStats {
+  is_encrypted: boolean;
+  encryption_algorithm: string;
+  credentials_count: number;
+  tokens_count: number;
+  storage_dir: string;
+  vault_file_bytes: number;
+  cookies_size_bytes: number;
+  cookies_formatted_size: string;
+}

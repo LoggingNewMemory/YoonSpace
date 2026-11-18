@@ -17,5 +17,6 @@
 pub mod config;
 pub mod shield;
 pub mod telemetry;
+pub mod user_data;
 pub mod webview;
 pub mod window;

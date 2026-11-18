@@ -16,7 +16,19 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AppConfig, CacheInfo, MemoryStats, ShieldBlockEvent, ShieldSettings, ShieldStats, SplitBounds, TabBreakdown } from "../types";
+import type {
+  AppConfig,
+  CacheInfo,
+  EngineerToken,
+  MemoryStats,
+  SavedCredential,
+  ShieldBlockEvent,
+  ShieldSettings,
+  ShieldStats,
+  SplitBounds,
+  TabBreakdown,
+  VaultStats,
+} from "../types";
 
 export const tauriIpc = {
   // Event listening
@@ -429,5 +441,86 @@ export const tauriIpc = {
       console.warn("clear_browser_cache failed:", e);
       return { size_bytes: 0, formatted_size: "0 B" };
     }
+  },
+
+  // User Data & Encrypted Vault (AES-256-GCM)
+  async getVaultStats(): Promise<VaultStats> {
+    try {
+      return await invoke<VaultStats>("get_vault_stats");
+    } catch (e) {
+      console.warn("get_vault_stats failed:", e);
+      return {
+        is_encrypted: true,
+        encryption_algorithm: "AES-256-GCM",
+        credentials_count: 0,
+        tokens_count: 0,
+        storage_dir: "",
+        vault_file_bytes: 0,
+        cookies_size_bytes: 0,
+        cookies_formatted_size: "0 B",
+      };
+    }
+  },
+
+  async listSavedCredentials(): Promise<SavedCredential[]> {
+    try {
+      return await invoke<SavedCredential[]>("list_saved_credentials");
+    } catch (e) {
+      console.warn("list_saved_credentials failed:", e);
+      return [];
+    }
+  },
+
+  async saveCredential(
+    origin: string,
+    username: string,
+    password: string,
+    title?: string
+  ): Promise<SavedCredential> {
+    return await invoke<SavedCredential>("save_credential", {
+      origin,
+      username,
+      password,
+      title,
+    });
+  },
+
+  async deleteCredential(id: string): Promise<void> {
+    await invoke("delete_credential", { id });
+  },
+
+  async listEngineerTokens(): Promise<EngineerToken[]> {
+    try {
+      return await invoke<EngineerToken[]>("list_engineer_tokens");
+    } catch (e) {
+      console.warn("list_engineer_tokens failed:", e);
+      return [];
+    }
+  },
+
+  async saveEngineerToken(
+    service: string,
+    label: string,
+    token: string,
+    notes?: string
+  ): Promise<EngineerToken> {
+    return await invoke<EngineerToken>("save_engineer_token", {
+      service,
+      label,
+      token,
+      notes,
+    });
+  },
+
+  async deleteEngineerToken(id: string): Promise<void> {
+    await invoke("delete_engineer_token", { id });
+  },
+
+  async clearVaultData(): Promise<void> {
+    await invoke("clear_vault_data");
+  },
+
+  async clearPersistentCookies(): Promise<void> {
+    await invoke("clear_persistent_cookies");
   },
 };

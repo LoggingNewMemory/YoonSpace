@@ -28,6 +28,9 @@ gtk = "0.18"
 webkit2gtk = { version = "2.0", features = ["v2_34"] }
 javascriptcore = { version = "1.1", package = "javascriptcore-rs" }
 libc = "0.2"
+aes-gcm = "0.10"
+rand = "0.8"
+sha2 = "0.10"
 
 [profile.dev.package."*"]
 opt-level = 3

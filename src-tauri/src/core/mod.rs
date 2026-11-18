@@ -18,4 +18,5 @@ pub mod config;
 pub mod gpu;
 pub mod shield;
 pub mod telemetry;
+pub mod user_data;
 pub mod webview;

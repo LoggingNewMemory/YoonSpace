@@ -1084,6 +1084,7 @@ async function init() {
       if (isSettingsOpen) {
         e.preventDefault();
         settingsPage.refreshCacheSize().catch(console.error);
+        settingsPage.refreshVault().catch(console.error);
       } else if (isViewOpen && activeTab) {
         e.preventDefault();
         handleReload();

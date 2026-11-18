@@ -62,6 +62,10 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
         }
         if let Some(data_manager) = inner_wv.website_data_manager() {
             if let Some(cookie_mgr) = data_manager.cookie_manager() {
+                let cookie_path = crate::core::user_data::get_cookies_db_path();
+                if let Some(path_str) = cookie_path.to_str() {
+                    cookie_mgr.set_persistent_storage(path_str, webkit2gtk::CookiePersistentStorage::Sqlite);
+                }
                 let manager = crate::core::shield::get_shield_manager();
                 if manager.is_enabled() && manager.is_block_trackers() {
                     cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::NoThirdParty);
