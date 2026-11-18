@@ -323,6 +323,7 @@ pub mod gtk_overlay {
                     for child in overlay.children() {
                         if main_child.as_ref() != Some(&child) {
                             if child.widget_name().as_str() == tab_id.as_str() {
+                                overlay.set_overlay_pass_through(&child, false);
                                 child.set_margin_start(bounds.x as i32);
                                 child.set_margin_top(bounds.y as i32);
                                 let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
@@ -336,6 +337,14 @@ pub mod gtk_overlay {
                                         .clamp(crate::core::webview::MIN_SPLIT_RATIO, crate::core::webview::MAX_SPLIT_RATIO);
                                     let target_pos = (((bounds.width as f64) * ratio) as i32).clamp(min_pos, max_pos);
                                     paned.set_position(target_pos);
+                                    if let Some(c1) = paned.child1() {
+                                        c1.show_all();
+                                        c1.show();
+                                    }
+                                    if let Some(c2) = paned.child2() {
+                                        c2.show_all();
+                                        c2.show();
+                                    }
                                 }
                                 if let Ok(container) = child.clone().dynamic_cast::<gtk::Container>() {
                                     for c in container.children() {
@@ -371,6 +380,7 @@ pub mod gtk_overlay {
                     let main_child = overlay.child();
                     for child in overlay.children() {
                         if main_child.as_ref() != Some(&child) {
+                            overlay.set_overlay_pass_through(&child, true);
                             child.hide();
                         }
                     }
@@ -924,6 +934,12 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
     if let Some(view) = app.get_webview(&tab_id) {
         let _ = view.close();
     }
+    if let Some(view) = app.get_webview(&format!("{}_left", tab_id)) {
+        let _ = view.close();
+    }
+    if let Some(view) = app.get_webview(&format!("{}_right", tab_id)) {
+        let _ = view.close();
+    }
 
     gtk_overlay::hide_all_tab_views(app)?;
 
@@ -1027,6 +1043,9 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
         let _ = view.close();
     }
     if let Some(view) = app.get_webview(&right_label) {
+        let _ = view.close();
+    }
+    if let Some(view) = app.get_webview(&tab_id) {
         let _ = view.close();
     }
 

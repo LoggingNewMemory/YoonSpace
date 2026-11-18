@@ -236,6 +236,14 @@ export const tauriIpc = {
     }
   },
 
+  async showTabView(tabId: string, bounds: SplitBounds): Promise<void> {
+    try {
+      await invoke("show_tab_view", { tabId, bounds });
+    } catch (e) {
+      console.warn("show_tab_view failed:", e);
+    }
+  },
+
   async closeTab(tabId: string): Promise<void> {
     try {
       await invoke("close_tab", { tabId });

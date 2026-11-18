@@ -80,6 +80,11 @@ pub fn hide_webviews(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn show_tab_view(app: AppHandle, tab_id: String, bounds: SplitBounds) -> Result<(), String> {
+    crate::core::webview::gtk_overlay::activate_tab_view(&app, &tab_id, bounds)
+}
+
+#[tauri::command]
 pub fn close_tab(app: AppHandle, tab_id: String) -> Result<(), String> {
     close_tab_view(&app, &tab_id)
 }

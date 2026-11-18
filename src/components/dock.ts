@@ -47,17 +47,115 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
+let dockContextMenu: HTMLElement | null = null;
+
+export function hideDockContextMenu() {
+  if (dockContextMenu) {
+    dockContextMenu.remove();
+    dockContextMenu = null;
+  }
+}
+
+function showDockContextMenu(
+  x: number,
+  y: number,
+  tab: MinimizedTab,
+  onSplitLeft?: () => void,
+  onSplitRight?: () => void,
+  onClose?: () => void
+) {
+  hideDockContextMenu();
+
+  const menu = document.createElement("div");
+  menu.id = "dock-context-menu";
+  menu.className =
+    "fixed z-[10000] py-1.5 px-1 bg-[#1e1e22]/95 backdrop-blur-md border border-[#38383e] rounded-xl shadow-[0_12px_32px_rgba(0,0,0,0.6)] text-xs text-[#e5e2e1] min-w-[180px] select-none";
+
+  const menuX = Math.min(x, window.innerWidth - 190);
+  const menuY = Math.min(y, window.innerHeight - 150);
+  menu.style.left = `${menuX}px`;
+  menu.style.top = `${menuY}px`;
+
+  menu.innerHTML = `
+    <div class="px-2.5 py-1 text-[10px] font-semibold tracking-wider text-[#a09e9d] uppercase truncate border-b border-[#2e2e34] mb-1">
+      ${escapeHtml(tab.title)}
+    </div>
+    <button
+      type="button"
+      id="ctx-split-left"
+      class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-[#f85e2a]/20 hover:text-[#ffb59e] text-left transition-colors cursor-pointer group"
+    >
+      <span class="material-symbols-outlined text-[16px] text-[#aa8a80] group-hover:text-[#ffb59e]">dock_to_left</span>
+      <span class="font-medium">Tile to Left</span>
+    </button>
+    <button
+      type="button"
+      id="ctx-split-right"
+      class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-[#f85e2a]/20 hover:text-[#ffb59e] text-left transition-colors cursor-pointer group"
+    >
+      <span class="material-symbols-outlined text-[16px] text-[#aa8a80] group-hover:text-[#ffb59e]">dock_to_right</span>
+      <span class="font-medium">Tile to Right</span>
+    </button>
+    <div class="h-px bg-[#2e2e34] my-1"></div>
+    <button
+      type="button"
+      id="ctx-close-tab"
+      class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-[#93000a]/40 hover:text-[#ffb4ab] text-left transition-colors cursor-pointer text-[#aa8a80]"
+    >
+      <span class="material-symbols-outlined text-[16px]">close</span>
+      <span class="font-medium">Close Tab</span>
+    </button>
+  `;
+
+  const onGlobalClick = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node)) {
+      hideDockContextMenu();
+      window.removeEventListener("pointerdown", onGlobalClick);
+      window.removeEventListener("keydown", onGlobalKey);
+    }
+  };
+
+  const onGlobalKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      hideDockContextMenu();
+      window.removeEventListener("pointerdown", onGlobalClick);
+      window.removeEventListener("keydown", onGlobalKey);
+    }
+  };
+
+  setTimeout(() => {
+    window.addEventListener("pointerdown", onGlobalClick);
+    window.addEventListener("keydown", onGlobalKey);
+  }, 10);
+
+  menu.querySelector("#ctx-split-left")?.addEventListener("click", () => {
+    hideDockContextMenu();
+    onSplitLeft?.();
+  });
+  menu.querySelector("#ctx-split-right")?.addEventListener("click", () => {
+    hideDockContextMenu();
+    onSplitRight?.();
+  });
+  menu.querySelector("#ctx-close-tab")?.addEventListener("click", () => {
+    hideDockContextMenu();
+    onClose?.();
+  });
+
+  document.body.appendChild(menu);
+  dockContextMenu = menu;
+}
+
 function renderSingleIcon(tab: MinimizedTab): string {
   const favicon = getFaviconUrl(tab.url);
   const fallback = tab.icon || getFallbackIcon(tab.url, tab.title);
   return `
-    <div class="site-icon-box w-6 h-6 rounded-md flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80">
+    <div class="site-icon-box pointer-events-none w-6 h-6 rounded-md flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 select-none">
       ${
         favicon
-          ? `<img src="${favicon}" alt="" class="site-favicon-img w-[18px] h-[18px] object-contain rounded-sm" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
+          ? `<img src="${favicon}" alt="" draggable="false" class="site-favicon-img pointer-events-none w-[18px] h-[18px] object-contain rounded-sm select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
           : ""
       }
-      <span class="material-symbols-outlined site-fallback-icon text-[17px] text-[#ffb59e] ${
+      <span class="material-symbols-outlined site-fallback-icon pointer-events-none text-[17px] text-[#ffb59e] select-none ${
         favicon ? "hidden" : "flex"
       } items-center justify-center" style="${favicon ? "display: none;" : "display: flex;"}">
         ${fallback}
@@ -73,15 +171,15 @@ function renderSplitIcons(tab: MinimizedTab): string {
   const rightFallback = tab.rightIcon || getFallbackIcon(tab.rightUrl, tab.rightTitle || tab.title);
 
   return `
-    <div class="flex items-center justify-center gap-1 shrink-0 h-6">
+    <div class="flex items-center justify-center gap-1 shrink-0 h-6 pointer-events-none select-none">
       <!-- Left Site Icon -->
-      <div class="w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80">
+      <div class="w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 pointer-events-none select-none">
         ${
           leftFavicon
-            ? `<img src="${leftFavicon}" alt="" class="w-3.5 h-3.5 object-contain" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
+            ? `<img src="${leftFavicon}" alt="" draggable="false" class="w-3.5 h-3.5 object-contain pointer-events-none select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
             : ""
         }
-        <span class="material-symbols-outlined text-[12px] text-[#ffb59e] ${
+        <span class="material-symbols-outlined pointer-events-none select-none text-[12px] text-[#ffb59e] ${
           leftFavicon ? "hidden" : "flex"
         } items-center justify-center" style="${leftFavicon ? "display: none;" : "display: flex;"}">
           ${leftFallback}
@@ -89,16 +187,16 @@ function renderSplitIcons(tab: MinimizedTab): string {
       </div>
 
       <!-- Vertical Divider | between the two site icons -->
-      <div class="w-px h-3.5 bg-[#454545] shrink-0"></div>
+      <div class="w-px h-3.5 bg-[#454545] shrink-0 pointer-events-none"></div>
 
       <!-- Right Site Icon -->
-      <div class="w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80">
+      <div class="w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 pointer-events-none select-none">
         ${
           rightFavicon
-            ? `<img src="${rightFavicon}" alt="" class="w-3.5 h-3.5 object-contain" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
+            ? `<img src="${rightFavicon}" alt="" draggable="false" class="w-3.5 h-3.5 object-contain pointer-events-none select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
             : ""
         }
-        <span class="material-symbols-outlined text-[12px] text-[#ffb59e] ${
+        <span class="material-symbols-outlined pointer-events-none select-none text-[12px] text-[#ffb59e] ${
           rightFavicon ? "hidden" : "flex"
         } items-center justify-center" style="${rightFavicon ? "display: none;" : "display: flex;"}">
           ${rightFallback}
@@ -113,7 +211,13 @@ export function createDock(
   onActivateTab?: (tab: MinimizedTab) => void,
   onCloseTab?: (tabId: string) => void,
   onNewTab?: () => void,
-  onToggleExpanded?: (expanded: boolean) => void
+  onToggleExpanded?: (expanded: boolean) => void,
+  onTabDragStart?: (tab: MinimizedTab) => void,
+  onTabDragEnd?: (tab: MinimizedTab, x: number, y: number, targetTabId?: string) => void,
+  _onTabDropOnTab?: (sourceTabId: string, targetTabId: string) => void,
+  onTabDragMove?: (tab: MinimizedTab, x: number, y: number) => void,
+  onTabDragCancel?: () => void,
+  onSplitTabAction?: (tab: MinimizedTab, pane: "left" | "right") => void
 ): DockController {
   const aside = document.createElement("aside");
   aside.id = "app-dock";
@@ -259,20 +363,163 @@ export function createDock(
     });
   };
 
+  const updateDockDropHighlight = (x: number, y: number, sourceWrapper: HTMLElement) => {
+    const elem = document.elementFromPoint(x, y);
+    const targetWrapper = elem?.closest(".dock-tab-wrapper") as HTMLElement | null;
+    aside.querySelectorAll(".dock-tab-wrapper").forEach((w) => {
+      if (w !== sourceWrapper && w === targetWrapper) {
+        w.classList.add("ring-2", "ring-[#f85e2a]", "scale-105");
+      } else {
+        w.classList.remove("ring-2", "ring-[#f85e2a]", "scale-105");
+      }
+    });
+  };
+
+  const clearDockDropHighlights = () => {
+    aside.querySelectorAll(".dock-tab-wrapper").forEach((w) => {
+      w.classList.remove("ring-2", "ring-[#f85e2a]", "scale-105");
+    });
+  };
+
   const createTabElement = (tab: MinimizedTab, isActive: boolean): HTMLElement => {
     const isSplit = Boolean(tab.isSplit && tab.leftUrl && tab.rightUrl);
     const wrapper = document.createElement("div");
     wrapper.setAttribute("data-tab-id", tab.id);
     wrapper.setAttribute("title", tab.title);
+    wrapper.ondragstart = (e) => e.preventDefault();
 
     const iconsHtml = isSplit ? renderSplitIcons(tab) : renderSingleIcon(tab);
 
+    const attachPointerAndDrag = (p: HTMLElement) => {
+      let pointerStartX = 0;
+      let pointerStartY = 0;
+      let isPointerDown = false;
+      let isDragging = false;
+      let didDrag = false;
+      const DRAG_THRESHOLD = 6;
+
+      p.ondragstart = (e) => e.preventDefault();
+
+      const onWindowPointerMove = (e: PointerEvent) => {
+        if (!isPointerDown) return;
+
+        if (!isDragging) {
+          const dist = Math.hypot(e.clientX - pointerStartX, e.clientY - pointerStartY);
+          if (dist >= DRAG_THRESHOLD) {
+            isDragging = true;
+            didDrag = true;
+            try {
+              wrapper.setPointerCapture(e.pointerId);
+            } catch {}
+            wrapper.classList.add("opacity-40", "scale-95");
+            onTabDragStart?.(tab);
+          }
+        }
+
+        if (isDragging) {
+          updateDockDropHighlight(e.clientX, e.clientY, wrapper);
+          onTabDragMove?.(tab, e.clientX, e.clientY);
+        }
+      };
+
+      const cleanupWindowListeners = (pointerId?: number) => {
+        if (pointerId !== undefined) {
+          try {
+            if (wrapper.hasPointerCapture(pointerId)) {
+              wrapper.releasePointerCapture(pointerId);
+            }
+          } catch {}
+        }
+        window.removeEventListener("pointermove", onWindowPointerMove);
+        window.removeEventListener("pointerup", onWindowPointerUp);
+        window.removeEventListener("pointercancel", onWindowPointerCancel);
+      };
+
+      const onWindowPointerUp = (e: PointerEvent) => {
+        cleanupWindowListeners(e.pointerId);
+        clearDockDropHighlights();
+        if (!isPointerDown) return;
+        isPointerDown = false;
+
+        if (isDragging) {
+          isDragging = false;
+          wrapper.classList.remove("opacity-40", "scale-95");
+
+          // Check if cursor was released over another dock tab
+          let targetTabId: string | undefined;
+          const elem = document.elementFromPoint(e.clientX, e.clientY);
+          const targetWrapper = elem?.closest(".dock-tab-wrapper") as HTMLElement | null;
+          if (targetWrapper && targetWrapper !== wrapper) {
+            targetTabId = targetWrapper.getAttribute("data-tab-id") || undefined;
+          }
+
+          onTabDragEnd?.(tab, e.clientX, e.clientY, targetTabId);
+        }
+      };
+
+      const onWindowPointerCancel = (e: PointerEvent) => {
+        cleanupWindowListeners(e.pointerId);
+        clearDockDropHighlights();
+        if (!isPointerDown) return;
+        isPointerDown = false;
+        if (isDragging) {
+          isDragging = false;
+          wrapper.classList.remove("opacity-40", "scale-95");
+          onTabDragCancel?.();
+        }
+      };
+
+      wrapper.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        if ((e.target as HTMLElement).closest(".tab-close-btn")) return;
+
+        isPointerDown = true;
+        isDragging = false;
+        didDrag = false;
+        pointerStartX = e.clientX;
+        pointerStartY = e.clientY;
+
+        window.addEventListener("pointermove", onWindowPointerMove);
+        window.addEventListener("pointerup", onWindowPointerUp);
+        window.addEventListener("pointercancel", onWindowPointerCancel);
+      });
+
+      // Ubuntu GNOME style context menu on tab right-click
+      wrapper.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showDockContextMenu(
+          e.clientX,
+          e.clientY,
+          tab,
+          () => onSplitTabAction?.(tab, "left"),
+          () => onSplitTabAction?.(tab, "right"),
+          () => onCloseTab?.(tab.id)
+        );
+      });
+
+      // Tab activation on click for both wrapper and pill
+      const handleTabClick = (e: MouseEvent) => {
+        if ((e.target as HTMLElement).closest(".tab-close-btn")) return;
+        if (didDrag) {
+          didDrag = false;
+          e.stopPropagation();
+          return;
+        }
+        e.stopPropagation();
+        onActivateTab?.(tab);
+      };
+
+      wrapper.addEventListener("click", handleTabClick);
+      p.addEventListener("click", handleTabClick);
+    };
+
     if (!isExpanded) {
       // COMPACT ICON RAIL (64px)
-      wrapper.className = "dock-tab-wrapper relative w-11 h-11 shrink-0 group select-none";
+      wrapper.className = "dock-tab-wrapper relative w-11 h-11 shrink-0 group select-none touch-none cursor-grab active:cursor-grabbing";
       const pill = document.createElement("div");
       pill.id = `dock-tab-${tab.id}`;
-      pill.className = `dock-tab-pill relative w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer select-none transition-all duration-150 overflow-hidden ${
+      pill.className = `dock-tab-pill relative w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer select-none touch-none transition-all duration-150 overflow-hidden ${
         isActive
           ? "bg-[#f85e2a]/15 border-2 border-[#f85e2a] text-[#e5e2e1] shadow-[0_0_12px_rgba(248,94,42,0.25)]"
           : "bg-[#1a1a1c] border border-[#2b2b2e] text-[#e2bfb4] hover:border-[#3d3d42] hover:bg-[#202022]"
@@ -286,6 +533,7 @@ export function createDock(
           type="button"
           class="tab-close-btn absolute top-1 right-1 w-4 h-4 rounded-full bg-[#242428] border border-[#45454a] text-[#aa8a80] hover:text-[#ffb4ab] hover:bg-[#93000a] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 shadow-sm cursor-pointer z-30"
           title="Close tab"
+          draggable="false"
         >
           <svg width="7" height="7" viewBox="0 0 10 10" fill="none">
             <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -293,14 +541,15 @@ export function createDock(
         </button>
       `;
 
-      pill.querySelector(".tab-close-btn")?.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onCloseTab?.(tab.id);
-      });
-
-      pill.addEventListener("click", () => {
-        onActivateTab?.(tab);
-      });
+      const closeBtn = pill.querySelector(".tab-close-btn") as HTMLElement | null;
+      if (closeBtn) {
+        closeBtn.draggable = false;
+        closeBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+        closeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onCloseTab?.(tab.id);
+        });
+      }
 
       wrapper.addEventListener("auxclick", (e) => {
         if (e.button === 1) {
@@ -309,14 +558,15 @@ export function createDock(
         }
       });
 
+      attachPointerAndDrag(pill);
       wrapper.appendChild(pill);
       return wrapper;
     } else {
       // EXPANDED ARC / ZEN SIDEBAR (220px)
-      wrapper.className = "dock-tab-wrapper relative w-full h-10 shrink-0 group select-none";
+      wrapper.className = "dock-tab-wrapper relative w-full h-10 shrink-0 group select-none touch-none cursor-grab active:cursor-grabbing";
       const pill = document.createElement("div");
       pill.id = `dock-tab-${tab.id}`;
-      pill.className = `dock-tab-pill relative w-full h-10 px-2 rounded-xl flex items-center cursor-pointer select-none transition-all duration-150 overflow-hidden ${
+      pill.className = `dock-tab-pill relative w-full h-10 px-2 rounded-xl flex items-center cursor-pointer select-none touch-none transition-all duration-150 overflow-hidden ${
         isActive
           ? "bg-[#261f1c] border-2 border-[#f85e2a] text-[#e5e2e1] shadow-[0_4px_16px_rgba(248,94,42,0.25)]"
           : "bg-[#161618] border border-[#262629] text-[#c5c2c1] hover:border-[#38383c] hover:bg-[#202022]"
@@ -341,6 +591,7 @@ export function createDock(
           type="button"
           class="tab-close-btn w-5 h-5 rounded-md flex items-center justify-center text-[#aa8a80] hover:text-[#ffb4ab] hover:bg-[#93000a]/40 ml-1 shrink-0 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
           title="Close tab"
+          draggable="false"
         >
           <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
             <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -348,14 +599,15 @@ export function createDock(
         </button>
       `;
 
-      pill.querySelector(".tab-close-btn")?.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onCloseTab?.(tab.id);
-      });
-
-      pill.addEventListener("click", () => {
-        onActivateTab?.(tab);
-      });
+      const closeBtn = pill.querySelector(".tab-close-btn") as HTMLElement | null;
+      if (closeBtn) {
+        closeBtn.draggable = false;
+        closeBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+        closeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onCloseTab?.(tab.id);
+        });
+      }
 
       wrapper.addEventListener("auxclick", (e) => {
         if (e.button === 1) {
@@ -364,6 +616,7 @@ export function createDock(
         }
       });
 
+      attachPointerAndDrag(pill);
       wrapper.appendChild(pill);
       return wrapper;
     }

@@ -30,6 +30,8 @@ let dock: DockController;
 let webBar: WebBarController;
 let isShieldOpen = false;
 let isSpawning = false;
+let dragSplitOverlay: HTMLElement | null = null;
+let isDropHandled = false;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
@@ -568,6 +570,332 @@ async function handleRestoreTab(tab: MinimizedTab) {
   }
 }
 
+function getTabEffectiveUrl(tab: MinimizedTab, preferPane: "left" | "right" = "left"): string {
+  if (tab.isSplit) {
+    if (preferPane === "right") {
+      return tab.rightUrl || tab.leftUrl || tab.url || "https://google.com";
+    }
+    return tab.leftUrl || tab.rightUrl || tab.url || "https://google.com";
+  }
+  return tab.url || tab.leftUrl || tab.rightUrl || "https://google.com";
+}
+
+function getTabEffectiveTitle(tab: MinimizedTab, preferPane: "left" | "right" = "left"): string {
+  if (tab.isSplit) {
+    if (preferPane === "right") {
+      return tab.rightTitle || tab.leftTitle || tab.title || "Web View";
+    }
+    return tab.leftTitle || tab.rightTitle || tab.title || "Web View";
+  }
+  return tab.title || tab.leftTitle || tab.rightTitle || "Web View";
+}
+
+function updateDragOverlayBounds() {
+  if (!dragSplitOverlay) return;
+  const bounds = getSplitBounds();
+  dragSplitOverlay.style.left = `${bounds.x}px`;
+  dragSplitOverlay.style.top = `${bounds.y}px`;
+  dragSplitOverlay.style.width = `${bounds.width}px`;
+  dragSplitOverlay.style.height = `${bounds.height}px`;
+}
+
+let overlayLeftZone: HTMLElement | null = null;
+let overlayRightZone: HTMLElement | null = null;
+let activeSnapZone: "left" | "right" | "none" = "none";
+
+function setSnapZoneHover(zone: HTMLElement, hovered: boolean) {
+  if (hovered) {
+    zone.className =
+      "flex-1 h-full rounded-2xl border-2 border-solid border-[#f85e2a] bg-[#f85e2a]/15 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#ffb59e] opacity-100 shadow-[0_0_30px_rgba(248,94,42,0.3)]";
+  } else {
+    zone.className =
+      "flex-1 h-full rounded-2xl border-2 border-dashed border-[#f85e2a]/30 bg-[#141416]/85 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#aa8a80] opacity-40";
+  }
+}
+
+function handleTabDragStart(tab: MinimizedTab) {
+  isDropHandled = false;
+  activeSnapZone = "none";
+
+  if (isViewOpen && activeTab && activeTab.id !== tab.id) {
+    updateDragOverlayBounds();
+    if (dragSplitOverlay) {
+      if (overlayLeftZone) setSnapZoneHover(overlayLeftZone, false);
+      if (overlayRightZone) setSnapZoneHover(overlayRightZone, false);
+
+      const leftSubtitle = dragSplitOverlay.querySelector("#drag-drop-left-subtitle");
+      if (leftSubtitle) leftSubtitle.textContent = `Tile "${tab.title}" on the left`;
+
+      const rightSubtitle = dragSplitOverlay.querySelector("#drag-drop-right-subtitle");
+      if (rightSubtitle) rightSubtitle.textContent = `Tile "${tab.title}" on the right`;
+
+      dragSplitOverlay.classList.remove("hidden");
+      dragSplitOverlay.classList.add("flex");
+    }
+    tauriIpc.hideWebviews();
+  }
+}
+
+function handleTabDragMove(_tab: MinimizedTab, x: number, y: number) {
+  if (dragSplitOverlay && !dragSplitOverlay.classList.contains("hidden")) {
+    const bounds = getSplitBounds();
+    let newZone: "left" | "right" | "none" = "none";
+
+    if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
+      newZone = x < bounds.x + bounds.width / 2 ? "left" : "right";
+    }
+
+    if (newZone !== activeSnapZone) {
+      activeSnapZone = newZone;
+      if (overlayLeftZone && overlayRightZone) {
+        setSnapZoneHover(overlayLeftZone, newZone === "left");
+        setSnapZoneHover(overlayRightZone, newZone === "right");
+      }
+    }
+  }
+}
+
+async function handleTabDragEnd(tab: MinimizedTab, x: number, y: number, targetTabId?: string) {
+  activeSnapZone = "none";
+
+  if (dragSplitOverlay && !dragSplitOverlay.classList.contains("hidden")) {
+    dragSplitOverlay.classList.add("hidden");
+    dragSplitOverlay.classList.remove("flex");
+    if (overlayLeftZone) setSnapZoneHover(overlayLeftZone, false);
+    if (overlayRightZone) setSnapZoneHover(overlayRightZone, false);
+  }
+
+  // 1. Dropped directly onto another dock tab
+  if (targetTabId && targetTabId !== tab.id) {
+    isDropHandled = true;
+    await handleTabDropOnTab(tab.id, targetTabId);
+    return;
+  }
+
+  // 2. Dropped into the split tiling area
+  const bounds = getSplitBounds();
+  if (
+    isViewOpen &&
+    activeTab &&
+    activeTab.id !== tab.id &&
+    x >= bounds.x &&
+    x <= bounds.x + bounds.width &&
+    y >= bounds.y &&
+    y <= bounds.y + bounds.height
+  ) {
+    isDropHandled = true;
+    const isLeft = x < bounds.x + bounds.width / 2;
+    await handleSplitWithActive(tab, isLeft ? "left" : "right");
+    return;
+  }
+
+  // 3. Dropped onto canvas while on Welcome screen -> open the tab
+  if (
+    !isViewOpen &&
+    x >= bounds.x &&
+    x <= bounds.x + bounds.width &&
+    y >= bounds.y &&
+    y <= bounds.y + bounds.height
+  ) {
+    isDropHandled = true;
+    await handleRestoreTab(tab);
+    return;
+  }
+
+  // 4. Dropped outside or cancelled drag -> restore the active view instantaneously without reloading!
+  if (!isDropHandled && isViewOpen && activeTab) {
+    await tauriIpc.showTabView(activeTab.id, bounds);
+  }
+}
+
+async function handleTabDragCancel() {
+  activeSnapZone = "none";
+
+  if (dragSplitOverlay && !dragSplitOverlay.classList.contains("hidden")) {
+    dragSplitOverlay.classList.add("hidden");
+    dragSplitOverlay.classList.remove("flex");
+    if (overlayLeftZone) setSnapZoneHover(overlayLeftZone, false);
+    if (overlayRightZone) setSnapZoneHover(overlayRightZone, false);
+  }
+
+  if (!isDropHandled && isViewOpen && activeTab) {
+    const bounds = getSplitBounds();
+    await tauriIpc.showTabView(activeTab.id, bounds);
+  }
+}
+
+async function handleSplitWithActive(draggedTab: MinimizedTab, pane: "left" | "right") {
+  isDropHandled = true;
+  if (!activeTab || activeTab.id === draggedTab.id) return;
+
+  if (isSpawning) return;
+  isSpawning = true;
+
+  if (dragSplitOverlay) {
+    dragSplitOverlay.classList.add("hidden");
+    dragSplitOverlay.classList.remove("flex");
+  }
+
+  const leftTab = pane === "left" ? draggedTab : activeTab;
+  const rightTab = pane === "left" ? activeTab : draggedTab;
+
+  const leftUrl = getTabEffectiveUrl(leftTab, "left");
+  const leftTitle = getTabEffectiveTitle(leftTab, "left");
+  const rightUrl = getTabEffectiveUrl(rightTab, "right");
+  const rightTitle = getTabEffectiveTitle(rightTab, "right");
+
+  // Remove dragged tab from dock & close its webview in backend
+  dock.removeTab(draggedTab.id);
+  try {
+    await tauriIpc.closeTab(draggedTab.id);
+  } catch (e) {
+    console.warn("closeTab for draggedTab failed:", e);
+  }
+
+  // If activeTab was already a split view, preserve replaced pane back to dock
+  if (activeTab.isSplit) {
+    const replacedUrl = pane === "left" ? activeTab.leftUrl : activeTab.rightUrl;
+    const replacedTitle = pane === "left" ? activeTab.leftTitle : activeTab.rightTitle;
+    if (replacedUrl) {
+      const savedTab: MinimizedTab = {
+        id: "tab-" + Date.now(),
+        title: replacedTitle || "Web View",
+        url: replacedUrl,
+        isSplit: false,
+      };
+      dock.addTab(savedTab);
+    }
+  }
+
+  // Update activeTab to be a split tab
+  activeTab.isSplit = true;
+  activeTab.leftUrl = leftUrl;
+  activeTab.leftTitle = leftTitle;
+  activeTab.rightUrl = rightUrl;
+  activeTab.rightTitle = rightTitle;
+  activeTab.title = `${leftTitle} | ${rightTitle}`;
+  activeTab.splitRatio = 0.5;
+
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
+  const bounds = getSplitBounds();
+  try {
+    await tauriIpc.closeTab(activeTab.id);
+    await tauriIpc.spawnSplit(leftUrl, rightUrl, bounds, activeTab.id);
+    isViewOpen = true;
+
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.add("hidden");
+    }
+
+    webBar.setSplitMode(leftTitle, rightTitle, 0.5);
+    webBar.show();
+    updateShieldForTab(activeTab);
+    setTimeout(refreshTelemetry, 100);
+    setTimeout(refreshTelemetry, 300);
+  } catch (e) {
+    console.error("Failed to spawn split view from drag:", e);
+  } finally {
+    isSpawning = false;
+  }
+}
+
+async function handleTabDropOnTab(sourceTabId: string, targetTabId: string) {
+  isDropHandled = true;
+  if (sourceTabId === targetTabId) return;
+
+  const sourceTab = dock.getTab(sourceTabId);
+  const targetTab = dock.getTab(targetTabId);
+  if (!sourceTab || !targetTab) return;
+
+  if (isSpawning) return;
+  isSpawning = true;
+
+  const leftUrl = getTabEffectiveUrl(targetTab, "left");
+  const leftTitle = getTabEffectiveTitle(targetTab, "left");
+  const rightUrl = getTabEffectiveUrl(sourceTab, "right");
+  const rightTitle = getTabEffectiveTitle(sourceTab, "right");
+
+  dock.removeTab(sourceTabId);
+  try {
+    await tauriIpc.closeTab(sourceTabId);
+  } catch (e) {
+    console.warn("closeTab for sourceTab failed:", e);
+  }
+
+  targetTab.isSplit = true;
+  targetTab.leftUrl = leftUrl;
+  targetTab.leftTitle = leftTitle;
+  targetTab.rightUrl = rightUrl;
+  targetTab.rightTitle = rightTitle;
+  targetTab.title = `${leftTitle} | ${rightTitle}`;
+  targetTab.splitRatio = 0.5;
+
+  dock.addTab(targetTab);
+
+  if (dragSplitOverlay) {
+    dragSplitOverlay.classList.add("hidden");
+    dragSplitOverlay.classList.remove("flex");
+  }
+
+  try {
+    await tauriIpc.closeTab(targetTab.id);
+  } catch {
+    // ignore
+  }
+
+  isSpawning = false;
+  await handleRestoreTab(targetTab);
+}
+
+function initDragSplitOverlay(): HTMLElement {
+  const overlay = document.createElement("div");
+  overlay.id = "drag-split-overlay";
+  overlay.className =
+    "hidden fixed z-50 p-4 flex gap-4 pointer-events-none select-none";
+
+  overlay.innerHTML = `
+    <!-- Left Snap Zone -->
+    <div
+      id="drag-drop-left"
+      class="flex-1 h-full rounded-2xl border-2 border-dashed border-[#f85e2a]/30 bg-[#141416]/85 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#aa8a80] opacity-40"
+    >
+      <div class="w-16 h-16 rounded-2xl bg-[#222224] flex items-center justify-center text-[#ffb59e] shadow-lg">
+        <span class="material-symbols-outlined text-4xl">dock_to_left</span>
+      </div>
+      <div class="text-center px-4">
+        <div class="text-lg font-semibold text-[#e5e2e1]">Tile Left</div>
+        <div id="drag-drop-left-subtitle" class="text-xs text-[#a09e9d] mt-1 max-w-xs truncate">
+          Snap to left half of screen
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Snap Zone -->
+    <div
+      id="drag-drop-right"
+      class="flex-1 h-full rounded-2xl border-2 border-dashed border-[#f85e2a]/30 bg-[#141416]/85 flex flex-col items-center justify-center gap-3 transition-colors duration-100 text-[#aa8a80] opacity-40"
+    >
+      <div class="w-16 h-16 rounded-2xl bg-[#222224] flex items-center justify-center text-[#ffb59e] shadow-lg">
+        <span class="material-symbols-outlined text-4xl">dock_to_right</span>
+      </div>
+      <div class="text-center px-4">
+        <div class="text-lg font-semibold text-[#e5e2e1]">Tile Right</div>
+        <div id="drag-drop-right-subtitle" class="text-xs text-[#a09e9d] mt-1 max-w-xs truncate">
+          Snap to right half of screen
+        </div>
+      </div>
+    </div>
+  `;
+
+  overlayLeftZone = overlay.querySelector("#drag-drop-left") as HTMLElement;
+  overlayRightZone = overlay.querySelector("#drag-drop-right") as HTMLElement;
+
+  return overlay;
+}
+
 // User clicked Home / Workspaces in dock
 async function handleHomeClick() {
   if (isViewOpen) {
@@ -634,6 +962,7 @@ window.addEventListener("resize", () => {
     const bounds = getSplitBounds();
     tauriIpc.updateSplitLayout(bounds);
   }
+  updateDragOverlayBounds();
 });
 
 async function init() {
@@ -669,6 +998,7 @@ async function init() {
       const bounds = getSplitBounds();
       tauriIpc.updateSplitLayout(bounds);
     }
+    updateDragOverlayBounds();
   };
 
   // 1. Titlebar (Fixed at top, height: 80px default)
@@ -716,9 +1046,22 @@ async function init() {
         const bounds = getSplitBounds();
         tauriIpc.updateSplitLayout(bounds);
       }
+      updateDragOverlayBounds();
+    },
+    handleTabDragStart,
+    handleTabDragEnd,
+    handleTabDropOnTab,
+    handleTabDragMove,
+    handleTabDragCancel,
+    (tab, pane) => {
+      handleSplitWithActive(tab, pane);
     }
   );
   app.appendChild(dock.element);
+
+  // Drag Split Overlay for dropping tab onto active view
+  dragSplitOverlay = initDragSplitOverlay();
+  app.appendChild(dragSplitOverlay);
 
   // Navigation keyboard shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left), Forward (Alt+Right)
   window.addEventListener("keydown", (e) => {
