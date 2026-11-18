@@ -324,6 +324,10 @@ async function handleMinimizeLeft() {
     return;
   }
 
+  if (isSpawning) return;
+  isSpawning = true;
+
+  const tabId = activeTab.id;
   const leftTab: MinimizedTab = {
     id: "tab-" + Date.now(),
     title: activeTab.leftTitle || "Web Tab",
@@ -335,55 +339,85 @@ async function handleMinimizeLeft() {
   const remainingUrl = activeTab.rightUrl;
   const remainingTitle = activeTab.rightTitle || "Web View";
 
-  activeTab = {
-    id: "tab-" + (Date.now() + 1),
-    title: remainingTitle,
-    url: remainingUrl,
-    isSplit: false,
-  };
+  activeTab.isSplit = false;
+  activeTab.url = remainingUrl;
+  activeTab.title = remainingTitle;
+  delete activeTab.leftUrl;
+  delete activeTab.rightUrl;
+  delete activeTab.leftTitle;
+  delete activeTab.rightTitle;
+  delete activeTab.splitRatio;
+
   dock.addTab(activeTab);
   dock.setActiveTabId(activeTab.id);
 
   const bounds = getSplitBounds();
 
   try {
+    await tauriIpc.closeTab(tabId);
     await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
+
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = remainingUrl;
+    }
+
+    updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
   } catch (e) {
     console.error("Failed to minimize left tab:", e);
+  } finally {
+    isSpawning = false;
   }
 }
 
-// User clicked Close on Left pane of dual split view
+// User clicked Close on Left pane of dual split view -> closes left pane, Right goes full
 async function handleCloseLeft() {
   if (!activeTab || !activeTab.isSplit || !activeTab.rightUrl) {
     await handleCloseWeb();
     return;
   }
 
+  if (isSpawning) return;
+  isSpawning = true;
+
+  const tabId = activeTab.id;
   const remainingUrl = activeTab.rightUrl;
   const remainingTitle = activeTab.rightTitle || "Web View";
 
-  activeTab = {
-    id: "tab-" + Date.now(),
-    title: remainingTitle,
-    url: remainingUrl,
-    isSplit: false,
-  };
+  activeTab.isSplit = false;
+  activeTab.url = remainingUrl;
+  activeTab.title = remainingTitle;
+  delete activeTab.leftUrl;
+  delete activeTab.rightUrl;
+  delete activeTab.leftTitle;
+  delete activeTab.rightTitle;
+  delete activeTab.splitRatio;
+
   dock.addTab(activeTab);
   dock.setActiveTabId(activeTab.id);
 
   const bounds = getSplitBounds();
 
   try {
+    await tauriIpc.closeTab(tabId);
     await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
+
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = remainingUrl;
+    }
+
+    updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
   } catch (e) {
     console.error("Failed to convert split to single on close left:", e);
+  } finally {
+    isSpawning = false;
   }
 }
 
@@ -394,6 +428,10 @@ async function handleMinimizeRight() {
     return;
   }
 
+  if (isSpawning) return;
+  isSpawning = true;
+
+  const tabId = activeTab.id;
   const rightTab: MinimizedTab = {
     id: "tab-" + Date.now(),
     title: activeTab.rightTitle || "Web Tab",
@@ -405,55 +443,85 @@ async function handleMinimizeRight() {
   const remainingUrl = activeTab.leftUrl;
   const remainingTitle = activeTab.leftTitle || "Web View";
 
-  activeTab = {
-    id: "tab-" + (Date.now() + 1),
-    title: remainingTitle,
-    url: remainingUrl,
-    isSplit: false,
-  };
+  activeTab.isSplit = false;
+  activeTab.url = remainingUrl;
+  activeTab.title = remainingTitle;
+  delete activeTab.leftUrl;
+  delete activeTab.rightUrl;
+  delete activeTab.leftTitle;
+  delete activeTab.rightTitle;
+  delete activeTab.splitRatio;
+
   dock.addTab(activeTab);
   dock.setActiveTabId(activeTab.id);
 
   const bounds = getSplitBounds();
 
   try {
+    await tauriIpc.closeTab(tabId);
     await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
+
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = remainingUrl;
+    }
+
+    updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
   } catch (e) {
     console.error("Failed to minimize right tab:", e);
+  } finally {
+    isSpawning = false;
   }
 }
 
-// User clicked Close on Right pane of dual split view
+// User clicked Close on Right pane of dual split view -> closes right pane, Left goes full
 async function handleCloseRight() {
   if (!activeTab || !activeTab.isSplit || !activeTab.leftUrl) {
     await handleCloseWeb();
     return;
   }
 
+  if (isSpawning) return;
+  isSpawning = true;
+
+  const tabId = activeTab.id;
   const remainingUrl = activeTab.leftUrl;
   const remainingTitle = activeTab.leftTitle || "Web View";
 
-  activeTab = {
-    id: "tab-" + Date.now(),
-    title: remainingTitle,
-    url: remainingUrl,
-    isSplit: false,
-  };
+  activeTab.isSplit = false;
+  activeTab.url = remainingUrl;
+  activeTab.title = remainingTitle;
+  delete activeTab.leftUrl;
+  delete activeTab.rightUrl;
+  delete activeTab.leftTitle;
+  delete activeTab.rightTitle;
+  delete activeTab.splitRatio;
+
   dock.addTab(activeTab);
   dock.setActiveTabId(activeTab.id);
 
   const bounds = getSplitBounds();
 
   try {
+    await tauriIpc.closeTab(tabId);
     await tauriIpc.spawnSingleView(remainingUrl, bounds, activeTab.id);
     webBar.setSingleMode(remainingTitle);
+
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.value = remainingUrl;
+    }
+
+    updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
     setTimeout(refreshTelemetry, 300);
   } catch (e) {
     console.error("Failed to convert split to single on close right:", e);
+  } finally {
+    isSpawning = false;
   }
 }
 
