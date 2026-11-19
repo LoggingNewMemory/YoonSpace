@@ -132,6 +132,17 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
                 }
             }
 
+            if decision_type == webkit2gtk::PolicyDecisionType::Response {
+                use gtk::prelude::Cast;
+                use webkit2gtk::ResponsePolicyDecisionExt;
+                if let Some(resp_decision) = decision.dynamic_cast_ref::<webkit2gtk::ResponsePolicyDecision>() {
+                    if !resp_decision.is_mime_type_supported() {
+                        decision.download();
+                        return true;
+                    }
+                }
+            }
+
             if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction
                 || decision_type == webkit2gtk::PolicyDecisionType::NewWindowAction
             {
@@ -248,6 +259,9 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             if error.matches(webkit2gtk::PolicyError::FrameLoadInterruptedByPolicyChange)
                 || error.message().contains("interrupted")
             {
+                if crate::core::download::is_downloading_uri(failing_uri) {
+                    return true;
+                }
                 if !failing_uri.is_empty()
                     && failing_uri != "about:blank"
                     && !failing_uri.starts_with("data:")
@@ -303,6 +317,25 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             }
             gtk::glib::Propagation::Proceed
         });
+
+        // 7. Context menu media capture for "Save Image As..." tracking
+        inner_wv.connect_context_menu(move |_wv, _context_menu, _event, hit_test_result| {
+            crate::core::download::record_context_menu_event();
+            use webkit2gtk::HitTestResultExt;
+            if let Some(img_uri) = hit_test_result.image_uri() {
+                crate::core::download::set_last_right_clicked_media(img_uri.as_str());
+            } else if let Some(media_uri) = hit_test_result.media_uri() {
+                crate::core::download::set_last_right_clicked_media(media_uri.as_str());
+            } else if let Some(link_uri) = hit_test_result.link_uri() {
+                crate::core::download::set_last_right_clicked_media(link_uri.as_str());
+            }
+            false
+        });
+
+        // 8. Attach download management to the webview's context
+        if let Some(context) = inner_wv.context() {
+            crate::core::download::attach_context_download_listener(&app_handle, &context);
+        }
     });
 }
 

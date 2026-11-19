@@ -16,9 +16,11 @@
 
 import { tauriIpc } from "../services/tauri_ipc";
 import { initShieldUI, type ShieldController } from "./shield";
+import { initDownloadsUI, type DownloadController } from "./downloads";
 
 export interface TitlebarElement extends HTMLElement {
   shieldController?: ShieldController;
+  downloadController?: DownloadController;
 }
 
 export function createTitlebar(
@@ -27,7 +29,9 @@ export function createTitlebar(
   onBack?: () => void,
   onForward?: () => void,
   onReload?: () => void,
-  onShieldToggle?: (isOpen: boolean) => void
+  onShieldToggle?: (isOpen: boolean) => void,
+  onDownloadToggle?: (isOpen: boolean) => void,
+  onOpenSettings?: () => void
 ) {
   const container = document.createElement("header");
   container.className =
@@ -140,8 +144,21 @@ export function createTitlebar(
         </div>
       </form>
 
-      <!-- Right Edge: Shield Button (gap 2 from edge) -->
-      <div class="absolute right-2 flex items-center z-10">
+      <!-- Right Edge: Quick Actions (Downloads & Shields) -->
+      <div class="absolute right-2.5 flex items-center gap-1.5 z-10">
+        <!-- Downloads Button -->
+        <button
+          id="omnibar-downloads-btn"
+          type="button"
+          aria-label="Downloads"
+          title="Downloads"
+          class="w-7 h-7 rounded-lg flex items-center justify-center text-[#9c9a98] hover:text-[#e5e2e1] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none no-drag shrink-0 relative"
+        >
+          <span id="downloads-icon" class="material-symbols-outlined text-[18px]">download</span>
+          <span id="downloads-badge" class="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[#f85e2a] text-[9px] font-mono font-bold text-black flex items-center justify-center hidden">0</span>
+        </button>
+
+        <!-- Shield Button -->
         <button
           id="omnibar-shield-btn"
           type="button"
@@ -363,6 +380,21 @@ export function createTitlebar(
   if (shieldBtn && shieldBadge && shieldIcon && tray) {
     const shieldController = initShieldUI(shieldBtn, shieldBadge, shieldIcon, tray, onShieldToggle, onReload);
     (container as TitlebarElement).shieldController = shieldController;
+  }
+
+  // Initialize Downloads UI
+  const downloadsBtn = container.querySelector("#omnibar-downloads-btn") as HTMLButtonElement | null;
+  const downloadsBadge = container.querySelector("#downloads-badge") as HTMLElement | null;
+  const downloadsIcon = container.querySelector("#downloads-icon") as HTMLElement | null;
+  if (downloadsBtn && downloadsBadge && downloadsIcon) {
+    const downloadController = initDownloadsUI(
+      downloadsBtn,
+      downloadsBadge,
+      downloadsIcon,
+      onDownloadToggle,
+      onOpenSettings
+    );
+    (container as TitlebarElement).downloadController = downloadController;
   }
 
   return container as TitlebarElement;

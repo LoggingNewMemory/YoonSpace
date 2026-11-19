@@ -272,6 +272,96 @@ export function createSettingsPage(
           </div>
         </div>
       </section>
+
+      <!-- 4. Downloads Section -->
+      <section class="flex flex-col gap-3.5">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-[#f85e2a]/15 text-[#f85e2a] flex items-center justify-center">
+            <span class="material-symbols-outlined text-lg">download</span>
+          </div>
+          <div>
+            <h2 class="text-sm font-bold text-[#e5e2e1] uppercase tracking-wider">Downloads</h2>
+            <p class="text-xs text-[#a09e9d]">Download location and file saving preferences</p>
+          </div>
+        </div>
+
+        <div class="bg-[#18181b] border border-[#28282e] rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
+          <!-- Download Location -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Download Location</div>
+              <p class="text-xs text-[#a09e9d] mt-1 leading-relaxed">
+                Files downloaded from the web will be saved to this folder on your computer.
+              </p>
+              <div class="mt-2.5">
+                <span id="settings-download-path" class="px-3 py-1.5 rounded-xl bg-[#202025] border border-[#2c2c34] text-xs font-mono text-[#ffb59e] select-all inline-block truncate max-w-full">
+                  Calculating...
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                id="btn-settings-open-download-dir"
+                class="px-3 py-1.5 rounded-xl bg-[#25252b] hover:bg-[#32323a] text-[#e2bfb4] hover:text-[#e5e2e1] border border-[#34343e] text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Open download folder in file manager"
+              >
+                <span class="material-symbols-outlined text-base">folder_open</span>
+                <span>Open Folder</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-settings-change-download-dir"
+                class="px-3 py-1.5 rounded-xl bg-[#f85e2a] hover:bg-[#ff7d47] text-[#521300] hover:text-black font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Change default download directory"
+              >
+                <span class="material-symbols-outlined text-base">drive_file_move</span>
+                <span>Change Location</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Always Ask Where to Save Toggle -->
+          <label class="flex items-center justify-between cursor-pointer select-none group py-1">
+            <div class="flex flex-col pr-4">
+              <span class="text-xs font-semibold text-neutral-200 group-hover:text-white transition-colors">
+                Always ask where to save each file before downloading
+              </span>
+              <span class="text-[11px] text-[#a09e9d] mt-0.5 leading-relaxed">
+                When enabled, a file chooser will appear before every download. When disabled, files save directly into your download location.
+              </span>
+            </div>
+            <div class="relative inline-flex items-center cursor-pointer shrink-0">
+              <input id="settings-opt-ask-save" class="sr-only peer" type="checkbox">
+              <div class="w-11 h-6 bg-[#3a3a3e] peer-checked:bg-[#f85e2a] rounded-full transition-colors duration-200 ease-in-out"></div>
+              <div class="absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out translate-x-0 peer-checked:translate-x-5 pointer-events-none"></div>
+            </div>
+          </label>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Open Folder on Completion Toggle -->
+          <label class="flex items-center justify-between cursor-pointer select-none group py-1">
+            <div class="flex flex-col pr-4">
+              <span class="text-xs font-semibold text-neutral-200 group-hover:text-white transition-colors">
+                Open folder automatically when download completes
+              </span>
+              <span class="text-[11px] text-[#a09e9d] mt-0.5 leading-relaxed">
+                Reveals the downloaded file in your system file manager as soon as the transfer finishes.
+              </span>
+            </div>
+            <div class="relative inline-flex items-center cursor-pointer shrink-0">
+              <input id="settings-opt-open-complete" class="sr-only peer" type="checkbox">
+              <div class="w-11 h-6 bg-[#3a3a3e] peer-checked:bg-[#f85e2a] rounded-full transition-colors duration-200 ease-in-out"></div>
+              <div class="absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out translate-x-0 peer-checked:translate-x-5 pointer-events-none"></div>
+            </div>
+          </label>
+        </div>
+      </section>
     </div>
   `;
 
@@ -294,6 +384,27 @@ export function createSettingsPage(
   const btnVaultClear = container.querySelector("#btn-vault-clear") as HTMLButtonElement;
   const vaultAddForm = container.querySelector("#vault-add-form") as HTMLElement;
   const vaultListContainer = container.querySelector("#vault-list-container") as HTMLElement;
+
+  // Download Settings Elements
+  const downloadPathEl = container.querySelector("#settings-download-path") as HTMLElement;
+  const btnOpenDownloadDir = container.querySelector("#btn-settings-open-download-dir") as HTMLButtonElement;
+  const btnChangeDownloadDir = container.querySelector("#btn-settings-change-download-dir") as HTMLButtonElement;
+  const optAskSaveInput = container.querySelector("#settings-opt-ask-save") as HTMLInputElement;
+  const optOpenCompleteInput = container.querySelector("#settings-opt-open-complete") as HTMLInputElement;
+
+  function renderDownloadSettings() {
+    const ds = config.download_settings;
+    if (downloadPathEl) {
+      downloadPathEl.textContent = ds?.download_dir || "~/Downloads";
+      downloadPathEl.title = ds?.download_dir || "";
+    }
+    if (optAskSaveInput) {
+      optAskSaveInput.checked = Boolean(ds?.ask_where_to_save);
+    }
+    if (optOpenCompleteInput) {
+      optOpenCompleteInput.checked = Boolean(ds?.open_folder_on_complete);
+    }
+  }
 
   function renderSearchEngines() {
     engineListEl.innerHTML = "";
@@ -821,8 +932,60 @@ export function createSettingsPage(
   clearCacheBtn.addEventListener("click", handleClearCache);
   backBtn.addEventListener("click", onBack);
 
+  // Download Settings Event Listeners
+  btnOpenDownloadDir?.addEventListener("click", async () => {
+    await tauriIpc.openDownloadDir(config.download_settings?.download_dir);
+  });
+
+  btnChangeDownloadDir?.addEventListener("click", async () => {
+    const chosen = await tauriIpc.selectDownloadDir();
+    if (chosen) {
+      if (!config.download_settings) {
+        config.download_settings = {
+          download_dir: chosen,
+          ask_where_to_save: false,
+          open_folder_on_complete: false,
+        };
+      } else {
+        config.download_settings.download_dir = chosen;
+      }
+      renderDownloadSettings();
+      await tauriIpc.updateAppConfig(config);
+      onConfigUpdated(config);
+    }
+  });
+
+  optAskSaveInput?.addEventListener("change", async () => {
+    if (!config.download_settings) {
+      config.download_settings = {
+        download_dir: "~/Downloads",
+        ask_where_to_save: optAskSaveInput.checked,
+        open_folder_on_complete: false,
+      };
+    } else {
+      config.download_settings.ask_where_to_save = optAskSaveInput.checked;
+    }
+    await tauriIpc.updateAppConfig(config);
+    onConfigUpdated(config);
+  });
+
+  optOpenCompleteInput?.addEventListener("change", async () => {
+    if (!config.download_settings) {
+      config.download_settings = {
+        download_dir: "~/Downloads",
+        ask_where_to_save: false,
+        open_folder_on_complete: optOpenCompleteInput.checked,
+      };
+    } else {
+      config.download_settings.open_folder_on_complete = optOpenCompleteInput.checked;
+    }
+    await tauriIpc.updateAppConfig(config);
+    onConfigUpdated(config);
+  });
+
   function show() {
     renderSearchEngines();
+    renderDownloadSettings();
     refreshCacheSize();
     refreshVault();
     container.classList.remove("hidden");

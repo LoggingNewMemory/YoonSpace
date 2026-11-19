@@ -30,6 +30,7 @@ pub fn run() {
             }
 
             let _ = crate::core::webview::init_gtk_overlay(&app.handle());
+            crate::core::download::init_global_download_handler(&app.handle());
 
             Ok(())
         })
@@ -81,6 +82,15 @@ pub fn run() {
             commands::shield::get_tab_shield_breakdown,
             commands::shield::check_shield_url,
             commands::shield::get_cosmetic_resources,
+            commands::download::get_downloads,
+            commands::download::clear_downloads,
+            commands::download::open_download_file,
+            commands::download::open_download_dir,
+            commands::download::select_download_dir,
+            commands::download::cancel_download,
+            commands::overlay::show_overlay_notification,
+            commands::overlay::hide_overlay_notification,
+            commands::overlay::set_overlay_right_offset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running yoonspace application");

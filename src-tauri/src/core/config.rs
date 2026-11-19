@@ -55,12 +55,35 @@ impl Default for ShieldSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadSettings {
+    pub download_dir: String,
+    pub ask_where_to_save: bool,
+    pub open_folder_on_complete: bool,
+}
+
+impl Default for DownloadSettings {
+    fn default() -> Self {
+        let default_dir = dirs::download_dir()
+            .unwrap_or_else(|| dirs::home_dir().map(|h| h.join("Downloads")).unwrap_or_else(|| PathBuf::from("Downloads")))
+            .to_string_lossy()
+            .to_string();
+        Self {
+            download_dir: default_dir,
+            ask_where_to_save: true,
+            open_folder_on_complete: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub active_search_engine: String,
     pub search_engines: Vec<SearchEngine>,
     pub split_presets: Vec<SplitPreset>,
     #[serde(default)]
     pub shield_settings: ShieldSettings,
+    #[serde(default)]
+    pub download_settings: DownloadSettings,
 }
 
 impl Default for AppConfig {
@@ -105,6 +128,7 @@ impl Default for AppConfig {
                 },
             ],
             shield_settings: ShieldSettings::default(),
+            download_settings: DownloadSettings::default(),
         }
     }
 }

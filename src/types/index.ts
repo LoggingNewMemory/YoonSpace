@@ -37,11 +37,31 @@ export interface SplitPreset {
   right_url: string;
 }
 
+export interface DownloadSettings {
+  download_dir: string;
+  ask_where_to_save: boolean;
+  open_folder_on_complete: boolean;
+}
+
+export interface DownloadItem {
+  id: string;
+  filename: string;
+  url: string;
+  destination: string;
+  total_bytes: number;
+  received_bytes: number;
+  progress: number;
+  state: "downloading" | "completed" | "failed" | "cancelled";
+  created_at: number;
+  error?: string;
+}
+
 export interface AppConfig {
   active_search_engine: string;
   search_engines: SearchEngine[];
   split_presets: SplitPreset[];
   shield_settings?: ShieldSettings;
+  download_settings?: DownloadSettings;
 }
 
 export interface SplitBounds {

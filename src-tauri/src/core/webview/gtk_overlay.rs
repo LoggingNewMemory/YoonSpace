@@ -17,6 +17,7 @@
 use gtk::prelude::*;
 use tauri::{AppHandle, Manager};
 use crate::core::webview::split::{SplitBounds, MIN_SPLIT_RATIO, MAX_SPLIT_RATIO};
+use crate::core::overlay::{is_overlay_layer, ensure_overlay_layer_on_top};
 
 fn run_on_gtk_thread<T: Send + 'static, F: FnOnce() -> Result<T, String> + Send + 'static>(
     app: &AppHandle,
@@ -45,6 +46,11 @@ pub fn ensure_overlay(app: &AppHandle) -> Result<(), String> {
             vbox.pack_start(&overlay, true, true, 0);
             overlay.show_all();
         }
+
+        if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+            crate::core::overlay::ensure_overlay_layer(&overlay);
+        }
+
         Ok(())
     })
 }
@@ -63,7 +69,7 @@ pub fn attach_single_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) ->
 
         let main_child = overlay.child();
         for child in overlay.children() {
-            if main_child.as_ref() != Some(&child) {
+            if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                 if child.widget_name().as_str() == tab_id.as_str() {
                     overlay.remove(&child);
                 } else {
@@ -97,6 +103,9 @@ pub fn attach_single_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) ->
             child.queue_draw();
             child.set_no_show_all(true);
         }
+
+        ensure_overlay_layer_on_top(&overlay);
+
         Ok(())
     })
 }
@@ -118,7 +127,7 @@ pub fn is_tab_view_attached(app: &AppHandle, tab_id: &str) -> bool {
             if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
                 let main_child = overlay.child();
                 for child in overlay.children() {
-                    if main_child.as_ref() != Some(&child) && child.widget_name().as_str() == tab_id.as_str() {
+                    if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) && child.widget_name().as_str() == tab_id.as_str() {
                         return true;
                     }
                 }
@@ -164,7 +173,7 @@ pub fn attach_split_views(
         let main_child = overlay.child();
 
         for child in overlay.children() {
-            if main_child.as_ref() != Some(&child) {
+            if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                 if child.widget_name().as_str() == tab_id.as_str() {
                     overlay.remove(&child);
                 } else {
@@ -322,6 +331,8 @@ pub fn attach_split_views(
         paned.queue_draw();
         paned.set_no_show_all(true);
 
+        ensure_overlay_layer_on_top(&overlay);
+
         Ok(())
     })
 }
@@ -336,7 +347,7 @@ pub fn activate_tab_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> 
         if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
             let main_child = overlay.child();
             for child in overlay.children() {
-                if main_child.as_ref() != Some(&child) {
+                if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                     if child.widget_name().as_str() == tab_id.as_str() {
                         found = true;
                         overlay.set_overlay_pass_through(&child, false);
@@ -382,6 +393,7 @@ pub fn activate_tab_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> 
                     }
                 }
             }
+            ensure_overlay_layer_on_top(&overlay);
         }
         Ok(found)
     })
@@ -395,7 +407,7 @@ pub fn hide_all_tab_views(app: &AppHandle) -> Result<(), String> {
         if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
             let main_child = overlay.child();
             for child in overlay.children() {
-                if main_child.as_ref() != Some(&child) {
+                if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                     overlay.set_overlay_pass_through(&child, true);
                     child.hide();
                 }
@@ -413,7 +425,7 @@ pub fn set_drag_mode(app: &AppHandle, active: bool) -> Result<(), String> {
         if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
             let main_child = overlay.child();
             for child in overlay.children() {
-                if main_child.as_ref() != Some(&child) {
+                if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                     if active {
                         if child.is_visible() {
                             overlay.set_overlay_pass_through(&child, true);
@@ -452,7 +464,7 @@ pub fn minimize_split_pane(
         let main_child = overlay.child();
         let paned_opt = overlay.children()
             .into_iter()
-            .find(|c| main_child.as_ref() != Some(c) && c.widget_name().as_str() == tab_id.as_str());
+            .find(|c| main_child.as_ref() != Some(c) && !is_overlay_layer(c) && c.widget_name().as_str() == tab_id.as_str());
 
         let paned = match paned_opt.and_then(|w| w.dynamic_cast::<gtk::Paned>().ok()) {
             Some(p) => p,
@@ -537,11 +549,11 @@ pub fn merge_tabs_to_split(
         let main_child = overlay.child();
         let active_widget = overlay.children()
             .into_iter()
-            .find(|c| main_child.as_ref() != Some(c) && c.widget_name().as_str() == active_tab_id.as_str());
+            .find(|c| main_child.as_ref() != Some(c) && !is_overlay_layer(c) && c.widget_name().as_str() == active_tab_id.as_str());
 
         let other_widget = overlay.children()
             .into_iter()
-            .find(|c| main_child.as_ref() != Some(c) && c.widget_name().as_str() == other_tab_id.as_str());
+            .find(|c| main_child.as_ref() != Some(c) && !is_overlay_layer(c) && c.widget_name().as_str() == other_tab_id.as_str());
 
         let (act, oth) = match (active_widget, other_widget) {
             (Some(a), Some(o)) => (a, o),
@@ -713,6 +725,8 @@ pub fn merge_tabs_to_split(
         paned.queue_resize();
         paned.queue_draw();
 
+        ensure_overlay_layer_on_top(&overlay);
+
         Ok(true)
     })
 }
@@ -727,7 +741,7 @@ pub fn remove_tab_view(app: &AppHandle, tab_id: &str) -> Result<bool, String> {
         if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
             let main_child = overlay.child();
             for child in overlay.children() {
-                if main_child.as_ref() != Some(&child) {
+                if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                     if child.widget_name().as_str() == tab_id.as_str() {
                         overlay.remove(&child);
                     } else {
@@ -735,6 +749,7 @@ pub fn remove_tab_view(app: &AppHandle, tab_id: &str) -> Result<bool, String> {
                     }
                 }
             }
+            ensure_overlay_layer_on_top(&overlay);
         }
         Ok(remaining_tabs > 0)
     })
@@ -756,7 +771,7 @@ pub fn has_any_overlay(app: &AppHandle) -> bool {
             if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
                 let main_child = overlay.child();
                 for child in overlay.children() {
-                    if main_child.as_ref() != Some(&child) {
+                    if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                         return true;
                     }
                 }
@@ -779,7 +794,7 @@ pub fn update_overlay_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(),
             let alloc_w = if overlay.allocated_width() > 0 { overlay.allocated_width() } else { win_w };
             let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
             for child in overlay.children() {
-                if main_child.as_ref() != Some(&child) {
+                if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                     child.set_margin_start(bounds.x as i32);
                     child.set_margin_top(bounds.y as i32);
                     child.set_margin_end(margin_end);
@@ -803,6 +818,7 @@ pub fn update_overlay_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(),
                     child.queue_resize();
                 }
             }
+            ensure_overlay_layer_on_top(&overlay);
         }
         Ok(())
     })
@@ -816,7 +832,7 @@ pub fn cleanup_overlay(app: &AppHandle) -> Result<(), String> {
         if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
             let main_child = overlay.child();
             for child in overlay.children() {
-                if main_child.as_ref() != Some(&child) {
+                if main_child.as_ref() != Some(&child) && !is_overlay_layer(&child) {
                     overlay.remove(&child);
                 }
             }
@@ -866,6 +882,8 @@ pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
                 );
             }
         }
+
+        crate::core::overlay::init_overlay_css();
 
         // Enable WebBrowser CacheModel on application startup for fast page loading
         use webkit2gtk::WebContextExt;

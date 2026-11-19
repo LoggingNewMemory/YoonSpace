@@ -19,6 +19,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppConfig,
   CacheInfo,
+  DownloadItem,
   EngineerToken,
   MemoryStats,
   SavedCredential,
@@ -522,5 +523,91 @@ export const tauriIpc = {
 
   async clearPersistentCookies(): Promise<void> {
     await invoke("clear_persistent_cookies");
+  },
+
+  // Downloads
+  async getDownloads(): Promise<DownloadItem[]> {
+    try {
+      return await invoke<DownloadItem[]>("get_downloads");
+    } catch (e) {
+      console.warn("get_downloads failed:", e);
+      return [];
+    }
+  },
+
+  async clearDownloads(): Promise<void> {
+    try {
+      await invoke("clear_downloads");
+    } catch (e) {
+      console.warn("clear_downloads failed:", e);
+    }
+  },
+
+  async openDownloadFile(id: string): Promise<void> {
+    try {
+      await invoke("open_download_file", { id });
+    } catch (e) {
+      console.warn("open_download_file failed:", e);
+    }
+  },
+
+  async openDownloadDir(path?: string): Promise<void> {
+    try {
+      await invoke("open_download_dir", { path: path || null });
+    } catch (e) {
+      console.warn("open_download_dir failed:", e);
+    }
+  },
+
+  async selectDownloadDir(): Promise<string | null> {
+    try {
+      return await invoke<string | null>("select_download_dir");
+    } catch (e) {
+      console.warn("select_download_dir failed:", e);
+      return null;
+    }
+  },
+
+  async cancelDownload(id: string): Promise<void> {
+    try {
+      await invoke("cancel_download", { id });
+    } catch (e) {
+      console.warn("cancel_download failed:", e);
+    }
+  },
+
+  // Overlay Notifications
+  async showOverlayNotification(
+    title: string,
+    message: string,
+    notificationType: "info" | "success" | "error" | "download" = "info",
+    downloadId?: string
+  ): Promise<void> {
+    try {
+      await invoke("show_overlay_notification", {
+        title,
+        message,
+        notificationType,
+        downloadId,
+      });
+    } catch (e) {
+      console.warn("show_overlay_notification failed:", e);
+    }
+  },
+
+  async hideOverlayNotification(): Promise<void> {
+    try {
+      await invoke("hide_overlay_notification");
+    } catch (e) {
+      console.warn("hide_overlay_notification failed:", e);
+    }
+  },
+
+  async setOverlayRightOffset(offset: number): Promise<void> {
+    try {
+      await invoke("set_overlay_right_offset", { offset });
+    } catch (e) {
+      console.warn("set_overlay_right_offset failed:", e);
+    }
   },
 };

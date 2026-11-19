@@ -21,7 +21,14 @@ import { createDock, type DockController } from "./components/dock";
 import { createWebBar, type WebBarController } from "./components/web_bar";
 import { createWelcomeScreen } from "./components/welcome";
 import { createSplitPresetsSection } from "./components/split_presets";
-import type { AppConfig, MinimizedTab, SplitBounds, SplitPreset, SplitRatioChangedEvent } from "./types";
+import type {
+  AppConfig,
+  DownloadItem,
+  MinimizedTab,
+  SplitBounds,
+  SplitPreset,
+  SplitRatioChangedEvent,
+} from "./types";
 import {
   normalizeUrl as normalizeUrlHelper,
   deriveTitleFromInput,
@@ -43,6 +50,7 @@ let activeTab: MinimizedTab | null = null;
 let dock: DockController;
 let webBar: WebBarController;
 let isShieldOpen = false;
+let isDownloadOpen = false;
 let isSpawning = false;
 let dragOverlay: DragSplitOverlayController;
 let settingsPage: SettingsPageController;
@@ -53,7 +61,7 @@ let mainWrapper: HTMLElement;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
-  const rightOffset = isShieldOpen ? 360 : 0;
+  const rightOffset = isShieldOpen || isDownloadOpen ? 360 : 0;
   const headerHeight = 80;
   const webBarHeight = 28;
   const topOffset = headerHeight + webBarHeight;
@@ -968,16 +976,34 @@ async function init() {
     }
   };
 
-  const handleShieldToggle = (isOpen: boolean) => {
-    isShieldOpen = isOpen;
-    const rightOffset = isShieldOpen ? 360 : 0;
+  const updateLayoutOffset = () => {
+    const rightOffset = isShieldOpen || isDownloadOpen ? 360 : 0;
     webBar.setRightOffset(rightOffset);
     mainWrapper.style.paddingRight = `${rightOffset}px`;
+    tauriIpc.setOverlayRightOffset(rightOffset);
     if (isViewOpen) {
       const bounds = getSplitBounds();
       tauriIpc.updateSplitLayout(bounds);
     }
     dragOverlay?.updateBounds(getSplitBounds());
+  };
+
+  const handleShieldToggle = (isOpen: boolean) => {
+    isShieldOpen = isOpen;
+    if (isShieldOpen && isDownloadOpen) {
+      (titlebar as any).downloadController?.hideDrawer();
+      isDownloadOpen = false;
+    }
+    updateLayoutOffset();
+  };
+
+  const handleDownloadToggle = (isOpen: boolean) => {
+    isDownloadOpen = isOpen;
+    if (isDownloadOpen && isShieldOpen) {
+      (titlebar as any).shieldController?.closePopover();
+      isShieldOpen = false;
+    }
+    updateLayoutOffset();
   };
 
   // 1. Titlebar (Fixed at top, height: 80px default)
@@ -987,7 +1013,9 @@ async function init() {
     handleBack,
     handleForward,
     handleReload,
-    handleShieldToggle
+    handleShieldToggle,
+    handleDownloadToggle,
+    handleOpenSettings
   );
   app.appendChild(titlebar);
 
@@ -1215,7 +1243,29 @@ async function init() {
     }
   });
 
+  // 9. Real-time Download Events (WebKitGTK Downloads)
+  tauriIpc.listen<DownloadItem>("download-started", () => {
+    (titlebar as any).downloadController?.refresh();
+  });
+
+  tauriIpc.listen<DownloadItem>("download-progress", (_event) => {
+    (titlebar as any).downloadController?.refresh();
+  });
+
+  tauriIpc.listen<DownloadItem>("download-completed", (_event) => {
+    (titlebar as any).downloadController?.refresh();
+  });
+
+  tauriIpc.listen<DownloadItem>("download-failed", (_event) => {
+    (titlebar as any).downloadController?.refresh();
+  });
+
+  tauriIpc.listen<DownloadItem>("download-cancelled", (_event) => {
+    (titlebar as any).downloadController?.refresh();
+  });
+
   startTelemetryLoop();
+  (window as any).tauriIpc = tauriIpc;
 }
 
 window.addEventListener("DOMContentLoaded", init);
