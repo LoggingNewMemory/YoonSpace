@@ -22,6 +22,8 @@ export interface TitlebarElement extends HTMLElement {
   shieldController?: ShieldController;
   downloadController?: DownloadController;
   setLoading?: (loading: boolean) => void;
+  focusOmnibar?: () => void;
+  setOmnibarValue?: (val: string) => void;
 }
 
 export function createTitlebar(
@@ -134,14 +136,24 @@ export function createTitlebar(
 
       <!-- Centered Address / Omnibar Form -->
       <form id="global-omnibar-form" class="w-full max-w-2xl mx-auto flex items-center">
-        <div class="w-full h-8 px-3 bg-[#202020] rounded-lg flex items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)] border border-transparent focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all">
+        <div id="global-omnibar-box" class="w-full h-8 px-3 bg-[#202020] rounded-lg flex items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)] border border-transparent focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all cursor-text group">
           <input
             id="global-omnibar-input"
             class="w-full bg-transparent border-0 outline-none text-xs text-[#e5e2e1] placeholder-[#ADABAA] focus:ring-0 selection:bg-[#f85e2a] selection:text-white"
             placeholder="Search or enter address..."
             type="text"
             autocomplete="off"
+            spellcheck="false"
           />
+          <button
+            id="global-omnibar-clear"
+            type="button"
+            title="Clear search"
+            aria-label="Clear"
+            class="w-5 h-5 rounded flex items-center justify-center text-[#8e8a88] hover:text-[#e5e2e1] hover:bg-[#2e2e32] transition-colors cursor-pointer shrink-0 hidden ml-1"
+          >
+            <span class="material-symbols-outlined text-[14px]">close</span>
+          </button>
         </div>
       </form>
 
@@ -361,6 +373,63 @@ export function createTitlebar(
 
   const form = container.querySelector("#global-omnibar-form") as HTMLFormElement;
   const input = container.querySelector("#global-omnibar-input") as HTMLInputElement;
+  const box = container.querySelector("#global-omnibar-box") as HTMLElement | null;
+  const clearBtn = container.querySelector("#global-omnibar-clear") as HTMLButtonElement | null;
+
+  const updateClearButton = () => {
+    if (clearBtn) {
+      if (input.value.trim().length > 0) {
+        clearBtn.classList.remove("hidden");
+      } else {
+        clearBtn.classList.add("hidden");
+      }
+    }
+  };
+
+  // Clicking anywhere on the full search bar container focuses and selects the input
+  box?.addEventListener("click", (e) => {
+    if (e.target !== clearBtn && !clearBtn?.contains(e.target as Node)) {
+      input.focus();
+    }
+  });
+
+  // Auto-select text on focus so typing immediately replaces current query/URL
+  input.addEventListener("focus", () => {
+    input.select();
+    updateClearButton();
+  });
+
+  input.addEventListener("input", () => {
+    updateClearButton();
+    // Synchronize to welcome screen omnibar if it is currently mounted
+    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
+    if (welcomeInput && document.activeElement === input) {
+      welcomeInput.value = input.value;
+      welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
+  clearBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    input.value = "";
+    updateClearButton();
+    input.focus();
+    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
+    if (welcomeInput) {
+      welcomeInput.value = "";
+      welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
+  (container as TitlebarElement).focusOmnibar = () => {
+    input.focus();
+    input.select();
+  };
+
+  (container as TitlebarElement).setOmnibarValue = (val: string) => {
+    input.value = val;
+    updateClearButton();
+  };
 
   form?.addEventListener("submit", (e) => {
     e.preventDefault();

@@ -110,6 +110,14 @@ function normalizeUrl(input: string, activeEngineId: string): string {
   return normalizeUrlHelper(input, currentConfig.search_engines, activeEngineId);
 }
 
+function setOmnibarText(text: string) {
+  const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+  if (omnibarInput) {
+    omnibarInput.value = text;
+    omnibarInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
 async function handleSpawnPreset(preset: SplitPreset) {
   if (isSettingsOpen) {
     isSettingsOpen = false;
@@ -192,10 +200,7 @@ async function handleSearch(query: string, engineId: string) {
     const headerEl = document.querySelector("header") as any;
     headerEl?.setLoading?.(true);
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = query;
-    }
+    setOmnibarText(query);
 
     try {
       await tauriIpc.navigateTab(activeTab.id, targetUrl);
@@ -243,10 +248,7 @@ async function handleSearch(query: string, engineId: string) {
     webBar.setSingleMode(displayTitle);
     webBar.show();
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = query;
-    }
+    setOmnibarText(query);
 
     updateShieldForTab(activeTab);
   } catch (e) {
@@ -312,9 +314,12 @@ async function handleCloseTab(tabId: string) {
       mainCanvas.classList.remove("hidden");
     }
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = "";
+    setOmnibarText("");
+    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
+    if (welcomeInput) {
+      welcomeInput.value = "";
+      welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
+      welcomeInput.focus();
     }
 
     dock.setActiveTabId(null);
@@ -374,10 +379,7 @@ async function handleMinimizeLeft() {
     }
     webBar.setSingleMode(remainingTitle);
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = remainingUrl;
-    }
+    setOmnibarText(remainingUrl);
 
     updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
@@ -428,10 +430,7 @@ async function handleCloseLeft() {
     }
     webBar.setSingleMode(remainingTitle);
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = remainingUrl;
-    }
+    setOmnibarText(remainingUrl);
 
     updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
@@ -487,10 +486,7 @@ async function handleMinimizeRight() {
     }
     webBar.setSingleMode(remainingTitle);
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = remainingUrl;
-    }
+    setOmnibarText(remainingUrl);
 
     updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
@@ -541,10 +537,7 @@ async function handleCloseRight() {
     }
     webBar.setSingleMode(remainingTitle);
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = remainingUrl;
-    }
+    setOmnibarText(remainingUrl);
 
     updateShieldForTab(activeTab);
     setTimeout(refreshTelemetry, 100);
@@ -607,10 +600,7 @@ async function handleRestoreTab(tab: MinimizedTab) {
       mainCanvas.classList.add("hidden");
     }
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = tab.url || tab.query || tab.title || "";
-    }
+    setOmnibarText(tab.url || tab.query || tab.title || "");
 
     updateShieldForTab(tab);
   } catch (e) {
@@ -859,9 +849,12 @@ async function handleHomeClick() {
       mainCanvas.classList.remove("hidden");
     }
 
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.value = "";
+    setOmnibarText("");
+    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
+    if (welcomeInput) {
+      welcomeInput.value = "";
+      welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
+      welcomeInput.focus();
     }
 
     dock.setActiveTabId(null);
@@ -877,10 +870,16 @@ async function handleHomeClick() {
 // User clicked Add (+) in dock -> goes to home / focuses omnibar
 async function handleNewTab() {
   await handleHomeClick();
-  const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-  if (omnibarInput) {
-    omnibarInput.focus();
-    omnibarInput.select();
+  const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
+  if (welcomeInput) {
+    welcomeInput.focus();
+    welcomeInput.select();
+  } else {
+    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (omnibarInput) {
+      omnibarInput.focus();
+      omnibarInput.select();
+    }
   }
 }
 
@@ -1201,6 +1200,12 @@ async function init() {
   mainWrapper.appendChild(main);
   app.appendChild(mainWrapper);
 
+  // Autofocus welcome search bar on initial application launch
+  setTimeout(() => {
+    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
+    welcomeInput?.focus();
+  }, 100);
+
   // 5. Real-time document title updates from WebKit
   tauriIpc.listen<string>("webview-title-changed", (event) => {
     if (event.payload && isViewOpen && activeTab && !activeTab.isSplit) {
@@ -1241,7 +1246,7 @@ async function init() {
       activeTab.url = url;
       const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
       if (omnibarInput && document.activeElement !== omnibarInput) {
-        omnibarInput.value = url;
+        setOmnibarText(url);
       }
       updateShieldForTab(activeTab);
     }

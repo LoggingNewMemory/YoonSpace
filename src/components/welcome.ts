@@ -57,9 +57,9 @@ export function createWelcomeScreen(
     <section class="w-full flex flex-col items-center">
       <div class="w-full flex flex-col gap-3">
         <form id="omni-search-form" class="w-full">
-          <div class="relative w-full rounded-xl bg-[#2a2a2a] p-1.5 shadow-xl border border-[#353535] focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all">
+          <div id="omni-search-box" class="relative w-full rounded-xl bg-[#2a2a2a] p-1.5 shadow-xl border border-[#353535] focus-within:border-[#f85e2a] focus-within:ring-1 focus-within:ring-[#f85e2a] transition-all cursor-text group">
             <div class="flex items-center gap-2.5 px-3 py-1.5">
-              <span class="flex items-center justify-center text-[#ffb59e] text-base font-bold select-none pr-1">
+              <span class="flex items-center justify-center text-[#ffb59e] text-base font-bold select-none pr-1 pointer-events-none">
                 &gt;
               </span>
               <input
@@ -68,10 +68,25 @@ export function createWelcomeScreen(
                 placeholder="Search the World..."
                 type="text"
                 autocomplete="off"
+                spellcheck="false"
               />
-              <div class="hidden sm:flex items-center gap-1 bg-[#0e0e0e] px-2 py-1 rounded text-[#aa8a80] text-[11px] font-medium shadow-inner border border-[#353535]">
+              <button
+                id="engineerOmniClear"
+                type="button"
+                title="Clear input"
+                aria-label="Clear input"
+                class="w-5 h-5 rounded flex items-center justify-center text-[#8e8a88] hover:text-[#e5e2e1] hover:bg-[#383838] transition-colors cursor-pointer shrink-0 hidden mr-1"
+              >
+                <span class="material-symbols-outlined text-[14px]">close</span>
+              </button>
+              <button
+                id="engineerOmniEnterBtn"
+                type="submit"
+                title="Search (Enter)"
+                class="hidden sm:flex items-center gap-1 bg-[#0e0e0e] hover:bg-[#1a1a1a] px-2 py-1 rounded text-[#aa8a80] hover:text-[#e5e2e1] text-[11px] font-medium shadow-inner border border-[#353535] select-none cursor-pointer transition-colors"
+              >
                 <span class="text-[#e5e2e1] font-bold">ENTER</span>
-              </div>
+              </button>
             </div>
           </div>
         </form>
@@ -130,9 +145,55 @@ export function createWelcomeScreen(
     });
   });
 
-  // Search submission
+  // Search submission and typing capability
   const form = container.querySelector("#omni-search-form") as HTMLFormElement;
   const input = container.querySelector("#engineerOmniInput") as HTMLInputElement;
+  const omniSearchBox = container.querySelector("#omni-search-box") as HTMLElement | null;
+  const omniClearBtn = container.querySelector("#engineerOmniClear") as HTMLButtonElement | null;
+
+  const updateOmniClear = () => {
+    if (omniClearBtn) {
+      if (input.value.trim().length > 0) {
+        omniClearBtn.classList.remove("hidden");
+      } else {
+        omniClearBtn.classList.add("hidden");
+      }
+    }
+  };
+
+  // Clicking anywhere on the full search bar box focuses and selects the input
+  omniSearchBox?.addEventListener("click", (e) => {
+    if (e.target !== omniClearBtn && !omniClearBtn?.contains(e.target as Node)) {
+      input.focus();
+    }
+  });
+
+  input?.addEventListener("focus", () => {
+    input.select();
+    updateOmniClear();
+  });
+
+  input?.addEventListener("input", () => {
+    updateOmniClear();
+    // Synchronize to top omnibar input in real time
+    const globalInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (globalInput && document.activeElement === input) {
+      globalInput.value = input.value;
+      globalInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
+  omniClearBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    input.value = "";
+    updateOmniClear();
+    input.focus();
+    const globalInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
+    if (globalInput) {
+      globalInput.value = "";
+      globalInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
 
   form?.addEventListener("submit", (e) => {
     e.preventDefault();
