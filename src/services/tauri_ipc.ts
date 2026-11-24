@@ -29,6 +29,7 @@ import type {
   SplitBounds,
   TabBreakdown,
   VaultStats,
+  WebviewLoadProgressEvent,
 } from "../types";
 
 export const tauriIpc = {
@@ -423,6 +424,10 @@ export const tauriIpc = {
 
   async onShieldBlocked(callback: (event: ShieldBlockEvent) => void): Promise<UnlistenFn> {
     return listen<ShieldBlockEvent>("shield-blocked-event", (e) => callback(e.payload));
+  },
+
+  async onLoadProgress(callback: (event: WebviewLoadProgressEvent) => void): Promise<UnlistenFn> {
+    return listen<WebviewLoadProgressEvent>("webview-load-progress", (e) => callback(e.payload));
   },
 
   // Cache management

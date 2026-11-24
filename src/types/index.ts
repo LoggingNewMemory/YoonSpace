@@ -122,6 +122,12 @@ export interface ShieldBlockEvent {
   tab_breakdown: TabBreakdown;
 }
 
+export interface WebviewLoadProgressEvent {
+  tab_id: string;
+  progress: number;
+  status: "started" | "progress" | "finished" | "failed";
+}
+
 export interface MinimizedTab {
   id: string;
   title: string;

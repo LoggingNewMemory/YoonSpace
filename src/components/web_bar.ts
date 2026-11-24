@@ -39,6 +39,10 @@ export interface WebBarController {
   setLeftOffset: (offset: number) => void;
   setTopOffset: (offset: number) => void;
   setRightOffset: (offset: number) => void;
+  startProgress: (pane?: "single" | "left" | "right") => void;
+  setProgress: (progress: number, pane?: "single" | "left" | "right") => void;
+  finishProgress: (pane?: "single" | "left" | "right") => void;
+  resetProgress: (pane?: "single" | "left" | "right") => void;
 }
 
 export function createWebBar(
@@ -60,7 +64,7 @@ export function createWebBar(
 
   container.innerHTML = `
     <!-- Single View Header Bar -->
-    <div id="web-bar-single" class="w-full h-full flex items-center justify-between px-4">
+    <div id="web-bar-single" class="w-full h-full flex items-center justify-between px-4 relative overflow-hidden">
       <!-- Left Spacer to keep center title perfectly balanced -->
       <div class="w-32 flex items-center"></div>
 
@@ -98,12 +102,19 @@ export function createWebBar(
           </svg>
         </button>
       </div>
+
+      <!-- Orange Load Progress Bar for Single View (Color: #f85e2a / #ff7843) -->
+      <div
+        id="web-bar-progress-single"
+        class="absolute bottom-0 left-0 h-[2.5px] bg-gradient-to-r from-[#f85e2a] via-[#ff7843] to-[#ff9870] shadow-[0_0_10px_rgba(248,94,42,0.85),0_0_3px_rgba(248,94,42,1)] opacity-0 pointer-events-none z-50 rounded-r-full"
+        style="width: 0%;"
+      ></div>
     </div>
 
     <!-- Dual Split View Header Bar -->
     <div id="web-bar-split" class="hidden w-full h-full flex items-center relative overflow-hidden">
       <!-- Left Pane Header -->
-      <div id="web-bar-left-pane" class="h-full flex items-center justify-between px-3 min-w-0" style="width: 50%;">
+      <div id="web-bar-left-pane" class="h-full flex items-center justify-between px-3 min-w-0 relative overflow-hidden" style="width: 50%;">
         <div class="w-16 flex items-center flex-shrink-0"></div>
         <div class="flex-1 flex items-center justify-center text-center px-2 overflow-hidden">
           <span id="web-bar-left-title" class="text-xs font-medium tracking-wide text-[#d1d5db] truncate max-w-xs">
@@ -135,10 +146,17 @@ export function createWebBar(
             </svg>
           </button>
         </div>
+
+        <!-- Orange Load Progress Bar for Left Pane -->
+        <div
+          id="web-bar-progress-left"
+          class="absolute bottom-0 left-0 h-[2.5px] bg-gradient-to-r from-[#f85e2a] via-[#ff7843] to-[#ff9870] shadow-[0_0_10px_rgba(248,94,42,0.85),0_0_3px_rgba(248,94,42,1)] opacity-0 pointer-events-none z-50 rounded-r-full"
+          style="width: 0%;"
+        ></div>
       </div>
 
       <!-- Right Pane Header -->
-      <div id="web-bar-right-pane" class="h-full flex items-center justify-between px-3 min-w-0" style="width: 50%;">
+      <div id="web-bar-right-pane" class="h-full flex items-center justify-between px-3 min-w-0 relative overflow-hidden" style="width: 50%;">
         <div class="w-16 flex items-center flex-shrink-0"></div>
         <div class="flex-1 flex items-center justify-center text-center px-2 overflow-hidden">
           <span id="web-bar-right-title" class="text-xs font-medium tracking-wide text-[#d1d5db] truncate max-w-xs">
@@ -170,6 +188,13 @@ export function createWebBar(
             </svg>
           </button>
         </div>
+
+        <!-- Orange Load Progress Bar for Right Pane -->
+        <div
+          id="web-bar-progress-right"
+          class="absolute bottom-0 left-0 h-[2.5px] bg-gradient-to-r from-[#f85e2a] via-[#ff7843] to-[#ff9870] shadow-[0_0_10px_rgba(248,94,42,0.85),0_0_3px_rgba(248,94,42,1)] opacity-0 pointer-events-none z-50 rounded-r-full"
+          style="width: 0%;"
+        ></div>
       </div>
     </div>
   `;
@@ -272,6 +297,94 @@ export function createWebBar(
     }
   };
 
+  interface ProgressBarController {
+    element: HTMLElement | null;
+    start: () => void;
+    set: (progress: number) => void;
+    finish: () => void;
+    reset: () => void;
+  }
+
+  const createProgressBar = (barEl: HTMLElement | null): ProgressBarController => {
+    let finishTimer: any = null;
+    let resetTimer: any = null;
+    let currentVal = 0;
+
+    const reset = () => {
+      if (!barEl) return;
+      if (finishTimer) clearTimeout(finishTimer);
+      if (resetTimer) clearTimeout(resetTimer);
+      currentVal = 0;
+      barEl.style.transition = "none";
+      barEl.style.opacity = "0";
+      barEl.style.width = "0%";
+    };
+
+    const start = () => {
+      if (!barEl) return;
+      if (finishTimer) clearTimeout(finishTimer);
+      if (resetTimer) clearTimeout(resetTimer);
+      currentVal = 0.12;
+      barEl.style.transition = "none";
+      barEl.style.opacity = "1";
+      barEl.style.width = "0%";
+      void barEl.offsetWidth; // Force layout recalculation
+      barEl.style.transition = "width 0.22s cubic-bezier(0.1, 0.6, 0.2, 1), opacity 0.2s ease";
+      barEl.style.width = "12%";
+    };
+
+    const set = (progress: number) => {
+      if (!barEl) return;
+      if (finishTimer) clearTimeout(finishTimer);
+      if (resetTimer) clearTimeout(resetTimer);
+      barEl.style.opacity = "1";
+      barEl.style.transition = "width 0.22s cubic-bezier(0.1, 0.6, 0.2, 1), opacity 0.2s ease";
+
+      const clamped = Math.max(0.12, Math.min(1.0, progress));
+      if (clamped > currentVal) {
+        currentVal = clamped;
+      }
+      barEl.style.width = `${Math.round(currentVal * 100)}%`;
+
+      if (progress >= 1.0) {
+        finish();
+      }
+    };
+
+    const finish = () => {
+      if (!barEl) return;
+      if (finishTimer) clearTimeout(finishTimer);
+      if (resetTimer) clearTimeout(resetTimer);
+      currentVal = 1.0;
+      barEl.style.opacity = "1";
+      barEl.style.transition = "width 0.16s ease-out, opacity 0.24s ease-out";
+      barEl.style.width = "100%";
+
+      finishTimer = setTimeout(() => {
+        if (barEl) barEl.style.opacity = "0";
+        resetTimer = setTimeout(() => {
+          if (barEl) {
+            barEl.style.transition = "none";
+            barEl.style.width = "0%";
+            currentVal = 0;
+          }
+        }, 250);
+      }, 200);
+    };
+
+    return { element: barEl, start, set, finish, reset };
+  };
+
+  const singleProgress = createProgressBar(container.querySelector("#web-bar-progress-single"));
+  const leftProgress = createProgressBar(container.querySelector("#web-bar-progress-left"));
+  const rightProgress = createProgressBar(container.querySelector("#web-bar-progress-right"));
+
+  const getTargetProgress = (pane?: "single" | "left" | "right") => {
+    if (pane === "left") return leftProgress;
+    if (pane === "right") return rightProgress;
+    return singleProgress;
+  };
+
   return {
     element: container,
     setSingleMode,
@@ -309,6 +422,9 @@ export function createWebBar(
     hide: () => {
       container.classList.add("hidden");
       container.classList.remove("flex");
+      singleProgress.reset();
+      leftProgress.reset();
+      rightProgress.reset();
     },
     isVisible: () => !container.classList.contains("hidden"),
     isSplit: () => currentMode === "split",
@@ -320,6 +436,51 @@ export function createWebBar(
     },
     setRightOffset: (offset: number) => {
       container.style.right = `${offset}px`;
+    },
+    startProgress: (pane?: "single" | "left" | "right") => {
+      if (!pane) {
+        if (currentMode === "split") {
+          leftProgress.start();
+          rightProgress.start();
+        } else {
+          singleProgress.start();
+        }
+      } else {
+        getTargetProgress(pane).start();
+      }
+    },
+    setProgress: (progress: number, pane?: "single" | "left" | "right") => {
+      if (!pane) {
+        if (currentMode === "split") {
+          leftProgress.set(progress);
+          rightProgress.set(progress);
+        } else {
+          singleProgress.set(progress);
+        }
+      } else {
+        getTargetProgress(pane).set(progress);
+      }
+    },
+    finishProgress: (pane?: "single" | "left" | "right") => {
+      if (!pane) {
+        if (currentMode === "split") {
+          leftProgress.finish();
+          rightProgress.finish();
+        } else {
+          singleProgress.finish();
+        }
+      } else {
+        getTargetProgress(pane).finish();
+      }
+    },
+    resetProgress: (pane?: "single" | "left" | "right") => {
+      if (!pane) {
+        singleProgress.reset();
+        leftProgress.reset();
+        rightProgress.reset();
+      } else {
+        getTargetProgress(pane).reset();
+      }
     },
   };
 }

@@ -21,6 +21,7 @@ import { initDownloadsUI, type DownloadController } from "./downloads";
 export interface TitlebarElement extends HTMLElement {
   shieldController?: ShieldController;
   downloadController?: DownloadController;
+  setLoading?: (loading: boolean) => void;
 }
 
 export function createTitlebar(
@@ -339,7 +340,22 @@ export function createTitlebar(
   container.querySelector("#nav-btn-forward")?.addEventListener("click", () => {
     onForward?.();
   });
-  container.querySelector("#nav-btn-reload")?.addEventListener("click", () => {
+  const reloadBtn = container.querySelector("#nav-btn-reload") as HTMLButtonElement | null;
+  const reloadIcon = reloadBtn?.querySelector(".material-symbols-outlined") as HTMLElement | null;
+
+  (container as TitlebarElement).setLoading = (loading: boolean) => {
+    if (reloadIcon) {
+      if (loading) {
+        reloadIcon.classList.add("animate-spin");
+        reloadBtn?.setAttribute("title", "Loading... (Reload: Ctrl+R / F5)");
+      } else {
+        reloadIcon.classList.remove("animate-spin");
+        reloadBtn?.setAttribute("title", "Reload (Ctrl+R / F5)");
+      }
+    }
+  };
+
+  reloadBtn?.addEventListener("click", () => {
     onReload?.();
   });
 

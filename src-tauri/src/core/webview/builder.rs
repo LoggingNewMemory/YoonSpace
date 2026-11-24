@@ -26,6 +26,13 @@ use super::split::{
 
 static SPAWN_LOCK: Mutex<()> = Mutex::new(());
 
+#[derive(Clone, serde::Serialize)]
+pub struct WebviewLoadProgressPayload {
+    pub tab_id: String,
+    pub progress: f64,
+    pub status: String,
+}
+
 fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &str) {
     use webkit2gtk::{
         CookieManagerExt, PolicyDecisionExt, SettingsExt, URIRequestExt,
@@ -241,19 +248,72 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             let _ = ucm.register_script_message_handler("shield_block");
         }
 
-        // 5. Load interruption recovery
-        let last_interrupted = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        // 5a. Load progress tracking via WebKitGTK estimated load progress
+        let app_progress = app_handle.clone();
+        let tab_id_progress = tab_id_str.clone();
+        inner_wv.connect_estimated_load_progress_notify(move |wv| {
+            use tauri::Emitter;
+            use webkit2gtk::WebViewExt;
+            let progress = wv.estimated_load_progress();
+            let _ = app_progress.emit(
+                "webview-load-progress",
+                WebviewLoadProgressPayload {
+                    tab_id: tab_id_progress.clone(),
+                    progress,
+                    status: if progress >= 1.0 { "finished".to_string() } else { "progress".to_string() },
+                },
+            );
+        });
 
+        // 5b. Load lifecycle events (Started, Finished) & interruption recovery
+        let last_interrupted = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
         let last_clone = last_interrupted.clone();
-        inner_wv.connect_load_changed(move |_wv, event| {
-            if event == webkit2gtk::LoadEvent::Finished {
-                if let Ok(mut last) = last_clone.lock() {
-                    last.clear();
+        let app_load_event = app_handle.clone();
+        let tab_id_load_event = tab_id_str.clone();
+
+        inner_wv.connect_load_changed(move |wv, event| {
+            use tauri::Emitter;
+            use webkit2gtk::WebViewExt;
+            match event {
+                webkit2gtk::LoadEvent::Started => {
+                    let _ = app_load_event.emit(
+                        "webview-load-progress",
+                        WebviewLoadProgressPayload {
+                            tab_id: tab_id_load_event.clone(),
+                            progress: wv.estimated_load_progress().max(0.1),
+                            status: "started".to_string(),
+                        },
+                    );
                 }
+                webkit2gtk::LoadEvent::Finished => {
+                    if let Ok(mut last) = last_clone.lock() {
+                        last.clear();
+                    }
+                    let _ = app_load_event.emit(
+                        "webview-load-progress",
+                        WebviewLoadProgressPayload {
+                            tab_id: tab_id_load_event.clone(),
+                            progress: 1.0,
+                            status: "finished".to_string(),
+                        },
+                    );
+                }
+                _ => {}
             }
         });
 
+        let app_failed = app_handle.clone();
+        let tab_id_failed = tab_id_str.clone();
         inner_wv.connect_load_failed(move |wv, _event, failing_uri, error| {
+            use tauri::Emitter;
+            let _ = app_failed.emit(
+                "webview-load-progress",
+                WebviewLoadProgressPayload {
+                    tab_id: tab_id_failed.clone(),
+                    progress: 1.0,
+                    status: "failed".to_string(),
+                },
+            );
             if error.matches(webkit2gtk::PolicyError::FrameLoadInterruptedByPolicyChange)
                 || error.message().contains("interrupted")
             {
@@ -398,6 +458,14 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
             });
 
             if payload.event() == tauri::webview::PageLoadEvent::Started {
+                let _ = app_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: tab_id_load.clone(),
+                        progress: 0.12,
+                        status: "started".to_string(),
+                    },
+                );
                 let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_load);
                 let _ = app_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
                     tab_id: root_tab,
@@ -410,6 +478,14 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
             }
 
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                let _ = app_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: tab_id_load.clone(),
+                        progress: 1.0,
+                        status: "finished".to_string(),
+                    },
+                );
                 crate::core::shield::inject_page_cosmetics(&webview, &tab_id_load, payload.url().as_str());
             }
         });
@@ -510,6 +586,14 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             });
 
             if payload.event() == tauri::webview::PageLoadEvent::Started {
+                let _ = app_left_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: format!("{}_left", tab_id_left),
+                        progress: 0.12,
+                        status: "started".to_string(),
+                    },
+                );
                 let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_left);
                 let _ = app_left_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
                     tab_id: root_tab,
@@ -522,6 +606,14 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             }
 
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                let _ = app_left_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: format!("{}_left", tab_id_left),
+                        progress: 1.0,
+                        status: "finished".to_string(),
+                    },
+                );
                 crate::core::shield::inject_page_cosmetics(&webview, &tab_id_left, payload.url().as_str());
             }
         });
@@ -557,6 +649,14 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             });
 
             if payload.event() == tauri::webview::PageLoadEvent::Started {
+                let _ = app_right_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: format!("{}_right", tab_id_right),
+                        progress: 0.12,
+                        status: "started".to_string(),
+                    },
+                );
                 let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_right);
                 let _ = app_right_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
                     tab_id: root_tab,
@@ -569,6 +669,14 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
             }
 
             if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                let _ = app_right_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: format!("{}_right", tab_id_right),
+                        progress: 1.0,
+                        status: "finished".to_string(),
+                    },
+                );
                 crate::core::shield::inject_page_cosmetics(&webview, &tab_id_right, payload.url().as_str());
             }
         });

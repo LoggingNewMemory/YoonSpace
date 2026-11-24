@@ -149,6 +149,11 @@ async function handleSpawnPreset(preset: SplitPreset) {
   const bounds = getSplitBounds();
 
   try {
+    webBar.startProgress("left");
+    webBar.startProgress("right");
+    const headerEl = document.querySelector("header") as any;
+    headerEl?.setLoading?.(true);
+
     await tauriIpc.spawnSplit(preset.left_url, preset.right_url, bounds, activeTab.id);
     isViewOpen = true;
 
@@ -183,6 +188,9 @@ async function handleSearch(query: string, engineId: string) {
 
     dock.updateTabTitle(activeTab.id, displayTitle);
     webBar.setSingleMode(displayTitle);
+    webBar.startProgress("single");
+    const headerEl = document.querySelector("header") as any;
+    headerEl?.setLoading?.(true);
 
     const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
     if (omnibarInput) {
@@ -220,6 +228,10 @@ async function handleSearch(query: string, engineId: string) {
   const bounds = getSplitBounds();
 
   try {
+    webBar.startProgress("single");
+    const headerEl = document.querySelector("header") as any;
+    headerEl?.setLoading?.(true);
+
     await tauriIpc.spawnSingleView(targetUrl, bounds, activeTab.id);
     isViewOpen = true;
 
@@ -558,12 +570,20 @@ async function handleRestoreTab(tab: MinimizedTab) {
   try {
     const shown = await tauriIpc.showTabView(tab.id, bounds);
     if (!shown) {
-      if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
+      webBar.resetProgress();
+    const headerEl = document.querySelector("header") as any;
+    headerEl?.setLoading?.(false);
+
+    if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
         await tauriIpc.spawnSplit(tab.leftUrl, tab.rightUrl, bounds, tab.id);
       } else {
         await tauriIpc.spawnSingleView(tab.url || "", bounds, tab.id);
       }
     }
+
+    webBar.resetProgress();
+    const headerEl = document.querySelector("header") as any;
+    headerEl?.setLoading?.(false);
 
     if (tab.isSplit && tab.leftUrl && tab.rightUrl) {
       let leftTitle = tab.leftTitle || "Left Pane";
@@ -960,18 +980,37 @@ async function init() {
       return;
     }
     if (isViewOpen && activeTab) {
+      if (activeTab.isSplit) {
+        webBar.startProgress("left");
+      } else {
+        webBar.startProgress("single");
+      }
+      (titlebar as any).setLoading?.(true);
       tauriIpc.goBack(activeTab.id);
     }
   };
 
   const handleForward = () => {
     if (isViewOpen && activeTab) {
+      if (activeTab.isSplit) {
+        webBar.startProgress("left");
+      } else {
+        webBar.startProgress("single");
+      }
+      (titlebar as any).setLoading?.(true);
       tauriIpc.goForward(activeTab.id);
     }
   };
 
   const handleReload = () => {
     if (isViewOpen && activeTab) {
+      if (activeTab.isSplit) {
+        webBar.startProgress("left");
+        webBar.startProgress("right");
+      } else {
+        webBar.startProgress("single");
+      }
+      (titlebar as any).setLoading?.(true);
       tauriIpc.reload(activeTab.id);
     }
   };
@@ -1263,6 +1302,62 @@ async function init() {
   tauriIpc.listen<DownloadItem>("download-cancelled", (_event) => {
     (titlebar as any).downloadController?.refresh();
   });
+
+  // 10. Real-time Webview Load Progress Bar (Color is Orange #f85e2a / #ff7843)
+  tauriIpc.listen<{ tab_id: string; progress: number; status: string }>(
+    "webview-load-progress",
+    (event) => {
+      const { tab_id, progress, status } = event.payload;
+      if (!isViewOpen || !activeTab) return;
+
+      if (!activeTab.isSplit) {
+        if (tab_id === activeTab.id || tab_id === "single_view") {
+          if (status === "started") {
+            webBar.startProgress("single");
+            (titlebar as any).setLoading?.(true);
+          } else if (status === "finished" || status === "failed") {
+            webBar.finishProgress("single");
+            (titlebar as any).setLoading?.(false);
+          } else {
+            webBar.setProgress(progress, "single");
+            if (progress >= 1.0) {
+              (titlebar as any).setLoading?.(false);
+            }
+          }
+        }
+      } else {
+        const isLeft = tab_id === `${activeTab.id}_left` || tab_id === "split_left";
+        const isRight = tab_id === `${activeTab.id}_right` || tab_id === "split_right";
+        if (isLeft) {
+          if (status === "started") {
+            webBar.startProgress("left");
+            (titlebar as any).setLoading?.(true);
+          } else if (status === "finished" || status === "failed") {
+            webBar.finishProgress("left");
+            (titlebar as any).setLoading?.(false);
+          } else {
+            webBar.setProgress(progress, "left");
+            if (progress >= 1.0) {
+              (titlebar as any).setLoading?.(false);
+            }
+          }
+        } else if (isRight) {
+          if (status === "started") {
+            webBar.startProgress("right");
+            (titlebar as any).setLoading?.(true);
+          } else if (status === "finished" || status === "failed") {
+            webBar.finishProgress("right");
+            (titlebar as any).setLoading?.(false);
+          } else {
+            webBar.setProgress(progress, "right");
+            if (progress >= 1.0) {
+              (titlebar as any).setLoading?.(false);
+            }
+          }
+        }
+      }
+    }
+  );
 
   startTelemetryLoop();
   (window as any).tauriIpc = tauriIpc;
