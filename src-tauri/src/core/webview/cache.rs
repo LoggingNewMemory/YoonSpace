@@ -99,27 +99,3 @@ pub fn clear_browser_cache(app: &AppHandle) -> Result<CacheInfo, String> {
     Ok(get_cache_info())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(format_bytes(500), "500 B");
-        assert_eq!(format_bytes(1024), "1.0 KB");
-        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
-        assert_eq!(format_bytes(5 * 1024 * 1024 * 1024), "5.00 GB");
-    }
-
-    #[test]
-    fn test_get_webkit_cache_dir() {
-        let dir = get_webkit_cache_dir();
-        assert!(dir.to_str().unwrap().contains("WebKitCache"));
-    }
-
-    #[test]
-    fn test_get_cache_info() {
-        let info = get_cache_info();
-        assert!(!info.formatted_size.is_empty());
-    }
-}

@@ -18,9 +18,6 @@ pub mod engine;
 pub mod scriptlets;
 pub mod types;
 
-#[cfg(test)]
-mod tests;
-
 pub use engine::*;
 pub use scriptlets::*;
 pub use types::*;

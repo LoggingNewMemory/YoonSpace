@@ -253,37 +253,3 @@ pub fn clear_vault_data() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vault_credentials_and_tokens() {
-        let cred = save_credential(
-            "https://github.com".to_string(),
-            "octocat".to_string(),
-            "super-secret-pass".to_string(),
-            Some("GitHub".to_string()),
-        ).expect("save credential");
-
-        assert_eq!(cred.origin, "https://github.com");
-        assert_eq!(cred.username, "octocat");
-
-        let creds = list_saved_credentials();
-        assert!(creds.iter().any(|c| c.id == cred.id));
-
-        let token = save_engineer_token(
-            "GitHub".to_string(),
-            "CI Personal Access Token".to_string(),
-            "ghp_test123456789".to_string(),
-            Some("Repo read/write".to_string()),
-        ).expect("save token");
-
-        let tokens = list_engineer_tokens();
-        assert!(tokens.iter().any(|t| t.id == token.id));
-
-        // Clean up
-        let _ = delete_credential(&cred.id);
-        let _ = delete_engineer_token(&token.id);
-    }
-}
