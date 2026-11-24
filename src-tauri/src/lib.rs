@@ -68,6 +68,7 @@ pub fn run() {
             commands::webview::close_split,
             commands::webview::get_cache_info,
             commands::webview::clear_browser_cache,
+            commands::webview::webview_media_command,
             commands::user_data::get_vault_stats,
             commands::user_data::list_saved_credentials,
             commands::user_data::save_credential,

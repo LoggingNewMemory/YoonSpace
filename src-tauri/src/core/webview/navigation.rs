@@ -327,3 +327,165 @@ pub fn close_split_views(app: &AppHandle) -> Result<(), String> {
 
     Ok(())
 }
+
+pub fn execute_webview_media_command(
+    app: &AppHandle,
+    tab_id: Option<&str>,
+    command: &str,
+    value: Option<f64>,
+) -> Result<(), String> {
+    let script = match command {
+        "play_pause" => r#"
+            (() => {
+                const media = Array.from(document.querySelectorAll('video, audio')).filter(m => !m.ended);
+                if (media.length > 0) {
+                    const playing = media.find(m => !m.paused);
+                    if (playing) {
+                        playing.pause();
+                    } else {
+                        media[0].play().catch(() => {});
+                    }
+                    return;
+                }
+                const yt = document.querySelector('.ytp-play-button');
+                if (yt) { yt.click(); return; }
+                const sp = document.querySelector('[data-testid="control-button-playpause"]');
+                if (sp) { sp.click(); return; }
+                const sc = document.querySelector('.playControl');
+                if (sc) { sc.click(); return; }
+            })();
+        "#.to_string(),
+        "play" => r#"
+            (() => {
+                const media = Array.from(document.querySelectorAll('video, audio'));
+                for (const m of media) { m.play().catch(() => {}); }
+                const yt = document.querySelector('.ytp-play-button');
+                if (yt && yt.getAttribute('aria-label') && yt.getAttribute('aria-label').includes('Play')) {
+                    yt.click();
+                }
+            })();
+        "#.to_string(),
+        "pause" => r#"
+            (() => {
+                const media = Array.from(document.querySelectorAll('video, audio'));
+                for (const m of media) { m.pause(); }
+                const yt = document.querySelector('.ytp-play-button');
+                if (yt && yt.getAttribute('aria-label') && !yt.getAttribute('aria-label').includes('Play')) {
+                    yt.click();
+                }
+            })();
+        "#.to_string(),
+        "next" => r#"
+            (() => {
+                const yt = document.querySelector('.ytp-next-button');
+                if (yt) { yt.click(); return; }
+                const sp = document.querySelector('[data-testid="control-button-skip-forward"]');
+                if (sp) { sp.click(); return; }
+                const sc = document.querySelector('.skipControl__next');
+                if (sc) { sc.click(); return; }
+                const v = document.querySelector('video, audio');
+                if (v && Number.isFinite(v.currentTime)) {
+                    v.currentTime = Math.min((v.duration || Infinity), v.currentTime + 10);
+                }
+            })();
+        "#.to_string(),
+        "prev" => r#"
+            (() => {
+                const yt = document.querySelector('.ytp-prev-button');
+                if (yt) { yt.click(); return; }
+                const sp = document.querySelector('[data-testid="control-button-skip-back"]');
+                if (sp) { sp.click(); return; }
+                const sc = document.querySelector('.skipControl__previous');
+                if (sc) { sc.click(); return; }
+                const v = document.querySelector('video, audio');
+                if (v && Number.isFinite(v.currentTime)) {
+                    v.currentTime = Math.max(0, v.currentTime - 10);
+                }
+            })();
+        "#.to_string(),
+        "seek" => {
+            let val = value.unwrap_or(0.0);
+            format!(r#"
+                (() => {{
+                    const v = document.querySelector('video, audio');
+                    if (v && Number.isFinite(v.duration)) {{
+                        const val = {};
+                        if (val >= 0 && val <= 1) {{
+                            v.currentTime = val * v.duration;
+                        }} else {{
+                            v.currentTime = Math.max(0, Math.min(v.duration, val));
+                        }}
+                    }}
+                }})();
+            "#, val)
+        },
+        "volume" => {
+            let vol = value.unwrap_or(1.0).clamp(0.0, 1.0);
+            format!(r#"
+                (() => {{
+                    const media = document.querySelectorAll('video, audio');
+                    media.forEach(m => {{
+                        m.volume = {};
+                        m.muted = ({} === 0);
+                    }});
+                }})();
+            "#, vol, vol)
+        },
+        "mute" => r#"
+            (() => {
+                const media = document.querySelectorAll('video, audio');
+                media.forEach(m => { m.muted = !m.muted; });
+                const ytMute = document.querySelector('.ytp-mute-button');
+                if (ytMute) ytMute.click();
+            })();
+        "#.to_string(),
+        "pip" => r#"
+            (() => {
+                const v = document.querySelector('video');
+                if (v && document.pictureInPictureEnabled) {
+                    if (document.pictureInPictureElement) {
+                        document.exitPictureInPicture().catch(() => {});
+                    } else {
+                        v.requestPictureInPicture().catch(() => {});
+                    }
+                }
+            })();
+        "#.to_string(),
+        _ => return Err(format!("Unknown media command: {}", command)),
+    };
+
+    if let Some(target) = tab_id {
+        if let Some(view) = app.get_webview(target) {
+            let _ = view.eval(&script);
+            return Ok(());
+        }
+        let left_label = format!("{}_left", target);
+        let right_label = format!("{}_right", target);
+        let mut found = false;
+        if let Some(view) = app.get_webview(&left_label) {
+            let _ = view.eval(&script);
+            found = true;
+        }
+        if let Some(view) = app.get_webview(&right_label) {
+            let _ = view.eval(&script);
+            found = true;
+        }
+        if found {
+            return Ok(());
+        }
+        for (label, view) in app.webviews() {
+            if label != "main" && (label.ends_with(&format!("_{}", target)) || label.contains(target)) {
+                let _ = view.eval(&script);
+                return Ok(());
+            }
+        }
+    }
+
+    for (label, view) in app.webviews() {
+        if label != "main" {
+            let _ = view.eval(&script);
+        }
+    }
+
+    Ok(())
+}

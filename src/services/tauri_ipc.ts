@@ -234,6 +234,18 @@ export const tauriIpc = {
     }
   },
 
+  async mediaCommand(
+    command: "play_pause" | "play" | "pause" | "next" | "prev" | "seek" | "volume" | "mute" | "pip",
+    tabId?: string,
+    value?: number
+  ): Promise<void> {
+    try {
+      await invoke("webview_media_command", { tabId: tabId || null, command, value: value ?? null });
+    } catch (e) {
+      console.warn("webview_media_command failed:", e);
+    }
+  },
+
   async checkSplitActive(): Promise<boolean> {
     try {
       return await invoke<boolean>("check_split_active");

@@ -33,6 +33,8 @@ export interface DockController {
   getActiveTabId: () => string | null;
   getTabs: () => MinimizedTab[];
   getTab: (tabId: string) => MinimizedTab | undefined;
+  setMediaActive: (active: boolean) => void;
+  setMediaPlaying: (playing: boolean) => void;
   // Backward-compatible aliases
   addMinimizedTab: (tab: MinimizedTab) => void;
   removeMinimizedTab: (tabId: string) => void;
@@ -113,7 +115,8 @@ export function createDock(
   _onTabDropOnTab?: (sourceTabId: string, targetTabId: string) => void,
   onTabDragMove?: (tab: MinimizedTab, x: number, y: number) => void,
   onTabDragCancel?: () => void,
-  onSplitTabAction?: (tab: MinimizedTab, pane: "left" | "right") => void
+  onSplitTabAction?: (tab: MinimizedTab, pane: "left" | "right") => void,
+  onToggleMedia?: () => void
 ): DockController {
   const aside = document.createElement("aside");
   aside.id = "app-dock";
@@ -121,6 +124,36 @@ export function createDock(
   const tabsMap = new Map<string, MinimizedTab>();
   let currentActiveTabId: string | null = null;
   let isExpanded = false;
+  let isMediaActiveState = false;
+  let isMediaPlayingState = false;
+
+  const updateMediaButtonUI = () => {
+    const mediaBtn = aside.querySelector("#dock-btn-media");
+    const indicator = aside.querySelector("#dock-media-indicator");
+    const icon = aside.querySelector("#dock-media-icon");
+
+    if (mediaBtn) {
+      if (isMediaActiveState) {
+        mediaBtn.classList.add("bg-[#222224]", "text-[#f85e2a]", "shadow-sm");
+        mediaBtn.classList.remove("text-[#e2bfb4]");
+      } else {
+        mediaBtn.classList.remove("bg-[#222224]", "text-[#f85e2a]", "shadow-sm");
+        mediaBtn.classList.add("text-[#e2bfb4]");
+      }
+    }
+
+    if (indicator) {
+      if (isMediaPlayingState) {
+        indicator.classList.remove("hidden");
+      } else {
+        indicator.classList.add("hidden");
+      }
+    }
+
+    if (icon) {
+      icon.textContent = isMediaPlayingState ? "graphic_eq" : "music_note";
+    }
+  };
 
   const updateShell = () => {
     if (!isExpanded) {
@@ -167,8 +200,19 @@ export function createDock(
           <div id="dock-tabs-list" class="flex flex-col items-center gap-2 w-full"></div>
         </div>
 
-        <!-- Bottom Settings -->
-        <div class="flex flex-col items-center w-full px-2">
+        <!-- Bottom Settings & Media Actions -->
+        <div class="flex flex-col items-center w-full px-2 gap-2">
+          <!-- Music / Media Control Button -->
+          <button
+            id="dock-btn-media"
+            title="Music & Media Control (Ctrl+M)"
+            class="dock-item relative w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
+          >
+            <span id="dock-media-icon" class="material-symbols-outlined text-[22px]">music_note</span>
+            <span id="dock-media-indicator" class="hidden absolute top-2 right-2 w-2 h-2 rounded-full bg-[#f85e2a] ring-2 ring-[#0e0e0e] animate-pulse"></span>
+          </button>
+
+          <!-- Settings Button -->
           <button
             id="dock-btn-settings"
             title="Browser Settings"
@@ -222,8 +266,20 @@ export function createDock(
           <div id="dock-tabs-list" class="flex flex-col items-start gap-1.5 w-full overflow-y-auto"></div>
         </div>
 
-        <!-- Bottom Settings -->
-        <div class="flex flex-col items-start w-full">
+        <!-- Bottom Settings & Media Actions -->
+        <div class="flex flex-col items-start w-full gap-1.5">
+          <!-- Music / Media Control Button -->
+          <button
+            id="dock-btn-media"
+            title="Music & Media Control (Ctrl+M)"
+            class="w-full h-9 px-2.5 rounded-xl flex items-center gap-2.5 text-[#e2bfb4] hover:bg-[#202022] hover:text-[#e5e2e1] transition-colors cursor-pointer text-xs font-medium relative"
+          >
+            <span id="dock-media-icon" class="material-symbols-outlined text-[18px]">music_note</span>
+            <span class="flex-1 text-left truncate">Music &amp; Media</span>
+            <span id="dock-media-indicator" class="hidden w-2 h-2 rounded-full bg-[#f85e2a] animate-pulse mr-1"></span>
+          </button>
+
+          <!-- Settings Button -->
           <button
             id="dock-btn-settings"
             title="Browser Settings"
@@ -250,6 +306,10 @@ export function createDock(
       }
     });
 
+    aside.querySelector("#dock-btn-media")?.addEventListener("click", () => {
+      onToggleMedia?.();
+    });
+
     aside.querySelector("#dock-btn-settings")?.addEventListener("click", () => {
       onSelectTab("settings");
     });
@@ -257,6 +317,8 @@ export function createDock(
     aside.querySelector("#dock-btn-toggle")?.addEventListener("click", () => {
       toggleExpanded();
     });
+
+    updateMediaButtonUI();
   };
 
   const updateDockDropHighlight = (x: number, y: number, sourceWrapper: HTMLElement) => {
@@ -616,6 +678,14 @@ export function createDock(
     getActiveTabId: () => currentActiveTabId,
     getTabs: () => Array.from(tabsMap.values()),
     getTab: (id) => tabsMap.get(id),
+    setMediaActive: (active: boolean) => {
+      isMediaActiveState = active;
+      updateMediaButtonUI();
+    },
+    setMediaPlaying: (playing: boolean) => {
+      isMediaPlayingState = playing;
+      updateMediaButtonUI();
+    },
     // Backward-compatible aliases
     addMinimizedTab: addTab,
     removeMinimizedTab: removeTab,

@@ -43,6 +43,10 @@ import {
   createSettingsPage,
   type SettingsPageController,
 } from "./components/settings_page";
+import {
+  createMediaController,
+  type MediaController,
+} from "./components/media_controller";
 
 let currentConfig: AppConfig;
 let isViewOpen = false;
@@ -51,6 +55,8 @@ let dock: DockController;
 let webBar: WebBarController;
 let isShieldOpen = false;
 let isDownloadOpen = false;
+let isMediaOpen = false;
+let mediaController: MediaController;
 let isSpawning = false;
 let dragOverlay: DragSplitOverlayController;
 let settingsPage: SettingsPageController;
@@ -61,20 +67,22 @@ let mainWrapper: HTMLElement;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
+  const leftOffset = isMediaOpen ? 360 : 0;
   const rightOffset = isShieldOpen || isDownloadOpen ? 360 : 0;
   const headerHeight = 80;
   const webBarHeight = 28;
   const topOffset = headerHeight + webBarHeight;
   return {
-    x: dockWidth,
+    x: dockWidth + leftOffset,
     y: topOffset,
-    width: Math.max(300, window.innerWidth - dockWidth - rightOffset),
+    width: Math.max(300, window.innerWidth - dockWidth - leftOffset - rightOffset),
     height: Math.max(300, window.innerHeight - topOffset),
     split_ratio: activeTab?.isSplit ? (activeTab.splitRatio ?? 0.5) : undefined,
   };
 }
 
 function updateShieldForTab(tab: MinimizedTab | null) {
+  mediaController?.updateActiveTab(tab);
   const header = document.querySelector("header") as any;
   if (!header || !header.shieldController) return;
   if (!tab) {
@@ -1015,8 +1023,13 @@ async function init() {
   };
 
   const updateLayoutOffset = () => {
+    const dockWidth = dock ? dock.getWidth() : 64;
+    const leftOffset = isMediaOpen ? 360 : 0;
     const rightOffset = isShieldOpen || isDownloadOpen ? 360 : 0;
+    mediaController?.setLeftOffset(dockWidth);
+    webBar.setLeftOffset(dockWidth + leftOffset);
     webBar.setRightOffset(rightOffset);
+    mainWrapper.style.paddingLeft = `${dockWidth + leftOffset}px`;
     mainWrapper.style.paddingRight = `${rightOffset}px`;
     tauriIpc.setOverlayRightOffset(rightOffset);
     if (isViewOpen) {
@@ -1024,6 +1037,18 @@ async function init() {
       tauriIpc.updateSplitLayout(bounds);
     }
     dragOverlay?.updateBounds(getSplitBounds());
+  };
+
+  const handleMediaToggle = (isOpen?: boolean) => {
+    isMediaOpen = typeof isOpen === "boolean" ? isOpen : !isMediaOpen;
+    if (isMediaOpen) {
+      mediaController?.show();
+      dock?.setMediaActive(true);
+    } else {
+      mediaController?.hide();
+      dock?.setMediaActive(false);
+    }
+    updateLayoutOffset();
   };
 
   const handleShieldToggle = (isOpen: boolean) => {
@@ -1095,8 +1120,10 @@ async function init() {
     handleNewTab,
     (isExpanded) => {
       const dockWidth = isExpanded ? 220 : 64;
-      webBar.setLeftOffset(dockWidth);
-      mainWrapper.style.paddingLeft = `${dockWidth}px`;
+      mediaController?.setLeftOffset(dockWidth);
+      const leftOffset = isMediaOpen ? 360 : 0;
+      webBar.setLeftOffset(dockWidth + leftOffset);
+      mainWrapper.style.paddingLeft = `${dockWidth + leftOffset}px`;
       if (isViewOpen) {
         const bounds = getSplitBounds();
         tauriIpc.updateSplitLayout(bounds);
@@ -1110,9 +1137,34 @@ async function init() {
     handleTabDragCancel,
     (tab, pane) => {
       handleSplitWithActive(tab, pane);
+    },
+    () => {
+      handleMediaToggle();
     }
   );
   app.appendChild(dock.element);
+
+  // Music & Media Controller (Left Drawer adjacent to Dock)
+  mediaController = createMediaController(
+    () => {
+      isMediaOpen = false;
+      dock.setMediaActive(false);
+      updateLayoutOffset();
+    },
+    (url) => {
+      handleSearch(url, currentConfig.active_search_engine);
+    },
+    (tabId) => {
+      const tab = dock.getTab(tabId);
+      if (tab) {
+        handleRestoreTab(tab);
+      }
+    },
+    (isPlaying) => {
+      dock.setMediaPlaying(isPlaying);
+    }
+  );
+  mediaController.setLeftOffset(dock.getWidth());
 
   // Drag Split Overlay for dropping tab onto active view
   dragOverlay = createDragSplitOverlay();
@@ -1140,10 +1192,20 @@ async function init() {
         handleOpenSettings();
       }
     }
-    // Escape closes Settings if open
-    else if (e.key === "Escape" && isSettingsOpen) {
+    // Media Control (Ctrl+M / Cmd+M)
+    else if ((e.ctrlKey || e.metaKey) && (e.key === "m" || e.key === "M")) {
       e.preventDefault();
-      handleBackFromSettings();
+      handleMediaToggle();
+    }
+    // Escape closes Media or Settings if open
+    else if (e.key === "Escape") {
+      if (isMediaOpen) {
+        e.preventDefault();
+        handleMediaToggle(false);
+      } else if (isSettingsOpen) {
+        e.preventDefault();
+        handleBackFromSettings();
+      }
     }
     // 1. Reload (Ctrl+R / Cmd+R / F5)
     else if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))) {

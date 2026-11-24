@@ -143,3 +143,13 @@ pub fn get_cache_info() -> Result<CacheInfo, String> {
 pub fn clear_browser_cache(app: AppHandle) -> Result<CacheInfo, String> {
     core_clear_browser_cache(&app)
 }
+
+#[tauri::command]
+pub fn webview_media_command(
+    app: AppHandle,
+    tab_id: Option<String>,
+    command: String,
+    value: Option<f64>,
+) -> Result<(), String> {
+    crate::core::webview::execute_webview_media_command(&app, tab_id.as_deref(), &command, value)
+}
