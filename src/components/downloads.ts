@@ -44,64 +44,31 @@ export function formatBytes(bytes: number): string {
   return `${val} ${sizes[i]}`;
 }
 
+const FILE_ICONS: Record<string, string> = {
+  // Images
+  png: "image", jpg: "image", jpeg: "image", jpe: "image", jfif: "image",
+  webp: "image", gif: "image", svg: "image", ico: "image", bmp: "image",
+  // PDF
+  pdf: "picture_as_pdf",
+  // Archives
+  zip: "folder_zip", tar: "folder_zip", gz: "folder_zip", tgz: "folder_zip",
+  bz2: "folder_zip", "7z": "folder_zip", rar: "folder_zip",
+  // Terminal / Executables / Scripts
+  deb: "terminal", rpm: "terminal", sh: "terminal", bin: "terminal", run: "terminal",
+  // Audio
+  mp3: "audio_file", wav: "audio_file", ogg: "audio_file", flac: "audio_file",
+  // Video
+  mp4: "video_file", webm: "video_file", mkv: "video_file", mov: "video_file",
+  // Code
+  js: "code", ts: "code", html: "code", css: "code", json: "code",
+  rs: "code", py: "code", c: "code", cpp: "code",
+  // Documents
+  txt: "description", md: "description", doc: "description", docx: "description",
+};
+
 export function getFileIcon(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() || "";
-  switch (ext) {
-    case "png":
-    case "jpg":
-    case "jpeg":
-    case "jpe":
-    case "jfif":
-    case "webp":
-    case "gif":
-    case "svg":
-    case "ico":
-    case "bmp":
-      return "image";
-    case "pdf":
-      return "picture_as_pdf";
-    case "zip":
-    case "tar":
-    case "gz":
-    case "tgz":
-    case "bz2":
-    case "7z":
-    case "rar":
-      return "folder_zip";
-    case "deb":
-    case "rpm":
-    case "sh":
-    case "bin":
-    case "run":
-      return "terminal";
-    case "mp3":
-    case "wav":
-    case "ogg":
-    case "flac":
-      return "audio_file";
-    case "mp4":
-    case "webm":
-    case "mkv":
-    case "mov":
-      return "video_file";
-    case "js":
-    case "ts":
-    case "html":
-    case "css":
-    case "json":
-    case "rs":
-    case "py":
-    case "c":
-    case "cpp":
-      return "code";
-    case "txt":
-    case "md":
-    case "doc":
-    case "docx":
-      return "description";
-    default:
-      return "draft";
-  }
+  return FILE_ICONS[ext] || "draft";
 }
 
 export function initDownloadsUI(

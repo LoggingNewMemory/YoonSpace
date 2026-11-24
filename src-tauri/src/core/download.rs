@@ -231,6 +231,28 @@ pub fn sanitize_filename(name: &str) -> String {
     }
 }
 
+fn percent_decode(input: &str) -> String {
+    let mut bytes = Vec::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let h1 = chars.next();
+            let h2 = chars.next();
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                if let Ok(val) = u8::from_str_radix(
+                    std::str::from_utf8(&[h1, h2]).unwrap_or(""),
+                    16,
+                ) {
+                    bytes.push(val);
+                    continue;
+                }
+            }
+        }
+        bytes.push(b);
+    }
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
 pub fn infer_extension_from_mime(mime: &str) -> Option<&'static str> {
     let clean = mime.split(';').next().unwrap_or("").trim().to_lowercase();
     match clean.as_str() {
@@ -241,6 +263,8 @@ pub fn infer_extension_from_mime(mime: &str) -> Option<&'static str> {
         "image/svg+xml" => Some("svg"),
         "image/bmp" => Some("bmp"),
         "image/x-icon" | "image/vnd.microsoft.icon" => Some("ico"),
+        "image/avif" => Some("avif"),
+        "image/tiff" => Some("tiff"),
         "application/pdf" => Some("pdf"),
         "application/zip" => Some("zip"),
         "application/gzip" | "application/x-gzip" | "application/x-tar" => Some("tar.gz"),
@@ -260,50 +284,140 @@ pub fn infer_extension_from_mime(mime: &str) -> Option<&'static str> {
     }
 }
 
+/// Extracts a clean file extension from a URL (path segments, query parameters).
+/// Explicit safety guarantee: never allows .jpe or .jfif to escape (maps them to .jpeg).
 pub fn extract_extension_from_url(url_str: &str) -> Option<String> {
     if url_str.is_empty() {
         return None;
     }
-    if let Ok(parsed) = url::Url::parse(url_str) {
-        if let Some(segments) = parsed.path_segments() {
-            if let Some(last) = segments.last() {
-                let seg = last.trim();
-                if let Some(dot_idx) = seg.rfind('.') {
-                    let ext = &seg[dot_idx + 1..];
-                    if !ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_alphanumeric()) {
-                        let lower = ext.to_lowercase();
-                        if !matches!(lower.as_str(), "php" | "asp" | "aspx" | "cgi" | "jsp" | "html" | "htm") {
-                            return Some(lower);
-                        }
-                    }
+
+    let parsed = url::Url::parse(url_str)
+        .or_else(|_| url::Url::parse(&format!("https://{}", url_str)))
+        .ok()?;
+
+    // Helper to validate and normalize extensions with safety guarantee
+    let normalize_ext = |ext: &str| -> Option<String> {
+        let clean = ext.trim().trim_start_matches('.').to_lowercase();
+        if clean.is_empty() || clean.len() > 10 {
+            return None;
+        }
+
+        // Filter out dynamic server scripts / pages
+        if matches!(
+            clean.as_str(),
+            "php" | "asp" | "aspx" | "cgi" | "jsp" | "html" | "htm" | "ashx" | "cfm" | "do" | "action" | "pl"
+        ) {
+            return None;
+        }
+
+        // Numeric versions like "0", "1", "00" are not extensions
+        if !clean.chars().any(|c| c.is_ascii_alphabetic()) {
+            return None;
+        }
+
+        // Must be alphanumeric or contain a dot (for compound extensions)
+        if !clean.chars().all(|c| c.is_ascii_alphanumeric() || c == '.') {
+            return None;
+        }
+
+        // Explicit safety guarantee: never allow .jpe or .jfif to escape
+        if clean == "jpe" || clean == "jfif" {
+            return Some("jpeg".to_string());
+        }
+
+        Some(clean)
+    };
+
+    // 1. Check path segments
+    let mut path_ext: Option<String> = None;
+    if let Some(segments) = parsed.path_segments() {
+        if let Some(last) = segments.last() {
+            let decoded = percent_decode(last.trim());
+            let lower = decoded.to_lowercase();
+
+            // Multi-part extensions
+            if lower.ends_with(".tar.gz") {
+                path_ext = Some("tar.gz".to_string());
+            } else if lower.ends_with(".tar.bz2") {
+                path_ext = Some("tar.bz2".to_string());
+            } else if lower.ends_with(".tar.xz") {
+                path_ext = Some("tar.xz".to_string());
+            } else if lower.ends_with(".tar.zst") {
+                path_ext = Some("tar.zst".to_string());
+            } else if let Some(dot_idx) = decoded.rfind('.') {
+                let candidate = &decoded[dot_idx + 1..];
+                path_ext = normalize_ext(candidate);
+            }
+        }
+    }
+
+    // If path extension is specific (and not a generic container like "bin" or "download"), return it
+    if let Some(ref ext) = path_ext {
+        if ext != "bin" && ext != "download" {
+            return Some(ext.clone());
+        }
+    }
+
+    // 2. Check query parameters (e.g. format=jpg, ext=png, file=name.jpeg)
+    for (k, v) in parsed.query_pairs() {
+        let key = k.to_lowercase();
+        let val = v.trim().trim_start_matches('.').to_lowercase();
+
+        if key == "format"
+            || key == "fmt"
+            || key == "ext"
+            || key == "extension"
+            || key == "fm"
+            || key == "output"
+            || key == "f"
+        {
+            if let Some(norm) = normalize_ext(&val) {
+                return Some(norm);
+            }
+        }
+
+        if key == "file" || key == "filename" || key == "name" {
+            let decoded_val = percent_decode(&val);
+            let lower_val = decoded_val.to_lowercase();
+            if lower_val.ends_with(".tar.gz") {
+                return Some("tar.gz".to_string());
+            } else if lower_val.ends_with(".tar.bz2") {
+                return Some("tar.bz2".to_string());
+            } else if lower_val.ends_with(".tar.xz") {
+                return Some("tar.xz".to_string());
+            } else if lower_val.ends_with(".tar.zst") {
+                return Some("tar.zst".to_string());
+            } else if let Some(dot) = decoded_val.rfind('.') {
+                let candidate = &decoded_val[dot + 1..];
+                if let Some(norm) = normalize_ext(candidate) {
+                    return Some(norm);
                 }
             }
         }
-        for (k, v) in parsed.query_pairs() {
-            let key = k.to_lowercase();
-            let val = v.to_lowercase();
-            if key == "format" || key == "ext" || key == "extension" {
-                if matches!(val.as_str(), "jpeg" | "jpg" | "png" | "webp" | "gif" | "svg" | "pdf") {
-                    return Some(val);
-                }
-            }
-            if key == "file" || key == "filename" || key == "name" {
-                if let Some(dot) = val.rfind('.') {
-                    let ext = &val[dot + 1..];
-                    if !ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_alphanumeric()) {
-                        return Some(ext.to_string());
+
+        if key == "response-content-disposition" {
+            if let Some(fn_part) = v.split("filename=").nth(1).or_else(|| v.split("filename*=").nth(1)) {
+                let unquoted = fn_part.trim().trim_matches('"').trim_matches('\'');
+                let decoded_fn = percent_decode(unquoted);
+                if let Some(dot) = decoded_fn.rfind('.') {
+                    let candidate = &decoded_fn[dot + 1..];
+                    if let Some(norm) = normalize_ext(candidate) {
+                        return Some(norm);
                     }
                 }
             }
         }
     }
-    None
+
+    // Fallback to path extension if available (even if "bin" or "download")
+    path_ext
 }
 
 pub fn extract_filename_from_url_or_default(url_str: &str) -> String {
-    if let Ok(parsed) = url::Url::parse(url_str) {
+    if let Ok(parsed) = url::Url::parse(url_str).or_else(|_| url::Url::parse(&format!("https://{}", url_str))) {
         if let Some(seg) = parsed.path_segments().and_then(|mut s| s.next_back()) {
-            let cleaned = sanitize_filename(seg);
+            let decoded = percent_decode(seg);
+            let cleaned = sanitize_filename(&decoded);
             if !cleaned.is_empty() && cleaned != "download" {
                 return cleaned;
             }
@@ -311,9 +425,20 @@ pub fn extract_filename_from_url_or_default(url_str: &str) -> String {
         for (k, v) in parsed.query_pairs() {
             let key = k.to_lowercase();
             if key == "file" || key == "filename" || key == "name" {
-                let cleaned = sanitize_filename(&v);
+                let decoded = percent_decode(&v);
+                let cleaned = sanitize_filename(&decoded);
                 if !cleaned.is_empty() && cleaned != "download" {
                     return cleaned;
+                }
+            }
+            if key == "response-content-disposition" {
+                if let Some(fn_part) = v.split("filename=").nth(1).or_else(|| v.split("filename*=").nth(1)) {
+                    let unquoted = fn_part.trim().trim_matches('"').trim_matches('\'');
+                    let decoded = percent_decode(unquoted);
+                    let cleaned = sanitize_filename(&decoded);
+                    if !cleaned.is_empty() && cleaned != "download" {
+                        return cleaned;
+                    }
                 }
             }
         }
@@ -321,6 +446,10 @@ pub fn extract_filename_from_url_or_default(url_str: &str) -> String {
     "download".to_string()
 }
 
+/// Normalizes and cleans a candidate download filename using the suggested filename,
+/// the source URL, and optional MIME content type.
+///
+/// Explicit safety guarantee: never allow .jpe or .jfif to escape (always normalizes to .jpeg or .jpg).
 pub fn normalize_download_filename(filename: &str, url_str: &str, mime_opt: Option<&str>) -> String {
     let mut name = sanitize_filename(filename);
 
@@ -330,61 +459,109 @@ pub fn normalize_download_filename(filename: &str, url_str: &str, mime_opt: Opti
     if let Some(pos) = name.find('#') {
         name.truncate(pos);
     }
+    let name = sanitize_filename(&name);
 
     let url_ext_opt = extract_extension_from_url(url_str);
 
-    let current_ext_opt = {
+    let lower_name = name.to_lowercase();
+    let (mut stem, mut current_ext_opt) = if lower_name.ends_with(".tar.gz") {
+        (name[..name.len() - 7].to_string(), Some("tar.gz".to_string()))
+    } else if lower_name.ends_with(".tar.bz2") {
+        (name[..name.len() - 8].to_string(), Some("tar.bz2".to_string()))
+    } else if lower_name.ends_with(".tar.xz") {
+        (name[..name.len() - 7].to_string(), Some("tar.xz".to_string()))
+    } else if lower_name.ends_with(".tar.zst") {
+        (name[..name.len() - 8].to_string(), Some("tar.zst".to_string()))
+    } else {
         let p = Path::new(&name);
-        p.extension().map(|e| e.to_string_lossy().to_string().to_lowercase())
+        let ext = p.extension().map(|e| e.to_string_lossy().to_string().to_lowercase());
+        let s = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        (s, ext)
     };
 
-    match current_ext_opt.as_deref() {
-        Some("jpe") | Some("jfif") => {
-            let stem = Path::new(&name)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "download".to_string());
+    // If filename was bare ".jpe" or ".jfif", Path considers it a hidden file with stem ".jpe"/".jfif" and no extension.
+    if current_ext_opt.is_none() {
+        let s_lower = stem.trim().to_lowercase();
+        if s_lower == ".jpe" || s_lower == "jpe" {
+            stem = "download".to_string();
+            current_ext_opt = Some("jpe".to_string());
+        } else if s_lower == ".jfif" || s_lower == "jfif" {
+            stem = "download".to_string();
+            current_ext_opt = Some("jfif".to_string());
+        }
+    }
 
+    let stem = if stem.trim().is_empty() || stem == "." {
+        "download".to_string()
+    } else {
+        stem
+    };
+
+    let mut result = match current_ext_opt.as_deref() {
+        Some("jpe") | Some("jfif") => {
+            // Unwanted legacy JPEG extension: resolve to the best extension
             if let Some(ref uext) = url_ext_opt {
                 if uext == "jpeg" || uext == "jpg" {
-                    name = format!("{}.{}", stem, uext);
+                    format!("{}.{}", stem, uext)
+                } else if matches!(uext.as_str(), "png" | "webp" | "gif" | "svg") {
+                    format!("{}.{}", stem, uext)
                 } else {
-                    name = format!("{}.jpeg", stem);
+                    format!("{}.jpeg", stem)
                 }
             } else {
-                name = format!("{}.jpeg", stem);
+                format!("{}.jpeg", stem)
             }
         }
         None => {
+            // No extension provided in suggested filename
             if let Some(ref uext) = url_ext_opt {
-                name = format!("{}.{}", name, uext);
+                format!("{}.{}", stem, uext)
             } else if let Some(mime) = mime_opt {
                 if let Some(ext) = infer_extension_from_mime(mime) {
-                    name = format!("{}.{}", name, ext);
+                    format!("{}.{}", stem, ext)
+                } else {
+                    stem
                 }
+            } else {
+                stem
             }
         }
         Some(ext) => {
-            if (ext == "bin" || ext == "download") && url_ext_opt.is_some() {
-                let stem = Path::new(&name)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "download".to_string());
-                name = format!("{}.{}", stem, url_ext_opt.unwrap());
+            let is_generic_or_script = ext == "bin"
+                || ext == "download"
+                || matches!(
+                    ext,
+                    "php" | "asp" | "aspx" | "cgi" | "jsp" | "html" | "htm" | "ashx" | "cfm" | "do" | "action"
+                );
+
+            if is_generic_or_script && url_ext_opt.is_some() {
+                format!("{}.{}", stem, url_ext_opt.unwrap())
+            } else if is_generic_or_script
+                && mime_opt.is_some()
+                && infer_extension_from_mime(mime_opt.unwrap()).is_some()
+            {
+                format!("{}.{}", stem, infer_extension_from_mime(mime_opt.unwrap()).unwrap())
+            } else {
+                format!("{}.{}", stem, ext)
             }
         }
-    }
+    };
 
     // Explicit safety guarantee: never allow .jpe or .jfif to escape
-    if name.to_lowercase().ends_with(".jpe") {
-        name.truncate(name.len() - 4);
-        name.push_str(".jpeg");
-    } else if name.to_lowercase().ends_with(".jfif") {
-        name.truncate(name.len() - 5);
-        name.push_str(".jpeg");
+    let lower_result = result.to_lowercase();
+    if lower_result.ends_with(".jpe") {
+        let p = Path::new(&result);
+        let s = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "download".to_string());
+        let s = if s.trim().is_empty() || s == ".jpe" || s == "jpe" { "download".to_string() } else { s };
+        result = format!("{}.jpeg", s);
+    } else if lower_result.ends_with(".jfif") {
+        let p = Path::new(&result);
+        let s = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "download".to_string());
+        let s = if s.trim().is_empty() || s == ".jfif" || s == "jfif" { "download".to_string() } else { s };
+        result = format!("{}.jpeg", s);
     }
 
-    name
+    result
 }
 
 pub fn get_unique_destination_path(dir: &Path, filename: &str) -> PathBuf {
@@ -884,6 +1061,101 @@ mod tests {
         assert_eq!(
             normalize_download_filename("document.pdf", "https://example.com/doc.pdf", Some("application/pdf")),
             "document.pdf"
+        );
+    }
+
+    #[test]
+    fn test_explicit_safety_guarantee_never_allows_jpe_or_jfif_to_escape() {
+        // Case-insensitive uppercase .JPE and .JFIF
+        assert_eq!(
+            normalize_download_filename("CAT.JPE", "https://example.com/images/cat", Some("image/jpeg")),
+            "CAT.jpeg"
+        );
+        assert_eq!(
+            normalize_download_filename("PHOTO.JFIF", "https://example.com/photo", Some("image/jpeg")),
+            "PHOTO.jpeg"
+        );
+        // Bare .jpe or .jfif
+        assert_eq!(
+            normalize_download_filename(".jpe", "https://example.com/download", Some("image/jpeg")),
+            "download.jpeg"
+        );
+        assert_eq!(
+            normalize_download_filename(".jfif", "https://example.com/download", Some("image/jpeg")),
+            "download.jpeg"
+        );
+        // URL with .jfif -> extract_extension_from_url maps to jpeg, never jfif
+        assert_eq!(
+            extract_extension_from_url("https://example.com/cat.jfif"),
+            Some("jpeg".to_string())
+        );
+        assert_eq!(
+            extract_extension_from_url("https://example.com/cat.jpe"),
+            Some("jpeg".to_string())
+        );
+        assert_eq!(
+            extract_extension_from_url("https://example.com/api?format=jfif"),
+            Some("jpeg".to_string())
+        );
+        assert_eq!(
+            extract_extension_from_url("https://example.com/api?file=photo.jfif"),
+            Some("jpeg".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_extension_advanced() {
+        // Multi-part extensions
+        assert_eq!(
+            extract_extension_from_url("https://example.com/archive.tar.gz"),
+            Some("tar.gz".to_string())
+        );
+        // Dynamic script skipped in favor of query param format
+        assert_eq!(
+            extract_extension_from_url("https://example.com/download.php?format=png"),
+            Some("png".to_string())
+        );
+        // Generic container skipped in favor of query param format
+        assert_eq!(
+            extract_extension_from_url("https://example.com/download.bin?format=jpeg"),
+            Some("jpeg".to_string())
+        );
+        // Version numbers in path are not treated as extensions
+        assert_eq!(
+            extract_extension_from_url("https://example.com/v1.0.0"),
+            None
+        );
+        // Percent-encoded filename
+        assert_eq!(
+            extract_extension_from_url("https://example.com/my%20photo.webp"),
+            Some("webp".to_string())
+        );
+        // Dynamic formats without arbitrary whitelist restrictions
+        assert_eq!(
+            extract_extension_from_url("https://example.com/api?format=7z"),
+            Some("7z".to_string())
+        );
+        assert_eq!(
+            extract_extension_from_url("https://example.com/api?ext=apk"),
+            Some("apk".to_string())
+        );
+        assert_eq!(
+            extract_extension_from_url("https://example.com/api?fm=dmg"),
+            Some("dmg".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_download_filename_compound_and_script_replacement() {
+        // Compound extension preserved
+        assert_eq!(
+            normalize_download_filename("archive.tar.gz", "https://example.com/archive.tar.gz", Some("application/gzip")),
+            "archive.tar.gz"
+        );
+        // Script suggested filename replaced with URL file extension
+        assert_eq!(
+            normalize_download_filename("download.php", "https://example.com/download.php?file=report.pdf", Some("application/pdf")),
+            "download.pdf"
         );
     }
 }
