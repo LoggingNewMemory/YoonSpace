@@ -51,8 +51,6 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             settings.set_enable_webgl(true);
             settings.set_enable_smooth_scrolling(true);
             settings.set_enable_page_cache(true);
-            settings.set_enable_dns_prefetching(true);
-            settings.set_enable_offline_web_application_cache(true);
         }
 
         // 1c. Enable WebBrowser CacheModel for aggressive disk & memory caching

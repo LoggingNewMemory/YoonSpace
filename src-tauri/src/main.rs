@@ -18,6 +18,7 @@
 
 fn main() {
     yoonspace_lib::core::gpu::configure_universal_igpu();
+    yoonspace_lib::core::webview::gtk_overlay::setup_glib_log_handler();
 
     yoonspace_lib::run();
 }

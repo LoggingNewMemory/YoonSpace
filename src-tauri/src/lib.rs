@@ -14,11 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use tauri::Manager;
+
 pub mod commands;
 pub mod core;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crate::core::webview::gtk_overlay::setup_glib_log_handler();
+
     tauri::Builder::default()
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -31,6 +35,10 @@ pub fn run() {
 
             let _ = crate::core::webview::init_gtk_overlay(&app.handle());
             crate::core::download::init_global_download_handler(&app.handle());
+
+            if let Some(main_win) = app.get_window("main") {
+                let _ = main_win.show();
+            }
 
             Ok(())
         })

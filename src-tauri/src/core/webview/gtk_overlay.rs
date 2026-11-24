@@ -846,13 +846,21 @@ pub fn cleanup_overlay(app: &AppHandle) -> Result<(), String> {
     })
 }
 
-pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
+pub fn setup_glib_log_handler() {
     gtk::glib::log_set_default_handler(|log_domain, log_level, message| {
-        if message.contains("WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND") {
+        if message.contains("WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND")
+            || message.contains("gtk_window_set_titlebar() called on a realized window")
+            || message.contains("webkit_settings_set_enable_dns_prefetching")
+            || message.contains("webkit_settings_set_enable_offline_web_application_cache")
+        {
             return;
         }
         gtk::glib::log_default_handler(log_domain, log_level, Some(message));
     });
+}
+
+pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
+    setup_glib_log_handler();
 
     let (tx, rx) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
