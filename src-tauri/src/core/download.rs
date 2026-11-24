@@ -235,7 +235,7 @@ pub fn infer_extension_from_mime(mime: &str) -> Option<&'static str> {
     let clean = mime.split(';').next().unwrap_or("").trim().to_lowercase();
     match clean.as_str() {
         "image/png" => Some("png"),
-        "image/jpeg" | "image/jpg" => Some("jpg"),
+        "image/jpeg" | "image/jpg" => Some("jpeg"),
         "image/webp" => Some("webp"),
         "image/gif" => Some("gif"),
         "image/svg+xml" => Some("svg"),
@@ -258,6 +258,133 @@ pub fn infer_extension_from_mime(mime: &str) -> Option<&'static str> {
         "video/quicktime" => Some("mov"),
         _ => None,
     }
+}
+
+pub fn extract_extension_from_url(url_str: &str) -> Option<String> {
+    if url_str.is_empty() {
+        return None;
+    }
+    if let Ok(parsed) = url::Url::parse(url_str) {
+        if let Some(segments) = parsed.path_segments() {
+            if let Some(last) = segments.last() {
+                let seg = last.trim();
+                if let Some(dot_idx) = seg.rfind('.') {
+                    let ext = &seg[dot_idx + 1..];
+                    if !ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_alphanumeric()) {
+                        let lower = ext.to_lowercase();
+                        if !matches!(lower.as_str(), "php" | "asp" | "aspx" | "cgi" | "jsp" | "html" | "htm") {
+                            return Some(lower);
+                        }
+                    }
+                }
+            }
+        }
+        for (k, v) in parsed.query_pairs() {
+            let key = k.to_lowercase();
+            let val = v.to_lowercase();
+            if key == "format" || key == "ext" || key == "extension" {
+                if matches!(val.as_str(), "jpeg" | "jpg" | "png" | "webp" | "gif" | "svg" | "pdf") {
+                    return Some(val);
+                }
+            }
+            if key == "file" || key == "filename" || key == "name" {
+                if let Some(dot) = val.rfind('.') {
+                    let ext = &val[dot + 1..];
+                    if !ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_alphanumeric()) {
+                        return Some(ext.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn extract_filename_from_url_or_default(url_str: &str) -> String {
+    if let Ok(parsed) = url::Url::parse(url_str) {
+        if let Some(seg) = parsed.path_segments().and_then(|mut s| s.next_back()) {
+            let cleaned = sanitize_filename(seg);
+            if !cleaned.is_empty() && cleaned != "download" {
+                return cleaned;
+            }
+        }
+        for (k, v) in parsed.query_pairs() {
+            let key = k.to_lowercase();
+            if key == "file" || key == "filename" || key == "name" {
+                let cleaned = sanitize_filename(&v);
+                if !cleaned.is_empty() && cleaned != "download" {
+                    return cleaned;
+                }
+            }
+        }
+    }
+    "download".to_string()
+}
+
+pub fn normalize_download_filename(filename: &str, url_str: &str, mime_opt: Option<&str>) -> String {
+    let mut name = sanitize_filename(filename);
+
+    if let Some(pos) = name.find('?') {
+        name.truncate(pos);
+    }
+    if let Some(pos) = name.find('#') {
+        name.truncate(pos);
+    }
+
+    let url_ext_opt = extract_extension_from_url(url_str);
+
+    let current_ext_opt = {
+        let p = Path::new(&name);
+        p.extension().map(|e| e.to_string_lossy().to_string().to_lowercase())
+    };
+
+    match current_ext_opt.as_deref() {
+        Some("jpe") | Some("jfif") => {
+            let stem = Path::new(&name)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "download".to_string());
+
+            if let Some(ref uext) = url_ext_opt {
+                if uext == "jpeg" || uext == "jpg" {
+                    name = format!("{}.{}", stem, uext);
+                } else {
+                    name = format!("{}.jpeg", stem);
+                }
+            } else {
+                name = format!("{}.jpeg", stem);
+            }
+        }
+        None => {
+            if let Some(ref uext) = url_ext_opt {
+                name = format!("{}.{}", name, uext);
+            } else if let Some(mime) = mime_opt {
+                if let Some(ext) = infer_extension_from_mime(mime) {
+                    name = format!("{}.{}", name, ext);
+                }
+            }
+        }
+        Some(ext) => {
+            if (ext == "bin" || ext == "download") && url_ext_opt.is_some() {
+                let stem = Path::new(&name)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "download".to_string());
+                name = format!("{}.{}", stem, url_ext_opt.unwrap());
+            }
+        }
+    }
+
+    // Explicit safety guarantee: never allow .jpe or .jfif to escape
+    if name.to_lowercase().ends_with(".jpe") {
+        name.truncate(name.len() - 4);
+        name.push_str(".jpeg");
+    } else if name.to_lowercase().ends_with(".jfif") {
+        name.truncate(name.len() - 5);
+        name.push_str(".jpeg");
+    }
+
+    name
 }
 
 pub fn get_unique_destination_path(dir: &Path, filename: &str) -> PathBuf {
@@ -410,9 +537,12 @@ pub fn attach_download_signals(app: &AppHandle, download: &Download) {
         add_downloading_uri(&req_url);
     }
 
+    let raw_initial = extract_filename_from_url_or_default(&req_url);
+    let initial_name = normalize_download_filename(&raw_initial, &req_url, None);
+
     let initial_item = DownloadItem {
         id: download_id.clone(),
-        filename: "download".to_string(),
+        filename: initial_name,
         url: req_url.clone(),
         destination: String::new(),
         total_bytes: 0,
@@ -447,6 +577,9 @@ pub fn attach_download_signals(app: &AppHandle, download: &Download) {
         }
 
         // Determine filename
+        let resp_mime = dl.response().and_then(|r| r.mime_type()).map(|s| s.to_string());
+        let mime_ref = resp_mime.as_deref();
+
         let raw_filename = if !suggested_filename.trim().is_empty() {
             suggested_filename.to_string()
         } else if let Some(resp) = dl.response() {
@@ -457,41 +590,13 @@ pub fn attach_download_signals(app: &AppHandle, download: &Download) {
             String::new()
         };
 
-        let mut candidate_name = if !raw_filename.trim().is_empty() {
+        let candidate_raw = if !raw_filename.trim().is_empty() {
             raw_filename
-        } else if let Ok(parsed_url) = url::Url::parse(&req_url_decide) {
-            let seg = parsed_url
-                .path_segments()
-                .and_then(|mut s| s.next_back())
-                .unwrap_or("")
-                .trim();
-            if !seg.is_empty() {
-                seg.to_string()
-            } else {
-                "download".to_string()
-            }
         } else {
-            "download".to_string()
+            extract_filename_from_url_or_default(&req_url_decide)
         };
 
-        candidate_name = sanitize_filename(&candidate_name);
-        if let Some(pos) = candidate_name.find('?') {
-            candidate_name.truncate(pos);
-        }
-        if let Some(pos) = candidate_name.find('#') {
-            candidate_name.truncate(pos);
-        }
-
-        // If candidate_name lacks an extension, check MIME type
-        if !candidate_name.contains('.') {
-            if let Some(resp) = dl.response() {
-                if let Some(mime) = resp.mime_type() {
-                    if let Some(ext) = infer_extension_from_mime(&mime) {
-                        candidate_name = format!("{}.{}", candidate_name, ext);
-                    }
-                }
-            }
-        }
+        let candidate_name = normalize_download_filename(&candidate_raw, &req_url_decide, mime_ref);
 
         if let Some(resp) = dl.response() {
             let total = resp.content_length();
@@ -548,14 +653,20 @@ pub fn attach_download_signals(app: &AppHandle, download: &Download) {
             }
 
             if let Some(chosen) = chosen_path {
-                let uri_str = gtk::glib::filename_to_uri(&chosen, None)
-                    .map(|u| u.to_string())
-                    .unwrap_or_else(|_| format!("file://{}", chosen.to_string_lossy()));
-                let final_name = chosen
+                let chosen_name = chosen
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or(candidate_name.clone());
-                let path_str = chosen.to_string_lossy().to_string();
+                    .unwrap_or_else(|| candidate_name.clone());
+                let final_name = normalize_download_filename(&chosen_name, &req_url_decide, mime_ref);
+                let final_path = if final_name != chosen_name {
+                    chosen.parent().map(|p| p.join(&final_name)).unwrap_or(chosen.clone())
+                } else {
+                    chosen.clone()
+                };
+                let path_str = final_path.to_string_lossy().to_string();
+                let uri_str = gtk::glib::filename_to_uri(&final_path, None)
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|_| format!("file://{}", path_str));
 
                 with_downloads(|list| {
                     if let Some(item) = list.iter_mut().find(|d| d.id == dl_id_decide) {
@@ -726,4 +837,53 @@ pub fn attach_download_signals(app: &AppHandle, download: &Download) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_download_filename_fixes_jpe() {
+        // Suggested filename has .jpe, URL has .jpeg
+        assert_eq!(
+            normalize_download_filename("cat.jpe", "https://example.com/images/cat.jpeg", Some("image/jpeg")),
+            "cat.jpeg"
+        );
+        // Suggested filename has .jpe, URL has query param with file=cat.jpeg
+        assert_eq!(
+            normalize_download_filename("cat.jpe", "https://example.com/api?file=cat.jpeg", Some("image/jpeg")),
+            "cat.jpeg"
+        );
+        // Suggested filename has .jpe, URL has format=jpeg
+        assert_eq!(
+            normalize_download_filename("cat.jpe", "https://example.com/api?format=jpeg", Some("image/jpeg")),
+            "cat.jpeg"
+        );
+        // Suggested filename has .jpe, URL has .jpg
+        assert_eq!(
+            normalize_download_filename("cat.jpe", "https://example.com/images/cat.jpg", Some("image/jpeg")),
+            "cat.jpg"
+        );
+        // Suggested filename has .jpe, URL has no extension -> defaults to .jpeg
+        assert_eq!(
+            normalize_download_filename("cat.jpe", "https://example.com/download/12345", Some("image/jpeg")),
+            "cat.jpeg"
+        );
+        // Suggested filename has .jfif -> normalized to .jpeg
+        assert_eq!(
+            normalize_download_filename("photo.jfif", "https://example.com/photo", Some("image/jpeg")),
+            "photo.jpeg"
+        );
+        // Suggested filename has no extension, MIME is image/jpeg -> .jpeg
+        assert_eq!(
+            normalize_download_filename("banner", "https://example.com/banner", Some("image/jpeg")),
+            "banner.jpeg"
+        );
+        // Preserves standard files like png and pdf
+        assert_eq!(
+            normalize_download_filename("document.pdf", "https://example.com/doc.pdf", Some("application/pdf")),
+            "document.pdf"
+        );
+    }
 }

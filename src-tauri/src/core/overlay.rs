@@ -21,6 +21,7 @@ use std::time::Instant;
 
 use gtk::prelude::*;
 use tauri::{AppHandle, Manager};
+use webkit2gtk::{NavigationPolicyDecisionExt, PolicyDecisionExt, URIRequestExt, WebViewExt};
 
 use crate::core::download::DownloadItem;
 
@@ -30,16 +31,11 @@ static DISMISS_EPOCH: AtomicU64 = AtomicU64::new(0);
 static RIGHT_OFFSET: AtomicI32 = AtomicI32::new(16);
 const TOP_OFFSET: i32 = 116;
 
-#[allow(dead_code)]
 struct ActiveToastWidgets {
     download_id: Option<String>,
-    card: gtk::EventBox,
-    title_lbl: gtk::Label,
-    msg_lbl: gtk::Label,
-    info_lbl: Option<gtk::Label>,
-    progress_bar: Option<gtk::ProgressBar>,
-    actions_row: gtk::Box,
+    cached_destination: String,
     last_update: Instant,
+    webview: webkit2gtk::WebView,
 }
 
 thread_local! {
@@ -74,7 +70,7 @@ pub fn ensure_overlay_layer(overlay: &gtk::Overlay) -> gtk::Box {
         return existing;
     }
 
-    let layer = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let layer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     layer.set_widget_name(OVERLAY_LAYER_NAME);
     layer.set_halign(gtk::Align::End);
     layer.set_valign(gtk::Align::Start);
@@ -97,137 +93,7 @@ pub fn init_overlay_css() {
             background-color: transparent;
             padding: 0;
             margin: 0;
-        }
-
-        .yoonspace-toast-card,
-        eventbox.yoonspace-toast-card {
-            background-color: transparent;
-            background-image: none;
             border: none;
-            min-width: 320px;
-            max-width: 380px;
-        }
-
-        .yoonspace-toast-title,
-        .yoonspace-toast-title-error,
-        .yoonspace-toast-message,
-        .yoonspace-toast-info,
-        .yoonspace-toast-action-btn,
-        .yoonspace-toast-close-btn {
-            font-family: 'Google Sans', 'Google Sans Text', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Ubuntu', 'Noto Sans', sans-serif;
-        }
-
-        .yoonspace-toast-title {
-            color: #ffffff;
-            font-weight: 700;
-            font-size: 13px;
-            letter-spacing: -0.15px;
-        }
-
-        .yoonspace-toast-title-error {
-            color: #ff5449;
-            font-weight: 700;
-            font-size: 13px;
-            letter-spacing: -0.15px;
-        }
-
-        .yoonspace-toast-message {
-            color: #a09e9d;
-            font-size: 12px;
-            font-weight: 400;
-            margin-top: 1px;
-        }
-
-        .yoonspace-toast-info {
-            color: #f85e2a;
-            font-size: 11px;
-            font-weight: 600;
-            margin-top: 2px;
-        }
-
-        button.yoonspace-toast-action-btn,
-        .yoonspace-toast-action-btn {
-            background-color: #25252b;
-            background-image: none;
-            box-shadow: none;
-            text-shadow: none;
-            border: 1px solid #36363f;
-            border-radius: 8px;
-            color: #e2bfb4;
-            font-size: 11.5px;
-            font-weight: 600;
-            padding: 5px 14px;
-            min-height: 26px;
-            outline-style: none;
-            outline-width: 0;
-            transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
-        }
-
-        button.yoonspace-toast-action-btn:hover,
-        .yoonspace-toast-action-btn:hover {
-            background-color: #34343c;
-            border-color: #4a4a55;
-            color: #ffffff;
-        }
-
-        button.yoonspace-toast-action-btn:active,
-        .yoonspace-toast-action-btn:active {
-            background-color: #40404a;
-            color: #ffffff;
-        }
-
-        button.yoonspace-toast-close-btn,
-        .yoonspace-toast-close-btn {
-            background-color: transparent;
-            background-image: none;
-            box-shadow: none;
-            text-shadow: none;
-            border: none;
-            border-width: 0;
-            border-style: none;
-            color: #8e8d91;
-            font-size: 13px;
-            font-weight: 500;
-            padding: 2px 6px;
-            min-height: 20px;
-            min-width: 20px;
-            border-radius: 6px;
-            outline-style: none;
-            outline-width: 0;
-            transition: background-color 150ms ease, color 150ms ease;
-        }
-
-        button.yoonspace-toast-close-btn:hover,
-        .yoonspace-toast-close-btn:hover {
-            background-color: rgba(255, 255, 255, 0.08);
-            color: #ffffff;
-        }
-
-        progressbar.yoonspace-toast-progress {
-            min-height: 4px;
-            border-radius: 2px;
-            background-color: transparent;
-            border: none;
-            box-shadow: none;
-            padding: 0;
-            margin-top: 4px;
-            margin-bottom: 2px;
-        }
-
-        progressbar.yoonspace-toast-progress trough {
-            min-height: 4px;
-            border-radius: 2px;
-            background-color: #28282e;
-            border: none;
-            box-shadow: none;
-        }
-
-        progressbar.yoonspace-toast-progress progress {
-            min-height: 4px;
-            border-radius: 2px;
-            background-color: #f85e2a;
-            border: none;
-            box-shadow: none;
         }
     ";
     if provider.load_from_data(css.as_bytes()).is_ok() {
@@ -286,85 +152,6 @@ fn get_overlay_container(app: &AppHandle) -> Option<(gtk::Overlay, gtk::Box)> {
     Some((overlay, layer))
 }
 
-fn draw_rounded_rect(cr: &gtk::cairo::Context, x: f64, y: f64, width: f64, height: f64, radius: f64) {
-    use std::f64::consts::PI;
-    let degrees = PI / 180.0;
-    cr.new_sub_path();
-    cr.arc(x + width - radius, y + radius, radius, -90.0 * degrees, 0.0 * degrees);
-    cr.arc(x + width - radius, y + height - radius, radius, 0.0 * degrees, 90.0 * degrees);
-    cr.arc(x + radius, y + height - radius, radius, 90.0 * degrees, 180.0 * degrees);
-    cr.arc(x + radius, y + radius, radius, 180.0 * degrees, 270.0 * degrees);
-    cr.close_path();
-}
-
-fn create_card_eventbox(title_text: &str) -> (gtk::EventBox, gtk::Box, gtk::Label, gtk::Label, gtk::Button) {
-    let card = gtk::EventBox::new();
-    card.set_visible_window(true);
-    card.set_app_paintable(true);
-    card.style_context().add_class("yoonspace-toast-card");
-    card.set_size_request(330, -1);
-
-    card.connect_draw(|widget, cr| {
-        let width = widget.allocated_width() as f64;
-        let height = widget.allocated_height() as f64;
-        let radius = 16.0;
-
-        // 1. Soft subtle multi-pass drop shadow
-        for i in 1..=3 {
-            let spread = i as f64;
-            draw_rounded_rect(cr, 1.0, 1.0 + spread * 0.6, width - 2.0, height - 2.0, radius);
-            cr.set_source_rgba(0.0, 0.0, 0.0, 0.08 / spread);
-            let _ = cr.stroke();
-        }
-
-        // 2. Rich dark background (#17171a, 98% opacity) matching YoonSpace dark palette
-        draw_rounded_rect(cr, 0.5, 0.5, width - 1.0, height - 1.0, radius);
-        cr.set_source_rgba(0.09, 0.09, 0.10, 0.98);
-        let _ = cr.fill_preserve();
-
-        // 3. Crisp subtle border (#2e2e34)
-        cr.set_source_rgba(0.18, 0.18, 0.20, 1.0);
-        cr.set_line_width(1.0);
-        let _ = cr.stroke();
-
-        gtk::glib::Propagation::Proceed
-    });
-
-    let main_col = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    main_col.set_margin_start(16);
-    main_col.set_margin_end(14);
-    main_col.set_margin_top(13);
-    main_col.set_margin_bottom(14);
-
-    // Row 1: Header (Title + Close Button)
-    let header_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-
-    let title_lbl = gtk::Label::new(Some(title_text));
-    title_lbl.set_halign(gtk::Align::Start);
-    title_lbl.set_hexpand(true);
-    title_lbl.style_context().add_class("yoonspace-toast-title");
-    header_row.pack_start(&title_lbl, true, true, 0);
-
-    let close_btn = gtk::Button::with_label("✕");
-    close_btn.set_halign(gtk::Align::End);
-    close_btn.set_valign(gtk::Align::Start);
-    close_btn.style_context().add_class("yoonspace-toast-close-btn");
-    header_row.pack_end(&close_btn, false, false, 0);
-
-    main_col.pack_start(&header_row, false, false, 0);
-
-    // Row 2: Filename / Message
-    let msg_lbl = gtk::Label::new(None);
-    msg_lbl.set_halign(gtk::Align::Start);
-    msg_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    msg_lbl.set_max_width_chars(32);
-    msg_lbl.style_context().add_class("yoonspace-toast-message");
-    main_col.pack_start(&msg_lbl, false, false, 0);
-
-    card.add(&main_col);
-    (card, main_col, title_lbl, msg_lbl, close_btn)
-}
-
 fn format_file_size(bytes: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
@@ -379,6 +166,439 @@ fn format_file_size(bytes: u64) -> String {
     } else {
         format!("{} B", bytes)
     }
+}
+
+fn escape_html(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+const BASE_CSS: &str = r#"
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+html, body {
+    background: transparent !important;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    font-family: 'Google Sans', 'Google Sans Text', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    padding: 4px;
+}
+.toast-card {
+    width: 348px;
+    background: rgba(23, 23, 26, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 14px;
+    padding: 12px 14px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    animation: toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+.toast-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.toast-title-group {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+.toast-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.icon-downloading {
+    color: #f85e2a;
+    animation: bounce 1.4s infinite ease-in-out;
+}
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(2px); }
+}
+.icon-completed {
+    color: #4ade80;
+}
+.icon-failed {
+    color: #ff5449;
+}
+.toast-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.toast-title.error {
+    color: #ff5449;
+}
+.btn-close {
+    background: transparent;
+    border: none;
+    color: #8e8d91;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, color 0.15s ease;
+    flex-shrink: 0;
+}
+.btn-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+.toast-filename {
+    font-size: 12px;
+    color: #c4c2c0;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.progress-container {
+    width: 100%;
+    height: 4px;
+    background: #28282e;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 1px;
+}
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #f85e2a, #ff7a47);
+    border-radius: 2px;
+    transition: width 0.12s ease-out;
+}
+.toast-info {
+    font-size: 11px;
+    color: #f85e2a;
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.toast-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
+}
+.btn-action {
+    background: #25252b;
+    border: 1px solid #36363f;
+    border-radius: 8px;
+    color: #e2bfb4;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 5px 13px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    outline: none;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-action:hover {
+    background: #34343c;
+    border-color: #4a4a55;
+    color: #ffffff;
+}
+.btn-action:active {
+    background: #40404a;
+}
+"#;
+
+fn render_downloading_html(filename: &str, dl_id: &str, received: u64, total: u64, progress: f64) -> String {
+    let safe_name = escape_html(filename);
+    let safe_id = escape_html(dl_id);
+    let pct = (progress.clamp(0.0, 1.0) * 100.0).round() as u32;
+    let info_text = if total > 0 {
+        format!("{} / {} ({}%)", format_file_size(received), format_file_size(total), pct)
+    } else {
+        format!("Downloaded {}", format_file_size(received))
+    };
+
+    format!(r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>{}</style>
+<script>
+window.updateProgress = function(pct, info, name) {{
+    var pb = document.getElementById('progress-bar');
+    if (pb) pb.style.width = Math.min(100, Math.max(0, pct)) + '%';
+    var st = document.getElementById('progress-info');
+    if (st && info) st.textContent = info;
+    var fn = document.getElementById('toast-filename');
+    if (fn && name) fn.textContent = name;
+}};
+</script>
+</head>
+<body>
+  <div class="toast-card">
+    <div class="toast-header">
+      <div class="toast-title-group">
+        <svg class="toast-icon icon-downloading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v13M5 12l7 7 7-7"/>
+        </svg>
+        <span class="toast-title">Downloading...</span>
+      </div>
+      <button class="btn-close" onclick="location.href='action://close'" title="Dismiss">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div id="toast-filename" class="toast-filename">{}</div>
+    <div class="progress-container">
+      <div id="progress-bar" class="progress-bar" style="width: {}%;"></div>
+    </div>
+    <div id="progress-info" class="toast-info">{}</div>
+    <div class="toast-actions">
+      <button class="btn-action" onclick="location.href='action://cancel?id={}'">Cancel</button>
+    </div>
+  </div>
+</body>
+</html>"#, BASE_CSS, safe_name, pct, escape_html(&info_text), safe_id)
+}
+
+fn render_completed_html(filename: &str, dl_id: &str) -> String {
+    let safe_name = escape_html(filename);
+    let safe_id = escape_html(dl_id);
+
+    format!(r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>{}</style>
+</head>
+<body>
+  <div class="toast-card">
+    <div class="toast-header">
+      <div class="toast-title-group">
+        <svg class="toast-icon icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" stroke-width="2"/>
+          <path d="M8 12l2.5 2.5L16 9"/>
+        </svg>
+        <span class="toast-title">Download Complete</span>
+      </div>
+      <button class="btn-close" onclick="location.href='action://close'" title="Dismiss">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="toast-filename">{}</div>
+    <div class="toast-actions">
+      <button class="btn-action" onclick="location.href='action://open?id={}'">Open</button>
+      <button class="btn-action" onclick="location.href='action://show-folder?id={}'">Show in Folder</button>
+    </div>
+  </div>
+</body>
+</html>"#, BASE_CSS, safe_name, safe_id, safe_id)
+}
+
+fn render_failed_html(filename: &str, error_msg: &str) -> String {
+    let safe_name = escape_html(filename);
+    let safe_err = escape_html(error_msg);
+
+    format!(r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>{}</style>
+</head>
+<body>
+  <div class="toast-card">
+    <div class="toast-header">
+      <div class="toast-title-group">
+        <svg class="toast-icon icon-failed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" stroke-width="2"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span class="toast-title error">Download Failed</span>
+      </div>
+      <button class="btn-close" onclick="location.href='action://close'" title="Dismiss">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="toast-filename">{}: {}</div>
+  </div>
+</body>
+</html>"#, BASE_CSS, safe_name, safe_err)
+}
+
+fn render_generic_html(title: &str, message: &str, n_type: &str, download_id: Option<&str>) -> String {
+    let safe_title = escape_html(title);
+    let safe_msg = escape_html(message);
+    let is_error = n_type == "error";
+    let is_success = n_type == "success";
+
+    let (icon_class, title_class, icon_svg) = if is_error {
+        ("icon-failed", "toast-title error", r#"<circle cx="12" cy="12" r="10" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>"#)
+    } else if is_success {
+        ("icon-completed", "toast-title", r#"<circle cx="12" cy="12" r="10" stroke-width="2"/><path d="M8 12l2.5 2.5L16 9"/>"#)
+    } else {
+        ("icon-downloading", "toast-title", r#"<circle cx="12" cy="12" r="10" stroke-width="2"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>"#)
+    };
+
+    let actions_html = if let Some(id) = download_id {
+        let safe_id = escape_html(id);
+        format!(r#"<div class="toast-actions">
+          <button class="btn-action" onclick="location.href='action://open?id={}'">Open</button>
+          <button class="btn-action" onclick="location.href='action://show-folder?id={}'">Show in Folder</button>
+        </div>"#, safe_id, safe_id)
+    } else {
+        String::new()
+    };
+
+    format!(r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>{}</style>
+</head>
+<body>
+  <div class="toast-card">
+    <div class="toast-header">
+      <div class="toast-title-group">
+        <svg class="toast-icon {}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          {}
+        </svg>
+        <span class="{}">{}</span>
+      </div>
+      <button class="btn-close" onclick="location.href='action://close'" title="Dismiss">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="toast-filename">{}</div>
+    {}
+  </div>
+</body>
+</html>"#, BASE_CSS, icon_class, icon_svg, title_class, safe_title, safe_msg, actions_html)
+}
+
+fn handle_toast_action(app: &AppHandle, uri: &str) {
+    if let Ok(parsed) = url::Url::parse(uri) {
+        let action = parsed.host_str().unwrap_or("");
+        let query_id = parsed.query_pairs().find(|(k, _)| k == "id").map(|(_, v)| v.to_string());
+        match action {
+            "open" => {
+                if let Some(id) = query_id {
+                    let _ = crate::core::download::open_file_by_id(&id);
+                }
+                hide_notification_internal(app);
+            }
+            "show-folder" => {
+                let dest = ACTIVE_TOAST.with(|cell| {
+                    cell.borrow().as_ref().map(|a| a.cached_destination.clone()).unwrap_or_default()
+                });
+                let folder = if !dest.is_empty() {
+                    Path::new(&dest).parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                let _ = crate::core::download::open_folder(&folder);
+                hide_notification_internal(app);
+            }
+            "cancel" => {
+                if let Some(id) = query_id {
+                    let _ = crate::core::download::cancel_download_by_id(app, &id);
+                }
+                hide_notification_internal(app);
+            }
+            "close" => {
+                hide_notification_internal(app);
+            }
+            _ => {
+                hide_notification_internal(app);
+            }
+        }
+    }
+}
+
+#[allow(deprecated)]
+fn get_or_create_toast_webview(app: &AppHandle, layer: &gtk::Box) -> webkit2gtk::WebView {
+    if let Some(existing) = ACTIVE_TOAST.with(|cell| {
+        cell.borrow().as_ref().map(|s| s.webview.clone())
+    }) {
+        return existing;
+    }
+
+    if let Some(child) = layer.children().into_iter().find_map(|c| c.dynamic_cast::<webkit2gtk::WebView>().ok()) {
+        return child;
+    }
+
+    let webview = webkit2gtk::WebView::new();
+    webview.set_size_request(356, 136);
+    let transparent = gtk::gdk::RGBA::new(0.0, 0.0, 0.0, 0.0);
+    webview.set_background_color(&transparent);
+    webview.connect_context_menu(|_, _, _, _| true);
+
+    let app_action = app.clone();
+    webview.connect_decide_policy(move |_wv, decision, decision_type| {
+        if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction {
+            if let Some(nav_action) = decision.dynamic_cast_ref::<webkit2gtk::NavigationPolicyDecision>() {
+                if let Some(uri) = nav_action.request().and_then(|r| r.uri()) {
+                    let uri_str = uri.as_str();
+                    if uri_str.starts_with("action://") {
+                        decision.ignore();
+                        handle_toast_action(&app_action, uri_str);
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    });
+
+    layer.pack_start(&webview, true, true, 0);
+    webview.show_all();
+    webview
 }
 
 fn start_auto_dismiss(app: &AppHandle, delay_secs: u32) {
@@ -398,9 +618,6 @@ fn hide_notification_internal(app: &AppHandle) {
     });
 
     if let Some((_, layer)) = get_overlay_container(app) {
-        for child in layer.children() {
-            layer.remove(&child);
-        }
         layer.hide();
     }
 }
@@ -422,57 +639,16 @@ pub fn show_download_notification(app: &AppHandle, item: &DownloadItem) {
             None => return,
         };
 
-        for child in layer.children() {
-            layer.remove(&child);
-        }
+        let webview = get_or_create_toast_webview(&app_handle, &layer);
+        let html = render_downloading_html(
+            &item_clone.filename,
+            &item_clone.id,
+            item_clone.received_bytes,
+            item_clone.total_bytes,
+            item_clone.progress,
+        );
+        webview.load_html(&html, None);
 
-        let (card, content, title_lbl, msg_lbl, close_btn) = create_card_eventbox("Downloading...");
-        msg_lbl.set_text(&item_clone.filename);
-
-        let app_close = app_handle.clone();
-        close_btn.connect_clicked(move |_| {
-            hide_notification_internal(&app_close);
-        });
-
-        // Progress Bar
-        let progress_bar = gtk::ProgressBar::new();
-        progress_bar.set_fraction(item_clone.progress.clamp(0.0, 1.0));
-        progress_bar.style_context().add_class("yoonspace-toast-progress");
-        content.pack_start(&progress_bar, false, false, 3);
-
-        // Info Label
-        let info_text = if item_clone.total_bytes > 0 {
-            format!(
-                "{} / {} ({:.0}%)",
-                format_file_size(item_clone.received_bytes),
-                format_file_size(item_clone.total_bytes),
-                item_clone.progress * 100.0
-            )
-        } else {
-            format!("Downloaded {}", format_file_size(item_clone.received_bytes))
-        };
-        let info_lbl = gtk::Label::new(Some(&info_text));
-        info_lbl.set_halign(gtk::Align::Start);
-        info_lbl.style_context().add_class("yoonspace-toast-info");
-        content.pack_start(&info_lbl, false, false, 0);
-
-        // Action row: Cancel button
-        let actions_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        actions_row.set_margin_top(6);
-        let cancel_btn = gtk::Button::with_label("Cancel");
-        cancel_btn.style_context().add_class("yoonspace-toast-action-btn");
-        let app_cancel = app_handle.clone();
-        let dl_id_cancel = item_clone.id.clone();
-        cancel_btn.connect_clicked(move |_| {
-            let _ = crate::core::download::cancel_download_by_id(&app_cancel, &dl_id_cancel);
-            hide_notification_internal(&app_cancel);
-        });
-        actions_row.pack_start(&cancel_btn, false, false, 0);
-        content.pack_start(&actions_row, false, false, 0);
-
-        layer.pack_start(&card, false, false, 0);
-        card.show_all();
-        card.show();
         layer.show_all();
         layer.show();
         overlay.reorder_overlay(&layer, -1);
@@ -481,63 +657,58 @@ pub fn show_download_notification(app: &AppHandle, item: &DownloadItem) {
         ACTIVE_TOAST.with(|cell| {
             *cell.borrow_mut() = Some(ActiveToastWidgets {
                 download_id: Some(item_clone.id),
-                card,
-                title_lbl,
-                msg_lbl,
-                info_lbl: Some(info_lbl),
-                progress_bar: Some(progress_bar),
-                actions_row,
+                cached_destination: item_clone.destination,
                 last_update: Instant::now(),
+                webview,
             });
         });
     });
 }
 
+#[allow(deprecated)]
 pub fn update_download_progress(app: &AppHandle, item: &DownloadItem) {
     let app_handle = app.clone();
     let item_clone = item.clone();
 
     let _ = app.run_on_main_thread(move || {
+        let mut needs_show = false;
         ACTIVE_TOAST.with(|cell| {
             let mut borrow = cell.borrow_mut();
             if let Some(active) = borrow.as_mut() {
                 if active.download_id.as_deref() == Some(&item_clone.id) {
-                    if active.last_update.elapsed().as_millis() >= 120 {
+                    if active.last_update.elapsed().as_millis() >= 100 {
                         active.last_update = Instant::now();
 
-                        if let Some(ref pb) = active.progress_bar {
-                            pb.set_fraction(item_clone.progress.clamp(0.0, 1.0));
-                        }
+                        let pct = (item_clone.progress.clamp(0.0, 1.0) * 100.0).round() as u32;
+                        let info_text = if item_clone.total_bytes > 0 {
+                            format!(
+                                "{} / {} ({}%)",
+                                format_file_size(item_clone.received_bytes),
+                                format_file_size(item_clone.total_bytes),
+                                pct
+                            )
+                        } else {
+                            format!("Downloaded {}", format_file_size(item_clone.received_bytes))
+                        };
 
-                        if let Some(ref lbl) = active.info_lbl {
-                            let info_text = if item_clone.total_bytes > 0 {
-                                format!(
-                                    "{} / {} ({:.0}%)",
-                                    format_file_size(item_clone.received_bytes),
-                                    format_file_size(item_clone.total_bytes),
-                                    item_clone.progress * 100.0
-                                )
-                            } else {
-                                format!("Downloaded {}", format_file_size(item_clone.received_bytes))
-                            };
-                            lbl.set_text(&info_text);
-                        }
-
-                        if !item_clone.filename.is_empty() && item_clone.filename != "download" {
-                            active.msg_lbl.set_text(&item_clone.filename);
-                        }
+                        let js_pct = pct;
+                        let js_info = serde_json::to_string(&info_text).unwrap_or_else(|_| "\"\"".to_string());
+                        let js_name = serde_json::to_string(&item_clone.filename).unwrap_or_else(|_| "\"\"".to_string());
+                        let script = format!(
+                            "if (window.updateProgress) window.updateProgress({}, {}, {});",
+                            js_pct, js_info, js_name
+                        );
+                        active.webview.run_javascript(&script, None::<&gtk::gio::Cancellable>, |_| {});
                     }
                     return;
                 }
             }
+            needs_show = true;
         });
 
-        // If no active toast or different download, ensure notification is showing
-        ACTIVE_TOAST.with(|cell| {
-            if cell.borrow().is_none() {
-                show_download_notification(&app_handle, &item_clone);
-            }
-        });
+        if needs_show {
+            show_download_notification(&app_handle, &item_clone);
+        }
     });
 }
 
@@ -551,54 +722,10 @@ pub fn show_download_completed(app: &AppHandle, item: &DownloadItem) {
             None => return,
         };
 
-        for child in layer.children() {
-            layer.remove(&child);
-        }
+        let webview = get_or_create_toast_webview(&app_handle, &layer);
+        let html = render_completed_html(&item_clone.filename, &item_clone.id);
+        webview.load_html(&html, None);
 
-        let (card, content, title_lbl, msg_lbl, close_btn) = create_card_eventbox("Download Complete");
-        msg_lbl.set_text(&item_clone.filename);
-
-        let app_close = app_handle.clone();
-        close_btn.connect_clicked(move |_| {
-            hide_notification_internal(&app_close);
-        });
-
-        // Actions: Open and Show in Folder
-        let actions_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        actions_row.set_margin_top(8);
-
-        let open_btn = gtk::Button::with_label("Open");
-        open_btn.style_context().add_class("yoonspace-toast-action-btn");
-        let app_open = app_handle.clone();
-        let dl_id_open = item_clone.id.clone();
-        open_btn.connect_clicked(move |_| {
-            let _ = crate::core::download::open_file_by_id(&dl_id_open);
-            hide_notification_internal(&app_open);
-        });
-        actions_row.pack_start(&open_btn, false, false, 0);
-
-        let folder_btn = gtk::Button::with_label("Show in Folder");
-        folder_btn.style_context().add_class("yoonspace-toast-action-btn");
-        let app_folder = app_handle.clone();
-        let dest_folder = if !item_clone.destination.is_empty() {
-            Path::new(&item_clone.destination)
-                .parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| item_clone.destination.clone())
-        } else {
-            String::new()
-        };
-        folder_btn.connect_clicked(move |_| {
-            let _ = crate::core::download::open_folder(&dest_folder);
-            hide_notification_internal(&app_folder);
-        });
-        actions_row.pack_start(&folder_btn, false, false, 0);
-
-        content.pack_start(&actions_row, false, false, 0);
-
-        layer.pack_start(&card, false, false, 0);
-        card.show_all();
-        card.show();
         layer.show_all();
         layer.show();
         overlay.reorder_overlay(&layer, -1);
@@ -607,13 +734,9 @@ pub fn show_download_completed(app: &AppHandle, item: &DownloadItem) {
         ACTIVE_TOAST.with(|cell| {
             *cell.borrow_mut() = Some(ActiveToastWidgets {
                 download_id: Some(item_clone.id),
-                card,
-                title_lbl,
-                msg_lbl,
-                info_lbl: None,
-                progress_bar: None,
-                actions_row,
+                cached_destination: item_clone.destination,
                 last_update: Instant::now(),
+                webview,
             });
         });
 
@@ -631,28 +754,24 @@ pub fn show_download_failed(app: &AppHandle, item: &DownloadItem) {
             None => return,
         };
 
-        for child in layer.children() {
-            layer.remove(&child);
-        }
+        let webview = get_or_create_toast_webview(&app_handle, &layer);
+        let err_msg = item_clone.error.as_deref().unwrap_or("Network error");
+        let html = render_failed_html(&item_clone.filename, err_msg);
+        webview.load_html(&html, None);
 
-        let (card, _content, title_lbl, msg_lbl, close_btn) = create_card_eventbox("Download Failed");
-        title_lbl.style_context().add_class("yoonspace-toast-title-error");
-
-        let app_close = app_handle.clone();
-        close_btn.connect_clicked(move |_| {
-            hide_notification_internal(&app_close);
-        });
-
-        let msg_text = format!("{}: {}", item_clone.filename, item_clone.error.as_deref().unwrap_or("Network error"));
-        msg_lbl.set_text(&msg_text);
-
-        layer.pack_start(&card, false, false, 0);
-        card.show_all();
-        card.show();
         layer.show_all();
         layer.show();
         overlay.reorder_overlay(&layer, -1);
         overlay.queue_draw();
+
+        ACTIVE_TOAST.with(|cell| {
+            *cell.borrow_mut() = Some(ActiveToastWidgets {
+                download_id: Some(item_clone.id),
+                cached_destination: item_clone.destination,
+                last_update: Instant::now(),
+                webview,
+            });
+        });
 
         start_auto_dismiss(&app_handle, 6);
     });
@@ -677,53 +796,23 @@ pub fn show_notification(
             None => return,
         };
 
-        for child in layer.children() {
-            layer.remove(&child);
-        }
+        let webview = get_or_create_toast_webview(&app_handle, &layer);
+        let html = render_generic_html(&title_str, &msg_str, &n_type_str, dl_id.as_deref());
+        webview.load_html(&html, None);
 
-        let (card, content, title_lbl, msg_lbl, close_btn) = create_card_eventbox(&title_str);
-        if n_type_str == "error" {
-            title_lbl.style_context().add_class("yoonspace-toast-title-error");
-        }
-        msg_lbl.set_text(&msg_str);
-
-        let app_close = app_handle.clone();
-        close_btn.connect_clicked(move |_| {
-            hide_notification_internal(&app_close);
-        });
-
-        let actions_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        if let Some(ref id) = dl_id {
-            actions_row.set_margin_top(8);
-            let open_btn = gtk::Button::with_label("Open");
-            open_btn.style_context().add_class("yoonspace-toast-action-btn");
-            let app_open = app_handle.clone();
-            let id_clone = id.clone();
-            open_btn.connect_clicked(move |_| {
-                let _ = crate::core::download::open_file_by_id(&id_clone);
-                hide_notification_internal(&app_open);
-            });
-            actions_row.pack_start(&open_btn, false, false, 0);
-
-            let folder_btn = gtk::Button::with_label("Show in Folder");
-            folder_btn.style_context().add_class("yoonspace-toast-action-btn");
-            let app_folder = app_handle.clone();
-            folder_btn.connect_clicked(move |_| {
-                let _ = crate::core::download::open_folder("");
-                hide_notification_internal(&app_folder);
-            });
-            actions_row.pack_start(&folder_btn, false, false, 0);
-
-            content.pack_start(&actions_row, false, false, 0);
-        }
-
-        layer.pack_start(&card, false, false, 0);
-        card.show_all();
-        card.show();
         layer.show_all();
         layer.show();
         overlay.reorder_overlay(&layer, -1);
         overlay.queue_draw();
+
+        ACTIVE_TOAST.with(|cell| {
+            *cell.borrow_mut() = Some(ActiveToastWidgets {
+                download_id: dl_id,
+                cached_destination: String::new(),
+                last_update: Instant::now(),
+                webview,
+            });
+        });
 
         start_auto_dismiss(&app_handle, 5);
     });

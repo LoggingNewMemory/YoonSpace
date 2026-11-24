@@ -50,6 +50,8 @@ export function getFileIcon(filename: string): string {
     case "png":
     case "jpg":
     case "jpeg":
+    case "jpe":
+    case "jfif":
     case "webp":
     case "gif":
     case "svg":
