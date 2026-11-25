@@ -76,50 +76,20 @@ export function createSettingsPage(
             </div>
           </div>
 
-          <div class="flex items-center gap-2">
-            <div id="settings-cache-disk-usage" class="flex items-center gap-2 text-xs">
-              <span class="text-[#8e8d91] uppercase tracking-wider text-[11px] font-medium">Total Usage</span>
-              <span
-                id="settings-page-cache-size"
-                class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] shadow-inner"
-              >
-                Calculating...
-              </span>
-            </div>
-            <button
-              type="button"
-              id="btn-settings-refresh-cache"
-              class="p-1.5 rounded-lg bg-[#1c1c20] hover:bg-[#28282e] text-[#a09e9d] hover:text-[#e5e2e1] border border-[#2e2e34] transition-all cursor-pointer"
-              title="Recalculate storage usage"
+          <div id="settings-cache-disk-usage" class="flex items-center gap-2 text-xs">
+            <span class="text-[#8e8d91] uppercase tracking-wider text-[11px] font-medium">Total Usage</span>
+            <span
+              id="settings-page-cache-size"
+              class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] shadow-inner"
             >
-              <span class="material-symbols-outlined text-base">refresh</span>
-            </button>
+              Calculating...
+            </span>
           </div>
         </div>
 
         <div class="bg-[#18181b] border border-[#28282e] rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
-          <!-- Segmented Storage Distribution Bar -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between text-[11px] text-[#8e8d91]">
-              <span class="font-medium uppercase tracking-wider">Storage Distribution</span>
-              <span id="settings-cache-dir-path" class="font-mono text-[10px] text-[#76757a] truncate max-w-[60%]" title=""></span>
-            </div>
-            <div id="settings-cache-bar" class="w-full h-2.5 rounded-full bg-[#222227] border border-[#2c2c34] overflow-hidden flex">
-              <div id="bar-seg-http_cache" class="h-full bg-[#f85e2a] transition-all duration-300" style="width: 0%"></div>
-              <div id="bar-seg-site_data" class="h-full bg-[#60a5fa] transition-all duration-300" style="width: 0%"></div>
-              <div id="bar-seg-favicons" class="h-full bg-[#34d399] transition-all duration-300" style="width: 0%"></div>
-              <div id="bar-seg-shield_cache" class="h-full bg-[#a78bfa] transition-all duration-300" style="width: 0%"></div>
-            </div>
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#a09e9d]">
-              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#f85e2a]"></span>Page Cache</span>
-              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#60a5fa]"></span>Site Data</span>
-              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#34d399]"></span>Favicons</span>
-              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#a78bfa]"></span>Shields Engine</span>
-            </div>
-          </div>
-
           <!-- Granular Category Breakdown -->
-          <div id="settings-cache-categories" class="flex flex-col divide-y divide-[#232328] border-t border-[#232328]">
+          <div id="settings-cache-categories" class="flex flex-col divide-y divide-[#232328]">
             <!-- Populated dynamically -->
           </div>
 
@@ -268,9 +238,7 @@ export function createSettingsPage(
   const backBtn = container.querySelector("#btn-settings-back") as HTMLElement;
   const clearCacheBtn = container.querySelector("#btn-settings-clear-cache") as HTMLButtonElement;
   const clearCacheLabel = container.querySelector("#btn-settings-clear-cache-label") as HTMLElement;
-  const refreshCacheBtn = container.querySelector("#btn-settings-refresh-cache") as HTMLButtonElement;
   const cacheSizeEl = container.querySelector("#settings-page-cache-size") as HTMLElement;
-  const cacheDirPathEl = container.querySelector("#settings-cache-dir-path") as HTMLElement;
   const cacheCategoriesEl = container.querySelector("#settings-cache-categories") as HTMLElement;
   const cacheFeedback = container.querySelector("#settings-cache-feedback") as HTMLElement;
   const cacheNote = container.querySelector("#settings-cache-note") as HTMLElement;
@@ -345,25 +313,6 @@ export function createSettingsPage(
 
   function renderCacheInfo(info: CacheInfo) {
     cacheSizeEl.textContent = info.formatted_size;
-    if (cacheDirPathEl) {
-      cacheDirPathEl.textContent = info.cache_dir || "";
-      cacheDirPathEl.title = info.cache_dir || "";
-    }
-
-    const total = Math.max(info.size_bytes, 1);
-    const segments: Array<[string, number]> = [
-      ["http_cache", info.http_cache_bytes],
-      ["site_data", info.site_data_bytes],
-      ["favicons", info.favicon_cache_bytes],
-      ["shield_cache", info.shield_cache_bytes],
-    ];
-    for (const [id, bytes] of segments) {
-      const segEl = container.querySelector(`#bar-seg-${id}`) as HTMLElement | null;
-      if (segEl) {
-        const pct = info.size_bytes > 0 ? Math.max(bytes > 0 ? 1.5 : 0, (bytes / total) * 100) : 0;
-        segEl.style.width = `${pct.toFixed(2)}%`;
-      }
-    }
 
     cacheCategoriesEl.innerHTML = "";
     const categories: StorageCategoryInfo[] = info.categories || [];
@@ -378,7 +327,6 @@ export function createSettingsPage(
         <div class="flex items-center gap-2">
           <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${color}"></span>
           <span class="text-xs font-semibold text-[#e5e2e1] truncate">${cat.label}</span>
-          <span class="text-[10px] font-mono text-[#76757a] px-1.5 py-0.5 rounded bg-[#202025] border border-[#2c2c34]">${cat.file_count.toLocaleString()} files</span>
         </div>
         <p class="text-[11px] text-[#8e8d91] pl-4 leading-relaxed">${cat.description}</p>
       `;
@@ -492,7 +440,6 @@ export function createSettingsPage(
   });
 
   clearCacheBtn.addEventListener("click", () => handleClearCache("all"));
-  refreshCacheBtn?.addEventListener("click", refreshCacheSize);
   backBtn.addEventListener("click", onBack);
 
   // Download Settings Event Listeners
