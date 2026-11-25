@@ -14,10 +14,29 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use gtk::prelude::*;
 use tauri::{AppHandle, Manager};
 use crate::core::webview::split::{SplitBounds, MIN_SPLIT_RATIO, MAX_SPLIT_RATIO};
 use crate::core::overlay::{is_overlay_layer, ensure_overlay_layer_on_top};
+
+static IS_FULLSCREEN: AtomicBool = AtomicBool::new(false);
+static LAST_BOUNDS: OnceLock<Mutex<Option<SplitBounds>>> = OnceLock::new();
+
+fn last_bounds_lock() -> &'static Mutex<Option<SplitBounds>> {
+    LAST_BOUNDS.get_or_init(|| Mutex::new(None))
+}
+
+fn save_last_bounds(bounds: SplitBounds) {
+    if let Ok(mut guard) = last_bounds_lock().lock() {
+        *guard = Some(bounds);
+    }
+}
+
+pub fn is_fullscreen() -> bool {
+    IS_FULLSCREEN.load(Ordering::SeqCst)
+}
 
 fn run_on_gtk_thread<T: Send + 'static, F: FnOnce() -> Result<T, String> + Send + 'static>(
     app: &AppHandle,
@@ -56,6 +75,7 @@ pub fn ensure_overlay(app: &AppHandle) -> Result<(), String> {
 }
 
 pub fn attach_single_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> Result<(), String> {
+    save_last_bounds(bounds);
     ensure_overlay(app)?;
     let app_handle = app.clone();
     let tab_id = tab_id.to_string();
@@ -146,6 +166,7 @@ pub fn attach_split_views(
     right_label: &str,
     bounds: SplitBounds,
 ) -> Result<(), String> {
+    save_last_bounds(bounds);
     let app_handle = app.clone();
     let tab_id = tab_id.to_string();
     let left_label = left_label.to_string();
@@ -251,7 +272,7 @@ pub fn attach_split_views(
         let is_clamping = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let is_clamping_clone = is_clamping.clone();
         paned.connect_notify(Some("position"), move |p, _| {
-            if is_clamping_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            if is_fullscreen() || is_clamping_clone.load(std::sync::atomic::Ordering::Relaxed) {
                 return;
             }
             let pos = p.position();
@@ -292,6 +313,9 @@ pub fn attach_split_views(
         });
 
         paned.connect_size_allocate(|p, alloc| {
+            if is_fullscreen() {
+                return;
+            }
             let total_width = alloc.width();
             if total_width > 50 {
                 let min_pos = ((total_width as f64) * MIN_SPLIT_RATIO).round() as i32;
@@ -338,10 +362,14 @@ pub fn attach_split_views(
 }
 
 pub fn activate_tab_view(app: &AppHandle, tab_id: &str, bounds: SplitBounds) -> Result<bool, String> {
+    save_last_bounds(bounds);
     let app_handle = app.clone();
     let tab_id = tab_id.to_string();
     run_on_gtk_thread(app, move || {
         let window = app_handle.get_window("main").ok_or("Main window not found")?;
+        if IS_FULLSCREEN.swap(false, Ordering::SeqCst) {
+            let _ = window.set_fullscreen(false);
+        }
         let vbox = window.default_vbox().map_err(|e| e.to_string())?;
         let mut found = false;
         if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
@@ -403,6 +431,9 @@ pub fn hide_all_tab_views(app: &AppHandle) -> Result<(), String> {
     let app_handle = app.clone();
     run_on_gtk_thread(app, move || {
         let window = app_handle.get_window("main").ok_or("Main window not found")?;
+        if IS_FULLSCREEN.swap(false, Ordering::SeqCst) {
+            let _ = window.set_fullscreen(false);
+        }
         let vbox = window.default_vbox().map_err(|e| e.to_string())?;
         if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
             let main_child = overlay.child();
@@ -648,7 +679,7 @@ pub fn merge_tabs_to_split(
         let is_clamping = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let is_clamping_clone = is_clamping.clone();
         paned.connect_notify(Some("position"), move |p, _| {
-            if is_clamping_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            if is_fullscreen() || is_clamping_clone.load(std::sync::atomic::Ordering::Relaxed) {
                 return;
             }
             let pos = p.position();
@@ -689,6 +720,9 @@ pub fn merge_tabs_to_split(
         });
 
         paned.connect_size_allocate(|p, alloc| {
+            if is_fullscreen() {
+                return;
+            }
             let total_width = alloc.width();
             if total_width > 50 {
                 let min_pos = ((total_width as f64) * MIN_SPLIT_RATIO).round() as i32;
@@ -784,6 +818,10 @@ pub fn has_any_overlay(app: &AppHandle) -> bool {
 }
 
 pub fn update_overlay_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(), String> {
+    save_last_bounds(bounds);
+    if is_fullscreen() {
+        return Ok(());
+    }
     let app_handle = app.clone();
     run_on_gtk_thread(app, move || {
         let window = app_handle.get_window("main").ok_or("Main window not found")?;
@@ -904,4 +942,132 @@ pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
     let _ = rx.recv();
 
     ensure_overlay(app)
+}
+
+/// Called on the GTK main thread when a WebKitWebView emits `enter-fullscreen`.
+pub fn enter_webview_fullscreen(app: &AppHandle, wv_widget: &gtk::Widget) {
+    IS_FULLSCREEN.store(true, Ordering::SeqCst);
+
+    let Some(window) = app.get_window("main") else { return };
+    let Ok(vbox) = window.default_vbox() else { return };
+    let Some(overlay) = vbox
+        .children()
+        .into_iter()
+        .find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok())
+    else {
+        return;
+    };
+
+    let main_child = overlay.child();
+    for child in overlay.children() {
+        if main_child.as_ref() == Some(&child) {
+            continue;
+        }
+        if is_overlay_layer(&child) {
+            child.hide();
+            continue;
+        }
+
+        if &child == wv_widget || wv_widget.is_ancestor(&child) {
+            child.set_margin_start(0);
+            child.set_margin_top(0);
+            child.set_margin_end(0);
+            child.set_margin_bottom(0);
+
+            if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
+                if let Some(c1) = paned.child1() {
+                    if &c1 == wv_widget || wv_widget.is_ancestor(&c1) {
+                        c1.set_size_request(0, -1);
+                        if let Some(c2) = paned.child2() {
+                            c2.hide();
+                        }
+                    } else if let Some(c2) = paned.child2() {
+                        if &c2 == wv_widget || wv_widget.is_ancestor(&c2) {
+                            c2.set_size_request(0, -1);
+                            c1.hide();
+                        }
+                    }
+                }
+            }
+
+            child.queue_resize();
+            child.queue_draw();
+        }
+    }
+}
+
+/// Called on the GTK main thread when a WebKitWebView emits `leave-fullscreen`.
+pub fn leave_webview_fullscreen(app: &AppHandle, wv_widget: &gtk::Widget) {
+    IS_FULLSCREEN.store(false, Ordering::SeqCst);
+
+    let Some(window) = app.get_window("main") else { return };
+    let Ok(vbox) = window.default_vbox() else { return };
+    let Some(overlay) = vbox
+        .children()
+        .into_iter()
+        .find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok())
+    else {
+        return;
+    };
+
+    let bounds_opt = last_bounds_lock().lock().ok().and_then(|g| *g);
+    let main_child = overlay.child();
+
+    for child in overlay.children() {
+        if main_child.as_ref() == Some(&child) || is_overlay_layer(&child) {
+            continue;
+        }
+
+        if &child == wv_widget || wv_widget.is_ancestor(&child) {
+            if let Some(bounds) = bounds_opt {
+                let win_w = window.inner_size().map(|s| s.width as i32).unwrap_or(0);
+                let alloc_w = if overlay.allocated_width() > 0 {
+                    overlay.allocated_width()
+                } else {
+                    win_w
+                };
+                let margin_end = (alloc_w - (bounds.x as i32 + bounds.width as i32)).max(0);
+                child.set_margin_start(bounds.x as i32);
+                child.set_margin_top(bounds.y as i32);
+                child.set_margin_end(margin_end);
+                child.set_margin_bottom(0);
+            }
+
+            if let Ok(paned) = child.clone().dynamic_cast::<gtk::Paned>() {
+                if let Some(c1) = paned.child1() {
+                    c1.show_all();
+                    c1.show();
+                }
+                if let Some(c2) = paned.child2() {
+                    c2.show_all();
+                    c2.show();
+                }
+                if let Some(bounds) = bounds_opt {
+                    let total_w = if paned.allocated_width() > 0 {
+                        paned.allocated_width()
+                    } else {
+                        bounds.width as i32
+                    };
+                    let min_pos = ((total_w as f64) * MIN_SPLIT_RATIO) as i32;
+                    let max_pos = ((total_w as f64) * MAX_SPLIT_RATIO) as i32;
+                    let tab_name = paned.widget_name().to_string();
+                    let ratio = bounds
+                        .split_ratio
+                        .unwrap_or_else(|| crate::core::webview::split::get_tab_split_ratio(&tab_name))
+                        .clamp(MIN_SPLIT_RATIO, MAX_SPLIT_RATIO);
+                    let target_pos = (((total_w as f64) * ratio) as i32).clamp(min_pos, max_pos);
+                    if let Some(c1) = paned.child1() {
+                        c1.set_size_request(min_pos, -1);
+                    }
+                    if let Some(c2) = paned.child2() {
+                        c2.set_size_request(min_pos, -1);
+                    }
+                    paned.set_position(target_pos);
+                }
+            }
+
+            child.queue_resize();
+            child.queue_draw();
+        }
+    }
 }

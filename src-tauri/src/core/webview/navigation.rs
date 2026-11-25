@@ -42,6 +42,10 @@ pub fn normalize_url(raw: &str) -> String {
 }
 
 pub fn update_split_bounds(app: &AppHandle, bounds: SplitBounds) -> Result<(), String> {
+    if gtk_overlay::is_fullscreen() {
+        return Ok(());
+    }
+
     for (label, view) in app.webviews() {
         if label == "main" || label.ends_with("_left") || label.ends_with("_right") {
             continue;

@@ -58,6 +58,7 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             settings.set_enable_webgl(true);
             settings.set_enable_smooth_scrolling(true);
             settings.set_enable_page_cache(true);
+            settings.set_enable_fullscreen(true);
         }
 
         // 1c. Enable WebBrowser CacheModel for aggressive disk & memory caching
@@ -453,6 +454,21 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
         if let Some(context) = inner_wv.context() {
             crate::core::download::attach_context_download_listener(&app_handle, &context);
         }
+
+        // 9. HTML5 Fullscreen support (e.g. YouTube 'F' key or fullscreen button)
+        let app_fs_enter = app_handle.clone();
+        inner_wv.connect_enter_fullscreen(move |wv| {
+            use gtk::prelude::Cast;
+            gtk_overlay::enter_webview_fullscreen(&app_fs_enter, wv.upcast_ref());
+            false
+        });
+
+        let app_fs_leave = app_handle.clone();
+        inner_wv.connect_leave_fullscreen(move |wv| {
+            use gtk::prelude::Cast;
+            gtk_overlay::leave_webview_fullscreen(&app_fs_leave, wv.upcast_ref());
+            false
+        });
     });
 }
 
