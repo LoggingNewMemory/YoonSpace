@@ -25,7 +25,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use webkit2gtk::{Download, DownloadExt, URIRequestExt, URIResponseExt, WebContextExt};
+use webkit2gtk::{Download, DownloadExt, URIRequestExt, URIResponseExt};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadItem {
@@ -131,19 +131,15 @@ pub fn open_file_by_id(id: &str) -> Result<(), String> {
 }
 
 pub fn open_folder(path: &str) -> Result<(), String> {
-    let target = if path.is_empty() {
+    let raw = if path.trim().is_empty() {
         crate::core::config::load_config().download_settings.download_dir
     } else {
         path.to_string()
     };
-
-    let p = Path::new(&target);
-    if !p.exists() {
-        let _ = fs::create_dir_all(p);
-    }
+    let target_path = resolve_existing_download_dir(&raw);
 
     std::process::Command::new("xdg-open")
-        .arg(&target)
+        .arg(&target_path)
         .spawn()
         .map_err(|e| format!("Failed to open folder: {}", e))?;
 
@@ -479,8 +475,10 @@ pub fn pick_download_directory(app: &AppHandle) -> Result<Option<String>, String
         dialog.set_position(gtk::WindowPosition::CenterOnParent);
         dialog.set_keep_above(true);
 
-        let cur_path = PathBuf::from(&crate::core::config::load_config().download_settings.download_dir);
-        if cur_path.exists() {
+        let cur_path = resolve_existing_download_dir(
+            &crate::core::config::load_config().download_settings.download_dir,
+        );
+        if cur_path.is_dir() {
             dialog.set_current_folder(&cur_path);
         }
 
@@ -517,6 +515,15 @@ pub fn init_global_download_handler(app: &AppHandle) {
         if let Some(context) = webkit2gtk::WebContext::default() {
             attach_context_download_listener(&app_handle, &context);
         }
+        if let Some(main_wv) = app_handle.get_webview("main") {
+            let app_main = app_handle.clone();
+            let _ = main_wv.with_webview(move |pw| {
+                use webkit2gtk::WebViewExt;
+                if let Some(context) = pw.inner().context() {
+                    attach_context_download_listener(&app_main, &context);
+                }
+            });
+        }
     });
 }
 
@@ -530,10 +537,50 @@ pub fn attach_context_download_listener(app: &AppHandle, context: &webkit2gtk::W
         }
     }
 
+    // Connect with `after = true` so this runs after wry's default `download-started`
+    // listener(s), allowing `attach_download_signals` to replace wry's hardcoded
+    // `decide-destination` handler (which otherwise returns `true` for `dirs::download_dir()`).
     let app_handle = app.clone();
-    context.connect_download_started(move |_ctx, download| {
-        attach_download_signals(&app_handle, download);
+    context.connect_local("download-started", true, move |values| {
+        if let Some(download) = values.get(1).and_then(|v| v.get::<Download>().ok()) {
+            attach_download_signals(&app_handle, &download);
+        }
+        None
     });
+}
+
+fn clear_existing_decide_destination_handlers(download: &Download) {
+    unsafe {
+        use gtk::glib::translate::IntoGlib;
+        let sig_id = gtk::glib::gobject_ffi::g_signal_lookup(
+            b"decide-destination\0".as_ptr() as *const _,
+            gtk::glib::object::ObjectExt::type_(download).into_glib(),
+        );
+        if sig_id != 0 {
+            gtk::glib::gobject_ffi::g_signal_handlers_disconnect_matched(
+                download.as_ptr() as *mut _,
+                gtk::glib::gobject_ffi::G_SIGNAL_MATCH_ID,
+                sig_id,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+        }
+    }
+}
+
+fn resolve_existing_download_dir(raw: &str) -> PathBuf {
+    let configured = crate::core::config::resolve_download_dir(raw);
+    if configured.is_dir() {
+        return configured;
+    }
+
+    let fallback = PathBuf::from(crate::core::config::default_download_dir());
+    if !fallback.exists() {
+        let _ = fs::create_dir_all(&fallback);
+    }
+    fallback
 }
 
 fn path_from_dest_uri(dest_uri: &str) -> String {
@@ -547,6 +594,10 @@ fn path_from_dest_uri(dest_uri: &str) -> String {
 }
 
 pub fn attach_download_signals(app: &AppHandle, download: &Download) {
+    // Strip any pre-attached `decide-destination` handlers (e.g. wry's default
+    // handler that forces `dirs::download_dir()` and stops signal propagation).
+    clear_existing_decide_destination_handlers(download);
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -585,18 +636,12 @@ pub fn attach_download_signals(app: &AppHandle, download: &Download) {
         map.insert(download_id.clone(), download.clone());
     });
 
-    crate::core::overlay::show_download_notification(app, &initial_item);
-    let _ = app.emit("download-started", initial_item);
-
     // 1. Decide Destination
     let dl_id_decide = download_id.clone();
     let req_url_decide = req_url.clone();
     download.connect_decide_destination(move |dl, suggested_filename| -> bool {
         let config = crate::core::config::load_config();
-        let download_dir = PathBuf::from(&config.download_settings.download_dir);
-        if !download_dir.exists() {
-            let _ = fs::create_dir_all(&download_dir);
-        }
+        let download_dir = resolve_existing_download_dir(&config.download_settings.download_dir);
 
         let resp = dl.response();
         let resp_mime = resp.as_ref().and_then(|r| r.mime_type()).map(|s| s.to_string());
@@ -758,4 +803,7 @@ pub fn attach_download_signals(app: &AppHandle, download: &Download) {
             }
         }
     });
+
+    crate::core::overlay::show_download_notification(app, &initial_item);
+    let _ = app.emit("download-started", initial_item);
 }

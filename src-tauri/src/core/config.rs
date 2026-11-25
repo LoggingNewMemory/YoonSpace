@@ -54,7 +54,7 @@ impl Default for ShieldSettings {
     }
 }
 
-fn default_download_dir() -> String {
+pub fn default_download_dir() -> String {
     dirs::download_dir()
         .unwrap_or_else(|| {
             dirs::home_dir()
@@ -63,6 +63,25 @@ fn default_download_dir() -> String {
         })
         .to_string_lossy()
         .to_string()
+}
+
+/// Resolves a configured download directory string into an absolute `PathBuf`,
+/// expanding leading `~` and falling back to `default_download_dir()` when empty.
+pub fn resolve_download_dir(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return PathBuf::from(default_download_dir());
+    }
+    if trimmed == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home;
+        }
+    } else if let Some(rest) = trimmed.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(trimmed)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
