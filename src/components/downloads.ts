@@ -19,6 +19,7 @@ import type { DownloadItem } from "../types";
 
 export interface DownloadController {
   refresh: () => Promise<void>;
+  upsertItem: (item: DownloadItem) => void;
   showDrawer: () => void;
   hideDrawer: () => void;
   toggleDrawer: () => void;
@@ -65,6 +66,15 @@ const FILE_ICONS: Record<string, string> = {
   // Documents
   txt: "description", md: "description", doc: "description", docx: "description",
 };
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 export function getFileIcon(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() || "";
@@ -179,24 +189,26 @@ export function initDownloadsUI(
 
   let cachedDownloads: DownloadItem[] = [];
 
-  // Update footer directory path from config
-  tauriIpc.getAppConfig().then((cfg) => {
-    if (footerDirEl && cfg?.download_settings?.download_dir) {
-      const dir = cfg.download_settings.download_dir;
-      const home = "/home/";
-      if (dir.startsWith(home)) {
-        const parts = dir.split("/");
-        if (parts.length >= 3) {
-          const shortened = "~/" + parts.slice(3).join("/");
-          footerDirEl.textContent = shortened;
-          footerDirEl.title = dir;
-          return;
+  function updateFooterDir() {
+    tauriIpc.getAppConfig().then((cfg) => {
+      if (footerDirEl && cfg?.download_settings?.download_dir) {
+        const dir = cfg.download_settings.download_dir;
+        const home = "/home/";
+        if (dir.startsWith(home)) {
+          const parts = dir.split("/");
+          if (parts.length >= 3) {
+            footerDirEl.textContent = "~/" + parts.slice(3).join("/");
+            footerDirEl.title = dir;
+            return;
+          }
         }
+        footerDirEl.textContent = dir;
+        footerDirEl.title = dir;
       }
-      footerDirEl.textContent = dir;
-      footerDirEl.title = dir;
-    }
-  }).catch(() => {});
+    }).catch(() => {});
+  }
+
+  updateFooterDir();
 
   function updateBadge() {
     const activeDownloads = cachedDownloads.filter((d) => d.state === "downloading");
@@ -288,10 +300,11 @@ export function initDownloadsUI(
           </div>
         `;
       } else if (isFailed) {
+        const errMsg = escapeHtml(item.error || "Unknown error");
         statusHtml = `
-          <div class="flex items-center gap-1.5 text-[11px] text-[#ff5449] mt-0.5" title="${item.error || 'Download failed'}">
+          <div class="flex items-center gap-1.5 text-[11px] text-[#ff5449] mt-0.5" title="${errMsg}">
             <span class="material-symbols-outlined text-xs">error</span>
-            <span class="truncate">Failed: ${item.error || "Unknown error"}</span>
+            <span class="truncate">Failed: ${errMsg}</span>
           </div>
         `;
       } else if (isCancelled) {
@@ -302,6 +315,10 @@ export function initDownloadsUI(
         `;
       }
 
+      const safeFilename = escapeHtml(item.filename);
+      const safeId = escapeHtml(item.id);
+      const safeDest = escapeHtml(item.destination);
+
       row.innerHTML = `
         <div class="flex items-start justify-between gap-2.5">
           <div class="flex items-center gap-2.5 truncate flex-1 min-w-0">
@@ -309,7 +326,7 @@ export function initDownloadsUI(
               <span class="material-symbols-outlined text-lg">${fileIcon}</span>
             </div>
             <div class="flex flex-col truncate flex-1 text-left min-w-0">
-              <span class="text-xs font-semibold text-white truncate" title="${item.filename}">${item.filename}</span>
+              <span class="text-xs font-semibold text-white truncate" title="${safeFilename}">${safeFilename}</span>
               ${statusHtml}
             </div>
           </div>
@@ -322,7 +339,7 @@ export function initDownloadsUI(
                   type="button"
                   class="btn-cancel-dl w-6 h-6 rounded-md hover:bg-[#34343d] text-[#8e8d91] hover:text-[#ff5449] flex items-center justify-center transition-colors cursor-pointer"
                   title="Cancel download"
-                  data-dl-id="${item.id}"
+                  data-dl-id="${safeId}"
                 >
                   <span class="material-symbols-outlined text-sm">close</span>
                 </button>
@@ -336,7 +353,7 @@ export function initDownloadsUI(
                   type="button"
                   class="btn-open-file w-6 h-6 rounded-md hover:bg-[#34343d] text-[#8e8d91] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                   title="Open file"
-                  data-dl-id="${item.id}"
+                  data-dl-id="${safeId}"
                 >
                   <span class="material-symbols-outlined text-sm">open_in_new</span>
                 </button>
@@ -344,7 +361,7 @@ export function initDownloadsUI(
                   type="button"
                   class="btn-show-folder w-6 h-6 rounded-md hover:bg-[#34343d] text-[#8e8d91] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                   title="Show in folder"
-                  data-dl-dest="${item.destination}"
+                  data-dl-dest="${safeDest}"
                 >
                   <span class="material-symbols-outlined text-sm">folder</span>
                 </button>
@@ -395,9 +412,25 @@ export function initDownloadsUI(
     try {
       cachedDownloads = await tauriIpc.getDownloads();
       updateBadge();
-      renderList();
+      updateFooterDir();
+      if (!sidebar.classList.contains("hidden")) {
+        renderList();
+      }
     } catch (e) {
       console.warn("Failed to refresh downloads:", e);
+    }
+  }
+
+  function upsertItem(item: DownloadItem): void {
+    const idx = cachedDownloads.findIndex((d) => d.id === item.id);
+    if (idx >= 0) {
+      cachedDownloads[idx] = item;
+    } else {
+      cachedDownloads.unshift(item);
+    }
+    updateBadge();
+    if (!sidebar.classList.contains("hidden")) {
+      renderList();
     }
   }
 
@@ -568,6 +601,7 @@ export function initDownloadsUI(
 
   return {
     refresh,
+    upsertItem,
     showDrawer,
     hideDrawer,
     toggleDrawer,

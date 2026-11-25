@@ -54,22 +54,33 @@ impl Default for ShieldSettings {
     }
 }
 
+fn default_download_dir() -> String {
+    dirs::download_dir()
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .map(|h| h.join("Downloads"))
+                .unwrap_or_else(|| PathBuf::from("Downloads"))
+        })
+        .to_string_lossy()
+        .to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DownloadSettings {
+    #[serde(default = "default_download_dir")]
     pub download_dir: String,
+    #[serde(default)]
     pub ask_where_to_save: bool,
+    #[serde(default)]
     pub open_folder_on_complete: bool,
 }
 
 impl Default for DownloadSettings {
     fn default() -> Self {
-        let default_dir = dirs::download_dir()
-            .unwrap_or_else(|| dirs::home_dir().map(|h| h.join("Downloads")).unwrap_or_else(|| PathBuf::from("Downloads")))
-            .to_string_lossy()
-            .to_string();
         Self {
-            download_dir: default_dir,
-            ask_where_to_save: true,
+            download_dir: default_download_dir(),
+            ask_where_to_save: false,
             open_folder_on_complete: false,
         }
     }

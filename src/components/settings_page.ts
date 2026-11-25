@@ -325,25 +325,6 @@ export function createSettingsPage(
 
           <div class="w-full h-px bg-[#232328]"></div>
 
-          <!-- Always Ask Where to Save Toggle -->
-          <label class="flex items-center justify-between cursor-pointer select-none group py-1">
-            <div class="flex flex-col pr-4">
-              <span class="text-xs font-semibold text-neutral-200 group-hover:text-white transition-colors">
-                Always ask where to save each file before downloading
-              </span>
-              <span class="text-[11px] text-[#a09e9d] mt-0.5 leading-relaxed">
-                When enabled, a file chooser will appear before every download. When disabled, files save directly into your download location.
-              </span>
-            </div>
-            <div class="relative inline-flex items-center cursor-pointer shrink-0">
-              <input id="settings-opt-ask-save" class="sr-only peer" type="checkbox">
-              <div class="w-11 h-6 bg-[#3a3a3e] peer-checked:bg-[#f85e2a] rounded-full transition-colors duration-200 ease-in-out"></div>
-              <div class="absolute left-0 top-0 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-200 ease-in-out translate-x-0 peer-checked:translate-x-5 pointer-events-none"></div>
-            </div>
-          </label>
-
-          <div class="w-full h-px bg-[#232328]"></div>
-
           <!-- Open Folder on Completion Toggle -->
           <label class="flex items-center justify-between cursor-pointer select-none group py-1">
             <div class="flex flex-col pr-4">
@@ -389,7 +370,6 @@ export function createSettingsPage(
   const downloadPathEl = container.querySelector("#settings-download-path") as HTMLElement;
   const btnOpenDownloadDir = container.querySelector("#btn-settings-open-download-dir") as HTMLButtonElement;
   const btnChangeDownloadDir = container.querySelector("#btn-settings-change-download-dir") as HTMLButtonElement;
-  const optAskSaveInput = container.querySelector("#settings-opt-ask-save") as HTMLInputElement;
   const optOpenCompleteInput = container.querySelector("#settings-opt-open-complete") as HTMLInputElement;
 
   function renderDownloadSettings() {
@@ -397,9 +377,6 @@ export function createSettingsPage(
     if (downloadPathEl) {
       downloadPathEl.textContent = ds?.download_dir || "~/Downloads";
       downloadPathEl.title = ds?.download_dir || "";
-    }
-    if (optAskSaveInput) {
-      optAskSaveInput.checked = Boolean(ds?.ask_where_to_save);
     }
     if (optOpenCompleteInput) {
       optOpenCompleteInput.checked = Boolean(ds?.open_folder_on_complete);
@@ -955,20 +932,6 @@ export function createSettingsPage(
     }
   });
 
-  optAskSaveInput?.addEventListener("change", async () => {
-    if (!config.download_settings) {
-      config.download_settings = {
-        download_dir: "~/Downloads",
-        ask_where_to_save: optAskSaveInput.checked,
-        open_folder_on_complete: false,
-      };
-    } else {
-      config.download_settings.ask_where_to_save = optAskSaveInput.checked;
-    }
-    await tauriIpc.updateAppConfig(config);
-    onConfigUpdated(config);
-  });
-
   optOpenCompleteInput?.addEventListener("change", async () => {
     if (!config.download_settings) {
       config.download_settings = {
@@ -984,6 +947,16 @@ export function createSettingsPage(
   });
 
   function show() {
+    tauriIpc
+      .getAppConfig()
+      .then((fresh) => {
+        if (fresh) {
+          Object.assign(config, fresh);
+          renderSearchEngines();
+          renderDownloadSettings();
+        }
+      })
+      .catch(() => {});
     renderSearchEngines();
     renderDownloadSettings();
     refreshCacheSize();

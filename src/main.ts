@@ -1276,6 +1276,7 @@ async function init() {
     async (newConfig) => {
       currentConfig = newConfig;
       await tauriIpc.updateAppConfig(newConfig);
+      (titlebar as any).downloadController?.refresh();
     },
     handleBackFromSettings
   );
@@ -1496,24 +1497,24 @@ async function init() {
   });
 
   // 9. Real-time Download Events (WebKitGTK Downloads)
-  tauriIpc.listen<DownloadItem>("download-started", () => {
-    (titlebar as any).downloadController?.refresh();
+  tauriIpc.listen<DownloadItem>("download-started", (event) => {
+    (titlebar as any).downloadController?.upsertItem(event.payload);
   });
 
-  tauriIpc.listen<DownloadItem>("download-progress", (_event) => {
-    (titlebar as any).downloadController?.refresh();
+  tauriIpc.listen<DownloadItem>("download-progress", (event) => {
+    (titlebar as any).downloadController?.upsertItem(event.payload);
   });
 
-  tauriIpc.listen<DownloadItem>("download-completed", (_event) => {
-    (titlebar as any).downloadController?.refresh();
+  tauriIpc.listen<DownloadItem>("download-completed", (event) => {
+    (titlebar as any).downloadController?.upsertItem(event.payload);
   });
 
-  tauriIpc.listen<DownloadItem>("download-failed", (_event) => {
-    (titlebar as any).downloadController?.refresh();
+  tauriIpc.listen<DownloadItem>("download-failed", (event) => {
+    (titlebar as any).downloadController?.upsertItem(event.payload);
   });
 
-  tauriIpc.listen<DownloadItem>("download-cancelled", (_event) => {
-    (titlebar as any).downloadController?.refresh();
+  tauriIpc.listen<DownloadItem>("download-cancelled", (event) => {
+    (titlebar as any).downloadController?.upsertItem(event.payload);
   });
 
   // 10. Real-time Webview Load Progress Bar (Color is Orange #f85e2a / #ff7843)

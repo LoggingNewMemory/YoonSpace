@@ -140,67 +140,38 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
 
             if decision_type == webkit2gtk::PolicyDecisionType::Response {
                 use gtk::prelude::Cast;
-                use webkit2gtk::ResponsePolicyDecisionExt;
-                use webkit2gtk::URIResponseExt;
+                use webkit2gtk::{ResponsePolicyDecisionExt, URIResponseExt};
                 if let Some(resp_decision) = decision.dynamic_cast_ref::<webkit2gtk::ResponsePolicyDecision>() {
                     if let Some(resp) = resp_decision.response() {
                         let status = resp.status_code();
-                        // 204 No Content, non-success, or redirects must never trigger a file download
                         if status == 204 || status < 200 || status >= 300 {
-                            decision.ignore();
-                            return true;
+                            return false;
                         }
 
-                        let uri = resp.uri().map(|u| u.to_string()).unwrap_or_default();
-                        let lower_uri = uri.to_lowercase();
-                        // Telemetry, stats, beacons, service workers, or internal API calls must never download
-                        if lower_uri.contains("generate_204")
-                            || lower_uri.contains("/stats/")
-                            || lower_uri.contains("/log")
-                            || lower_uri.contains("/api/")
-                            || lower_uri.contains("/youtubei/")
-                            || lower_uri.starts_with("data:")
-                            || lower_uri.starts_with("blob:")
-                        {
-                            decision.ignore();
-                            return true;
-                        }
-
-                        let mime = resp.mime_type().map(|m| m.to_string().to_lowercase()).unwrap_or_default();
-                        // Structured API formats, subtitles, or empty mime types are not file downloads
-                        if mime == "application/json"
-                            || mime == "application/x-protobuf"
-                            || mime == "application/grpc-web"
-                            || mime == "application/vnd.yt-ump"
-                            || mime == "text/vtt"
-                            || mime == "text/plain"
-                            || mime.is_empty()
-                        {
-                            decision.ignore();
-                            return true;
-                        }
-
-                        // If the server explicitly specifies Content-Disposition: attachment, honor it
-                        let is_attachment = resp.http_headers().and_then(|h| h.content_disposition()).map(|(disp, _)| {
-                            disp.to_lowercase() == "attachment"
-                        }).unwrap_or(false);
-
+                        // Always honor explicit Content-Disposition: attachment
+                        let is_attachment = resp
+                            .http_headers()
+                            .and_then(|h| h.content_disposition())
+                            .map(|(disp, _)| disp.eq_ignore_ascii_case("attachment"))
+                            .unwrap_or(false);
                         if is_attachment {
                             decision.download();
                             return true;
                         }
 
-                        // If MIME type is unsupported for inline viewing, only download if it's a real download target
+                        // Download unsupported MIME types unless it's an empty/RPC stream response
                         if !resp_decision.is_mime_type_supported() {
-                            let has_download_ext = crate::core::download::extract_extension_from_url(&uri).is_some();
-                            let suggested_fn = resp.suggested_filename().map(|s| s.to_string()).unwrap_or_default();
-                            let is_known_download = has_download_ext || (!suggested_fn.is_empty() && suggested_fn != "download");
-
-                            if is_known_download {
+                            let mime = resp
+                                .mime_type()
+                                .map(|m| m.to_string().to_ascii_lowercase())
+                                .unwrap_or_default();
+                            if !mime.is_empty()
+                                && !matches!(
+                                    mime.as_str(),
+                                    "application/x-protobuf" | "application/grpc-web" | "application/vnd.yt-ump"
+                                )
+                            {
                                 decision.download();
-                                return true;
-                            } else {
-                                decision.ignore();
                                 return true;
                             }
                         }
@@ -549,16 +520,25 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             gtk::glib::Propagation::Proceed
         });
 
-        // 7. Context menu media capture for "Save Image As..." tracking
-        inner_wv.connect_context_menu(move |_wv, _context_menu, _event, hit_test_result| {
-            crate::core::download::record_context_menu_event();
-            use webkit2gtk::HitTestResultExt;
-            if let Some(img_uri) = hit_test_result.image_uri() {
-                crate::core::download::set_last_right_clicked_media(img_uri.as_str());
-            } else if let Some(media_uri) = hit_test_result.media_uri() {
-                crate::core::download::set_last_right_clicked_media(media_uri.as_str());
-            } else if let Some(link_uri) = hit_test_result.link_uri() {
-                crate::core::download::set_last_right_clicked_media(link_uri.as_str());
+        // 7. Rename "Save Image As..." to "Save Image" in the context menu
+        inner_wv.connect_context_menu(move |_wv, context_menu, _event, hit_test_result| {
+            use webkit2gtk::{
+                ContextMenuAction, ContextMenuExt, ContextMenuItem, ContextMenuItemExt,
+                HitTestResultExt,
+            };
+
+            if hit_test_result.context_is_image() {
+                for (idx, item) in context_menu.items().iter().enumerate() {
+                    if item.stock_action() == ContextMenuAction::DownloadImageToDisk {
+                        let save_item = ContextMenuItem::from_stock_action_with_label(
+                            ContextMenuAction::DownloadImageToDisk,
+                            "Save Image",
+                        );
+                        context_menu.insert(&save_item, idx as i32);
+                        context_menu.remove(item);
+                        break;
+                    }
+                }
             }
             false
         });
