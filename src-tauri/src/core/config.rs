@@ -26,6 +26,35 @@ fn default_media_volume() -> u8 {
     100
 }
 
+fn default_wallpaper_transparency() -> u8 {
+    50
+}
+
+fn default_wallpaper_order() -> String {
+    "randomized".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WallpaperSettings {
+    #[serde(default)]
+    pub folder_path: String,
+    #[serde(default = "default_wallpaper_transparency")]
+    pub transparency: u8,
+    #[serde(default = "default_wallpaper_order")]
+    pub order: String,
+}
+
+impl Default for WallpaperSettings {
+    fn default() -> Self {
+        Self {
+            folder_path: String::new(),
+            transparency: default_wallpaper_transparency(),
+            order: default_wallpaper_order(),
+        }
+    }
+}
+
 pub fn get_saved_media_volume() -> u8 {
     if !SAVED_MEDIA_VOLUME_INIT.load(Ordering::SeqCst) {
         let _ = load_config();
@@ -141,6 +170,8 @@ pub struct AppConfig {
     pub shield_settings: ShieldSettings,
     #[serde(default)]
     pub download_settings: DownloadSettings,
+    #[serde(default)]
+    pub wallpaper_settings: WallpaperSettings,
     #[serde(default = "default_media_volume")]
     pub media_volume: u8,
 }
@@ -194,6 +225,7 @@ impl Default for AppConfig {
             ],
             shield_settings: ShieldSettings::default(),
             download_settings: DownloadSettings::default(),
+            wallpaper_settings: WallpaperSettings::default(),
             media_volume: default_media_volume(),
         }
     }

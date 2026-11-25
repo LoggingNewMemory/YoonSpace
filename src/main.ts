@@ -58,6 +58,7 @@ import {
   createWelcomeBookmarksSection,
   type BookmarksController,
 } from "./components/bookmarks";
+import { createHomepageWallpaper } from "./components/wallpaper";
 
 let currentConfig: AppConfig;
 let isViewOpen = false;
@@ -1274,6 +1275,8 @@ async function init() {
   dragOverlay = createDragSplitOverlay();
   app.appendChild(dragOverlay.element);
 
+  const homepageWallpaper = createHomepageWallpaper();
+
   // Settings Page with Cache, Search Engine, Shields & Preferences
   settingsPage = createSettingsPage(
     currentConfig,
@@ -1281,6 +1284,7 @@ async function init() {
       currentConfig = newConfig;
       await tauriIpc.updateAppConfig(newConfig);
       (titlebar as any).downloadController?.refresh();
+      void homepageWallpaper.applySettings(newConfig.wallpaper_settings);
     },
     handleBackFromSettings
   );
@@ -1364,12 +1368,17 @@ async function init() {
     currentConfig.split_presets,
     handleSpawnPreset
   );
+  welcome.classList.add("relative", "z-10");
   welcome.appendChild(welcomeBookmarks.element);
   welcome.appendChild(presets);
 
+  main.appendChild(homepageWallpaper.layerElement);
   main.appendChild(welcome);
+  main.appendChild(homepageWallpaper.cycleButton);
   mainWrapper.appendChild(main);
   app.appendChild(mainWrapper);
+
+  void homepageWallpaper.applySettings(currentConfig.wallpaper_settings);
 
   // Autofocus welcome search bar on initial application launch
   setTimeout(() => {

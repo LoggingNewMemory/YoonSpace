@@ -15,7 +15,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { tauriIpc } from "../services/tauri_ipc";
-import type { AppConfig, CacheClearScope, CacheInfo, StorageCategoryInfo } from "../types";
+import type {
+  AppConfig,
+  CacheClearScope,
+  CacheInfo,
+  StorageCategoryInfo,
+  WallpaperOrder,
+} from "../types";
 
 export interface SettingsPageController {
   element: HTMLElement;
@@ -64,6 +70,134 @@ export function createSettingsPage(
 
     <!-- Main Content Area -->
     <div class="flex flex-col gap-8 pb-16">
+      <!-- 0. Wallpaper Section -->
+      <section class="flex flex-col gap-3.5">
+        <div class="flex items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-[#f85e2a]/15 text-[#f85e2a] flex items-center justify-center">
+              <span class="material-symbols-outlined text-lg">wallpaper</span>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-[#e5e2e1] uppercase tracking-wider">Wallpaper</h2>
+            </div>
+          </div>
+
+          <span
+            id="settings-wallpaper-count"
+            class="hidden px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-[11px] font-mono text-[#a09e9d]"
+          ></span>
+        </div>
+
+        <div class="bg-[#18181b] border border-[#28282e] rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
+          <!-- Wallpaper Folder -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl min-w-0">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Wallpaper Folder</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Select a local folder containing images to display as your homepage background.
+              </p>
+              <div class="mt-2">
+                <span id="settings-wallpaper-path" class="px-3 py-1.5 rounded-xl bg-[#202025] border border-[#2c2c34] text-xs font-mono text-[#ffb59e] select-all inline-block truncate max-w-full">
+                  No folder selected
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                id="btn-settings-clear-wallpaper-dir"
+                class="hidden px-3 py-1.5 rounded-xl bg-[#25252b] hover:bg-[#93000a]/40 text-[#e2bfb4] hover:text-[#ffb4ab] border border-[#34343e] hover:border-[#ff5449] text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Remove wallpaper"
+              >
+                <span class="material-symbols-outlined text-base">close</span>
+                <span>Clear</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-settings-select-wallpaper-dir"
+                class="px-3 py-1.5 rounded-xl bg-[#f85e2a] hover:bg-[#ff7d47] text-[#521300] hover:text-black font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Select folder containing wallpaper images"
+              >
+                <span class="material-symbols-outlined text-base">folder_open</span>
+                <span>Select Folder</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Image Order Dropdown -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Image Order</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Choose how images from the selected folder are ordered.
+              </p>
+            </div>
+
+            <div class="relative shrink-0" id="settings-wallpaper-order-dropdown">
+              <button
+                type="button"
+                id="settings-wallpaper-order-btn"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                class="min-w-[148px] px-3 py-2 rounded-xl bg-[#222227] hover:bg-[#2a2a30] border border-[#34343d] hover:border-[#464652] text-xs font-semibold text-[#e5e2e1] flex items-center justify-between gap-2 cursor-pointer transition-colors"
+              >
+                <span id="settings-wallpaper-order-label">Randomized</span>
+                <span class="material-symbols-outlined text-base text-[#a09e9d]">expand_more</span>
+              </button>
+              <div
+                id="settings-wallpaper-order-menu"
+                role="listbox"
+                class="hidden absolute right-0 mt-1.5 w-full min-w-[148px] rounded-xl bg-[#222227] border border-[#34343d] shadow-xl py-1 z-30 overflow-hidden"
+              >
+                <button type="button" data-order="a_z" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>A-Z</span>
+                </button>
+                <button type="button" data-order="z_a" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>Z-A</span>
+                </button>
+                <button type="button" data-order="randomized" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>Randomized</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Transparency Slider -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Transparency</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Adjust homepage wallpaper transparency (0% = solid, 100% = fully transparent).
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3 shrink-0 min-w-[220px]">
+              <input
+                type="range"
+                id="settings-wallpaper-transparency"
+                min="0"
+                max="100"
+                step="1"
+                value="50"
+                class="w-36 accent-[#f85e2a] cursor-pointer"
+              />
+              <span
+                id="settings-wallpaper-transparency-value"
+                class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] min-w-[52px] text-center"
+              >
+                50%
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 1. Browser Cache & Storage Section -->
       <section class="flex flex-col gap-3.5">
         <div class="flex items-center justify-between gap-2.5">
@@ -248,11 +382,94 @@ export function createSettingsPage(
   const vaultCookiesSizeEl = container.querySelector("#vault-cookies-size") as HTMLElement;
   const btnClearCookies = container.querySelector("#btn-clear-cookies") as HTMLButtonElement;
 
+  // Local Wallpaper Elements
+  const wallpaperPathEl = container.querySelector("#settings-wallpaper-path") as HTMLElement;
+  const wallpaperCountEl = container.querySelector("#settings-wallpaper-count") as HTMLElement;
+  const btnSelectWallpaperDir = container.querySelector("#btn-settings-select-wallpaper-dir") as HTMLButtonElement;
+  const btnClearWallpaperDir = container.querySelector("#btn-settings-clear-wallpaper-dir") as HTMLButtonElement;
+  const wallpaperOrderDropdown = container.querySelector("#settings-wallpaper-order-dropdown") as HTMLElement;
+  const wallpaperOrderBtn = container.querySelector("#settings-wallpaper-order-btn") as HTMLButtonElement;
+  const wallpaperOrderLabel = container.querySelector("#settings-wallpaper-order-label") as HTMLElement;
+  const wallpaperOrderMenu = container.querySelector("#settings-wallpaper-order-menu") as HTMLElement;
+  const wallpaperTransparencyInput = container.querySelector("#settings-wallpaper-transparency") as HTMLInputElement;
+  const wallpaperTransparencyValueEl = container.querySelector("#settings-wallpaper-transparency-value") as HTMLElement;
+
   // Download Settings Elements
   const downloadPathEl = container.querySelector("#settings-download-path") as HTMLElement;
   const btnOpenDownloadDir = container.querySelector("#btn-settings-open-download-dir") as HTMLButtonElement;
   const btnChangeDownloadDir = container.querySelector("#btn-settings-change-download-dir") as HTMLButtonElement;
   const optOpenCompleteInput = container.querySelector("#settings-opt-open-complete") as HTMLInputElement;
+
+  const ORDER_LABELS: Record<WallpaperOrder, string> = {
+    a_z: "A-Z",
+    z_a: "Z-A",
+    randomized: "Randomized",
+  };
+
+  function renderWallpaperOrder(order: WallpaperOrder) {
+    if (wallpaperOrderLabel) {
+      wallpaperOrderLabel.textContent = ORDER_LABELS[order];
+    }
+    wallpaperOrderMenu?.querySelectorAll(".wallpaper-order-opt").forEach((optEl) => {
+      const optVal = optEl.getAttribute("data-order");
+      const isActive = optVal === order;
+      optEl.className = `wallpaper-order-opt w-full px-3 py-2 text-left text-xs flex items-center justify-between cursor-pointer transition-colors ${
+        isActive
+          ? "bg-[#f85e2a]/15 text-[#ffb59e] font-semibold"
+          : "text-[#e5e2e1] hover:bg-[#2e2e36]"
+      }`;
+      const existingCheck = optEl.querySelector(".order-check");
+      if (isActive && !existingCheck) {
+        const icon = document.createElement("span");
+        icon.className = "order-check material-symbols-outlined text-sm text-[#f85e2a]";
+        icon.textContent = "check";
+        optEl.appendChild(icon);
+      } else if (!isActive && existingCheck) {
+        existingCheck.remove();
+      }
+    });
+  }
+
+  async function renderWallpaperSettings() {
+    const ws = config.wallpaper_settings ?? {
+      folder_path: "",
+      transparency: 50,
+      order: "randomized" as WallpaperOrder,
+    };
+    const folder = ws.folder_path?.trim() || "";
+    const transparency = Math.max(0, Math.min(100, Math.round(ws.transparency ?? 50)));
+    const order: WallpaperOrder =
+      ws.order === "a_z" || ws.order === "z_a" || ws.order === "randomized"
+        ? ws.order
+        : "randomized";
+
+    renderWallpaperOrder(order);
+    if (wallpaperTransparencyInput) {
+      wallpaperTransparencyInput.value = String(transparency);
+    }
+    if (wallpaperTransparencyValueEl) {
+      wallpaperTransparencyValueEl.textContent = `${transparency}%`;
+    }
+
+    if (folder) {
+      wallpaperPathEl.textContent = folder;
+      wallpaperPathEl.title = folder;
+      btnClearWallpaperDir.classList.remove("hidden");
+      try {
+        const images = await tauriIpc.listWallpaperImages(folder);
+        wallpaperCountEl.textContent =
+          images.length === 1 ? "1 image found" : `${images.length} images found`;
+        wallpaperCountEl.classList.remove("hidden");
+      } catch {
+        wallpaperCountEl.classList.add("hidden");
+      }
+    } else {
+      wallpaperPathEl.textContent = "No folder selected";
+      wallpaperPathEl.title = "";
+      btnClearWallpaperDir.classList.add("hidden");
+      wallpaperCountEl.classList.add("hidden");
+    }
+  }
 
   function renderDownloadSettings() {
     const ds = config.download_settings;
@@ -442,6 +659,89 @@ export function createSettingsPage(
   clearCacheBtn.addEventListener("click", () => handleClearCache("all"));
   backBtn.addEventListener("click", onBack);
 
+  // Local Wallpaper Event Listeners
+  btnSelectWallpaperDir?.addEventListener("click", async () => {
+    const chosen = await tauriIpc.selectWallpaperDir();
+    if (chosen) {
+      if (!config.wallpaper_settings) {
+        config.wallpaper_settings = {
+          folder_path: chosen,
+          transparency: 50,
+        };
+      } else {
+        config.wallpaper_settings.folder_path = chosen;
+      }
+      await renderWallpaperSettings();
+      await tauriIpc.updateAppConfig(config);
+      onConfigUpdated(config);
+    }
+  });
+
+  btnClearWallpaperDir?.addEventListener("click", async () => {
+    if (!config.wallpaper_settings) {
+      config.wallpaper_settings = { folder_path: "", transparency: 50 };
+    } else {
+      config.wallpaper_settings.folder_path = "";
+    }
+    await renderWallpaperSettings();
+    await tauriIpc.updateAppConfig(config);
+    onConfigUpdated(config);
+  });
+
+  wallpaperOrderBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isHidden = wallpaperOrderMenu.classList.contains("hidden");
+    wallpaperOrderMenu.classList.toggle("hidden", !isHidden);
+    wallpaperOrderBtn.setAttribute("aria-expanded", String(isHidden));
+  });
+
+  wallpaperOrderMenu?.querySelectorAll(".wallpaper-order-opt").forEach((optEl) => {
+    optEl.addEventListener("click", async () => {
+      const order = (optEl.getAttribute("data-order") || "randomized") as WallpaperOrder;
+      wallpaperOrderMenu.classList.add("hidden");
+      wallpaperOrderBtn.setAttribute("aria-expanded", "false");
+      if (!config.wallpaper_settings) {
+        config.wallpaper_settings = { folder_path: "", transparency: 50, order };
+      } else {
+        config.wallpaper_settings.order = order;
+      }
+      renderWallpaperOrder(order);
+      await tauriIpc.updateAppConfig(config);
+      onConfigUpdated(config);
+    });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (wallpaperOrderDropdown && !wallpaperOrderDropdown.contains(e.target as Node)) {
+      wallpaperOrderMenu?.classList.add("hidden");
+      wallpaperOrderBtn?.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  wallpaperTransparencyInput?.addEventListener("input", () => {
+    const val = Math.max(0, Math.min(100, Number(wallpaperTransparencyInput.value) || 0));
+    if (wallpaperTransparencyValueEl) {
+      wallpaperTransparencyValueEl.textContent = `${val}%`;
+    }
+    if (!config.wallpaper_settings) {
+      config.wallpaper_settings = { folder_path: "", transparency: val };
+    } else {
+      config.wallpaper_settings.transparency = val;
+    }
+    onConfigUpdated(config);
+  });
+
+  wallpaperTransparencyInput?.addEventListener("change", async () => {
+    const val = Math.max(0, Math.min(100, Number(wallpaperTransparencyInput.value) || 0));
+    if (!config.wallpaper_settings) {
+      config.wallpaper_settings = { folder_path: "", transparency: val };
+    } else {
+      config.wallpaper_settings.transparency = val;
+    }
+    await tauriIpc.updateAppConfig(config);
+    onConfigUpdated(config);
+  });
+
   // Download Settings Event Listeners
   btnOpenDownloadDir?.addEventListener("click", async () => {
     await tauriIpc.openDownloadDir(config.download_settings?.download_dir);
@@ -487,11 +787,13 @@ export function createSettingsPage(
           Object.assign(config, fresh);
           renderSearchEngines();
           renderDownloadSettings();
+          void renderWallpaperSettings();
         }
       })
       .catch(() => {});
     renderSearchEngines();
     renderDownloadSettings();
+    void renderWallpaperSettings();
     cacheFeedback.classList.add("hidden");
     cacheFeedback.innerHTML = "";
     cacheNote.classList.remove("hidden");

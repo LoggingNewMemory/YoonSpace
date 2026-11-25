@@ -142,6 +142,11 @@ export const tauriIpc = {
           },
         ],
         media_volume: 100,
+        wallpaper_settings: {
+          folder_path: "",
+          transparency: 50,
+          order: "randomized",
+        },
       };
     }
   },
@@ -747,5 +752,28 @@ export const tauriIpc = {
     } catch (e) {
       console.warn("clear_favicon_cache failed:", e);
     }
+  },
+
+  // Wallpaper
+  async selectWallpaperDir(): Promise<string | null> {
+    try {
+      return await invoke<string | null>("select_wallpaper_dir");
+    } catch (e) {
+      console.warn("select_wallpaper_dir failed:", e);
+      return null;
+    }
+  },
+
+  async listWallpaperImages(folderPath: string): Promise<string[]> {
+    try {
+      return await invoke<string[]>("list_wallpaper_images", { folderPath });
+    } catch (e) {
+      console.warn("list_wallpaper_images failed:", e);
+      return [];
+    }
+  },
+
+  async loadWallpaperImage(filePath: string): Promise<string> {
+    return await invoke<string>("load_wallpaper_image", { filePath });
   },
 };

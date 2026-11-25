@@ -434,7 +434,7 @@ pub fn get_unique_destination_path(dir: &Path, filename: &str) -> PathBuf {
 // Directory Picker
 // ---------------------------------------------------------------------------
 
-fn get_toplevel_window(app: &AppHandle) -> Option<gtk::Window> {
+pub fn get_toplevel_window(app: &AppHandle) -> Option<gtk::Window> {
     if let Some(win) = app.get_window("main") {
         if let Ok(vbox) = win.default_vbox() {
             if let Some(toplevel) = vbox.toplevel().and_then(|w| w.dynamic_cast::<gtk::Window>().ok()) {

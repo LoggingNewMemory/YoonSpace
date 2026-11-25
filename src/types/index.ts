@@ -43,6 +43,14 @@ export interface DownloadSettings {
   open_folder_on_complete: boolean;
 }
 
+export type WallpaperOrder = "a_z" | "z_a" | "randomized";
+
+export interface WallpaperSettings {
+  folder_path: string;
+  transparency: number;
+  order?: WallpaperOrder;
+}
+
 export interface DownloadItem {
   id: string;
   filename: string;
@@ -62,6 +70,7 @@ export interface AppConfig {
   split_presets: SplitPreset[];
   shield_settings?: ShieldSettings;
   download_settings?: DownloadSettings;
+  wallpaper_settings?: WallpaperSettings;
   media_volume?: number;
 }
 

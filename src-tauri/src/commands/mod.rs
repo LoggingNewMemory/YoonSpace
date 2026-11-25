@@ -21,5 +21,6 @@ pub mod overlay;
 pub mod shield;
 pub mod telemetry;
 pub mod user_data;
+pub mod wallpaper;
 pub mod webview;
 pub mod window;
