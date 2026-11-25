@@ -353,17 +353,13 @@ export function createTitlebar(
     onForward?.();
   });
   const reloadBtn = container.querySelector("#nav-btn-reload") as HTMLButtonElement | null;
-  const reloadIcon = reloadBtn?.querySelector(".material-symbols-outlined") as HTMLElement | null;
 
   (container as TitlebarElement).setLoading = (loading: boolean) => {
-    if (reloadIcon) {
-      if (loading) {
-        reloadIcon.classList.add("animate-spin");
-        reloadBtn?.setAttribute("title", "Loading... (Reload: Ctrl+R / F5)");
-      } else {
-        reloadIcon.classList.remove("animate-spin");
-        reloadBtn?.setAttribute("title", "Reload (Ctrl+R / F5)");
-      }
+    if (reloadBtn) {
+      reloadBtn.setAttribute(
+        "title",
+        loading ? "Loading... (Reload: Ctrl+R / F5)" : "Reload (Ctrl+R / F5)"
+      );
     }
   };
 
