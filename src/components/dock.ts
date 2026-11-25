@@ -177,9 +177,9 @@ export function createDock(
 
       aside.innerHTML = `
         <!-- Top Navigation & Tabs Section -->
-        <div class="flex flex-col items-center w-full px-2 gap-2">
+        <div class="flex flex-col items-center w-full px-2 gap-2 flex-1 min-h-0 overflow-y-auto">
           <!-- 2x2 Grid View, Add & Toggle Buttons -->
-          <nav class="flex flex-col items-center gap-2 w-full">
+          <nav class="flex flex-col items-center gap-2 w-full shrink-0">
             <!-- Workspaces 2x2 Grid Button -->
             <button
               id="dock-btn-workspaces"
@@ -189,13 +189,13 @@ export function createDock(
               <span class="material-symbols-outlined text-[22px]">grid_view</span>
             </button>
 
-            <!-- Add Bookmark Button (+) -->
+            <!-- Bookmarks Button -->
             <button
               id="dock-btn-add"
               title="Bookmarks (Ctrl+D)"
               class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
             >
-              <span class="material-symbols-outlined text-[22px]">add</span>
+              <span class="material-symbols-outlined text-[22px]">bookmarks</span>
             </button>
 
             <!-- Expand Toggle Button -->
@@ -216,7 +216,7 @@ export function createDock(
         </div>
 
         <!-- Bottom Settings & Media Actions -->
-        <div class="flex flex-col items-center w-full px-2 gap-2">
+        <div class="flex flex-col items-center w-full px-2 gap-2 pt-2 shrink-0">
           <!-- Music / Media Control Button -->
           <button
             id="dock-btn-media"
@@ -243,9 +243,9 @@ export function createDock(
 
       aside.innerHTML = `
         <!-- Top Navigation & Tabs Section (Arc / Zen Style) -->
-        <div class="flex flex-col items-start w-full gap-2">
+        <div class="flex flex-col items-start w-full gap-2 flex-1 min-h-0 overflow-y-auto">
           <!-- Top Row: Workspaces label + Collapse button -->
-          <div class="flex items-center justify-between w-full">
+          <div class="flex items-center justify-between w-full shrink-0">
             <button
               id="dock-btn-workspaces"
               title="YoonSpace"
@@ -268,9 +268,9 @@ export function createDock(
           <button
             id="dock-btn-add"
             title="Bookmarks (Ctrl+D)"
-            class="w-full h-8 px-2.5 rounded-xl flex items-center gap-2 text-[#e2bfb4] hover:bg-[#202022] hover:text-[#e5e2e1] border border-[#2b2b2e] hover:border-[#3d3d42] transition-colors cursor-pointer text-xs font-medium"
+            class="w-full h-8 px-2.5 rounded-xl flex items-center gap-2 text-[#e2bfb4] hover:bg-[#202022] hover:text-[#e5e2e1] border border-[#2b2b2e] hover:border-[#3d3d42] transition-colors cursor-pointer text-xs font-medium shrink-0"
           >
-            <span class="material-symbols-outlined text-[17px]">add</span>
+            <span class="material-symbols-outlined text-[17px]">bookmarks</span>
             <span class="truncate">Bookmarks</span>
           </button>
 
@@ -278,11 +278,11 @@ export function createDock(
           <div class="w-full h-px bg-[#202020] my-0.5 shrink-0"></div>
 
           <!-- Web Tabs Container -->
-          <div id="dock-tabs-list" class="flex flex-col items-start gap-1.5 w-full overflow-y-auto"></div>
+          <div id="dock-tabs-list" class="flex flex-col items-start gap-1.5 w-full"></div>
         </div>
 
         <!-- Bottom Settings & Media Actions -->
-        <div class="flex flex-col items-start w-full gap-1.5">
+        <div class="flex flex-col items-start w-full gap-1.5 pt-2 shrink-0">
           <!-- Music / Media Control Button -->
           <button
             id="dock-btn-media"

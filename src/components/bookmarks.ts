@@ -94,12 +94,9 @@ export function createBookmarksController(
         <div class="w-7 h-7 rounded-lg bg-[#28282b] flex items-center justify-center text-[#f85e2a]">
           <span class="material-symbols-outlined text-[18px]">bookmarks</span>
         </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h2 class="text-sm font-semibold text-white tracking-tight">Bookmarks</h2>
-            <span id="bookmarks-header-count" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#f85e2a]/20 text-[#f85e2a] border border-[#f85e2a]/30">0</span>
-          </div>
-          <p class="text-[11px] text-neutral-400 font-mono mt-0.5">Save sites &amp; cached logos</p>
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-white tracking-tight">Bookmarks</h2>
+          <span id="bookmarks-header-count" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#f85e2a]/20 text-[#f85e2a] border border-[#f85e2a]/30">0</span>
         </div>
       </div>
 
