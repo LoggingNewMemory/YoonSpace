@@ -62,6 +62,7 @@ export interface AppConfig {
   split_presets: SplitPreset[];
   shield_settings?: ShieldSettings;
   download_settings?: DownloadSettings;
+  media_volume?: number;
 }
 
 export interface SplitBounds {

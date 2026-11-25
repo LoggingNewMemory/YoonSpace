@@ -894,13 +894,97 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
 
 fn get_media_observer_script(tab_id: &str) -> String {
     let tab_id_escaped = tab_id.replace('\\', "\\\\").replace('"', "\\\"");
+    let target_vol = (crate::core::config::get_saved_media_volume() as f64 / 100.0).clamp(0.0, 1.0);
     format!(
         r##"(function() {{
   if (window.__YOONSPACE_MEDIA_OBSERVER__) return;
   window.__YOONSPACE_MEDIA_OBSERVER__ = true;
   const TAB_ID = "{tab_id}";
+  if (typeof window.__YOONSPACE_TARGET_VOLUME__ !== "number") {{
+    window.__YOONSPACE_TARGET_VOLUME__ = {target_vol:.4};
+  }}
   let lastSnapshot = "";
   let timerId = null;
+
+  const origVolDesc = (() => {{
+    try {{
+      return Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
+    }} catch (_) {{
+      return null;
+    }}
+  }})();
+
+  function getNativeVolume(m) {{
+    try {{
+      if (origVolDesc && typeof origVolDesc.get === "function") {{
+        return origVolDesc.get.call(m);
+      }}
+      return m.volume;
+    }} catch (_) {{
+      return 1;
+    }}
+  }}
+
+  function setNativeVolume(m, v) {{
+    try {{
+      window.__YOONSPACE_INTERNAL_VOL_CHANGE__ = true;
+      if (origVolDesc && typeof origVolDesc.set === "function") {{
+        origVolDesc.set.call(m, v);
+      }} else {{
+        m.volume = v;
+      }}
+    }} catch (_) {{}} finally {{
+      window.__YOONSPACE_INTERNAL_VOL_CHANGE__ = false;
+    }}
+  }}
+
+  function getTargetVolume() {{
+    return typeof window.__YOONSPACE_TARGET_VOLUME__ === "number"
+      ? Math.max(0, Math.min(1, window.__YOONSPACE_TARGET_VOLUME__))
+      : 1;
+  }}
+
+  function applyRememberedVolume(m) {{
+    if (!m) return;
+    const targetVol = getTargetVolume();
+    const curVol = getNativeVolume(m);
+    if (!Number.isFinite(curVol) || Math.abs(curVol - targetVol) > 0.005) {{
+      setNativeVolume(m, targetVol);
+    }}
+    if (targetVol === 0 && !m.muted) {{
+      try {{ m.muted = true; }} catch (_) {{}}
+    }}
+  }}
+
+  window.__YOONSPACE_SET_VOLUME__ = function(vol) {{
+    const clamped = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 1));
+    window.__YOONSPACE_TARGET_VOLUME__ = clamped;
+    document.querySelectorAll("video, audio").forEach((m) => {{
+      setNativeVolume(m, clamped);
+      try {{ m.muted = (clamped === 0); }} catch (_) {{}}
+    }});
+    reportState(true);
+  }};
+
+  // Prevent sites (e.g. YouTube's yt-player-volume restore) from overriding YoonSpace's remembered volume
+  if (origVolDesc && origVolDesc.configurable && typeof origVolDesc.set === "function" && typeof origVolDesc.get === "function") {{
+    try {{
+      Object.defineProperty(HTMLMediaElement.prototype, "volume", {{
+        configurable: true,
+        enumerable: origVolDesc.enumerable,
+        get: function() {{
+          return origVolDesc.get.call(this);
+        }},
+        set: function(val) {{
+          if (window.__YOONSPACE_INTERNAL_VOL_CHANGE__) {{
+            return origVolDesc.set.call(this, val);
+          }}
+          const targetVol = getTargetVolume();
+          return origVolDesc.set.call(this, targetVol);
+        }}
+      }});
+    }} catch (_) {{}}
+  }}
 
   function pickActiveMedia() {{
     const list = Array.from(document.querySelectorAll("video, audio"));
@@ -941,14 +1025,17 @@ fn get_media_observer_script(tab_id: &str) -> String {
       if (!handler) return;
       const m = pickActiveMedia();
       if (!m) {{
+        const fallbackVol = typeof window.__YOONSPACE_TARGET_VOLUME__ === "number"
+          ? Math.max(0, Math.min(1, window.__YOONSPACE_TARGET_VOLUME__))
+          : 1;
         const emptyPayload = {{
           tabId: TAB_ID,
           hasMedia: false,
           isPlaying: false,
           currentTime: 0,
           duration: 0,
-          volume: 1,
-          muted: false,
+          volume: fallbackVol,
+          muted: fallbackVol === 0,
           title: "",
           artist: ""
         }};
@@ -993,27 +1080,44 @@ fn get_media_observer_script(tab_id: &str) -> String {
     }}, 350);
   }}
 
-  const events = ["play", "playing", "pause", "ended", "loadedmetadata", "durationchange", "volumechange", "seeked", "timeupdate"];
+  const events = ["play", "playing", "pause", "ended", "loadedmetadata", "loadeddata", "canplay", "durationchange", "volumechange", "seeked", "timeupdate"];
   events.forEach((evt) => {{
-    document.addEventListener(evt, () => {{
+    document.addEventListener(evt, (e) => {{
+      if (evt !== "timeupdate" && evt !== "pause" && evt !== "ended" && evt !== "seeked") {{
+        const target = e && e.target;
+        if (target && (target.tagName === "VIDEO" || target.tagName === "AUDIO")) {{
+          applyRememberedVolume(target);
+        }} else {{
+          document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
+        }}
+      }}
       reportState(evt !== "timeupdate");
       ensurePolling();
     }}, true);
   }});
 
-  window.addEventListener("yt-navigate-finish", () => setTimeout(() => reportState(true), 250));
-  window.addEventListener("popstate", () => setTimeout(() => reportState(true), 250));
+  window.addEventListener("yt-navigate-finish", () => setTimeout(() => {{
+    document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
+    reportState(true);
+  }}, 250));
+  window.addEventListener("popstate", () => setTimeout(() => {{
+    document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
+    reportState(true);
+  }}, 250));
   if (document.readyState === "complete" || document.readyState === "interactive") {{
+    document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
     reportState(true);
     ensurePolling();
   }} else {{
     window.addEventListener("DOMContentLoaded", () => {{
+      document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
       reportState(true);
       ensurePolling();
     }});
   }}
 }})();"##,
-        tab_id = tab_id_escaped
+        tab_id = tab_id_escaped,
+        target_vol = target_vol
     )
 }
 

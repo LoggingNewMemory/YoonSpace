@@ -425,15 +425,21 @@ pub fn execute_webview_media_command(
         },
         "volume" => {
             let vol = value.unwrap_or(1.0).clamp(0.0, 1.0);
+            let vol_pct = (vol * 100.0).round() as u8;
+            let _ = crate::core::config::set_saved_media_volume(vol_pct, false);
             format!(r#"
                 (() => {{
-                    const media = document.querySelectorAll('video, audio');
-                    media.forEach(m => {{
-                        m.volume = {};
-                        m.muted = ({} === 0);
-                    }});
+                    if (typeof window.__YOONSPACE_SET_VOLUME__ === 'function') {{
+                        window.__YOONSPACE_SET_VOLUME__({});
+                    }} else {{
+                        window.__YOONSPACE_TARGET_VOLUME__ = {};
+                        document.querySelectorAll('video, audio').forEach(m => {{
+                            m.volume = {};
+                            m.muted = ({} === 0);
+                        }});
+                    }}
                 }})();
-            "#, vol, vol)
+            "#, vol, vol, vol, vol)
         },
         "mute" => r#"
             (() => {
@@ -443,20 +449,17 @@ pub fn execute_webview_media_command(
                 if (ytMute) ytMute.click();
             })();
         "#.to_string(),
-        "pip" => r#"
-            (() => {
-                const v = document.querySelector('video');
-                if (v && document.pictureInPictureEnabled) {
-                    if (document.pictureInPictureElement) {
-                        document.exitPictureInPicture().catch(() => {});
-                    } else {
-                        v.requestPictureInPicture().catch(() => {});
-                    }
-                }
-            })();
-        "#.to_string(),
         _ => return Err(format!("Unknown media command: {}", command)),
     };
+
+    if command == "volume" {
+        for (label, view) in app.webviews() {
+            if label != "main" {
+                let _ = view.eval(&script);
+            }
+        }
+        return Ok(());
+    }
 
     if let Some(target) = tab_id {
         if let Some(view) = app.get_webview(target) {

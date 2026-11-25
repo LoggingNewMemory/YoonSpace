@@ -14,7 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::core::config::{load_config, save_config, AppConfig};
+use crate::core::config::{
+    get_saved_media_volume, load_config, save_config, set_saved_media_volume, AppConfig,
+};
 
 #[tauri::command]
 pub fn get_app_config() -> AppConfig {
@@ -22,6 +24,12 @@ pub fn get_app_config() -> AppConfig {
 }
 
 #[tauri::command]
-pub fn update_app_config(config: AppConfig) -> Result<(), String> {
+pub fn update_app_config(mut config: AppConfig) -> Result<(), String> {
+    config.media_volume = get_saved_media_volume();
     save_config(&config)
+}
+
+#[tauri::command]
+pub fn set_media_volume(volume: u8, persist: bool) -> Result<(), String> {
+    set_saved_media_volume(volume, persist)
 }

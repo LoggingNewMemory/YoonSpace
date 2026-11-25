@@ -96,13 +96,20 @@ export function createMediaController(
   onClose?: () => void,
   onOpenUrl?: (url: string, title?: string) => void,
   onActivateTab?: (tabId: string) => void,
-  onMediaStateChange?: (isPlaying: boolean) => void
+  onMediaStateChange?: (isPlaying: boolean) => void,
+  initialVolumePct = 100,
+  onVolumeChange?: (volumePct: number) => void
 ): MediaController {
   const sidebar = document.createElement("aside");
   sidebar.id = "yoonspace-media-sidebar";
   sidebar.className =
     "hidden fixed top-[80px] bottom-0 z-40 w-[360px] flex flex-col border-r border-[#2e2e30] bg-[#161618] text-[#e5e2e1] shadow-2xl select-none overflow-hidden transition-[left] duration-200 ease-out";
   sidebar.style.left = "64px";
+
+  const clampedInitialPct = Math.max(
+    0,
+    Math.min(100, Math.round(Number.isFinite(initialVolumePct) ? initialVolumePct : 100))
+  );
 
   let isDrawerVisible = false;
   let activeTabReference: MinimizedTab | null = null;
@@ -111,12 +118,13 @@ export function createMediaController(
 
   // Tab media playback state
   let isTabMediaPlaying = false;
-  let isTabMediaMuted = false;
-  let tabMediaVolume = 1.0;
+  let isTabMediaMuted = clampedInitialPct === 0;
+  let tabMediaVolume = clampedInitialPct / 100;
   let tabMediaSeek = 0;
   let tabMediaDuration = 0;
   let isSeeking = false;
   let isAdjustingVolume = false;
+  let volumePersistTimer: number | null = null;
 
   function formatTime(totalSeconds: number): string {
     if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "0:00";
@@ -275,8 +283,8 @@ export function createMediaController(
           </div>
         </div>
 
-        <!-- Volume & Quick Actions Bar -->
-        <div class="rounded-xl bg-[#1b1b1e] border border-[#2b2b2e] p-3 space-y-2.5">
+        <!-- Volume Bar -->
+        <div class="rounded-xl bg-[#1b1b1e] border border-[#2b2b2e] p-3">
           <div class="flex items-center gap-2.5">
             <button
               type="button"
@@ -284,28 +292,23 @@ export function createMediaController(
               title="Mute / Unmute"
               class="text-neutral-400 hover:text-white transition-colors cursor-pointer"
             >
-              <span id="media-volume-icon" class="material-symbols-outlined text-[19px]">volume_up</span>
+              <span id="media-volume-icon" class="material-symbols-outlined text-[19px]">${
+                clampedInitialPct === 0
+                  ? "volume_off"
+                  : clampedInitialPct < 50
+                    ? "volume_down"
+                    : "volume_up"
+              }</span>
             </button>
             <input
               type="range"
               id="media-volume-slider"
               min="0"
               max="100"
-              value="100"
+              value="${clampedInitialPct}"
               class="flex-1 h-1.5 bg-[#333338] rounded-lg appearance-none cursor-pointer accent-[#f85e2a]"
             />
-            <span id="media-volume-label" class="text-[11px] font-mono text-neutral-400 w-8 text-right">100%</span>
-          </div>
-
-          <div class="pt-1 border-t border-[#26262a]">
-            <button
-              type="button"
-              id="btn-media-pip"
-              class="w-full py-1.5 px-2.5 rounded-lg bg-[#242428] hover:bg-[#2d2d32] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-            >
-              <span class="material-symbols-outlined text-[16px] text-[#ffb59e]">picture_in_picture_alt</span>
-              <span>Pop-out PiP</span>
-            </button>
+            <span id="media-volume-label" class="text-[11px] font-mono text-neutral-400 w-8 text-right">${clampedInitialPct}%</span>
           </div>
         </div>
       </section>
@@ -405,7 +408,6 @@ export function createMediaController(
   const volumeIcon = sidebar.querySelector("#media-volume-icon") as HTMLElement;
   const volumeSlider = sidebar.querySelector("#media-volume-slider") as HTMLInputElement;
   const volumeLabel = sidebar.querySelector("#media-volume-label") as HTMLElement;
-  const btnPip = sidebar.querySelector("#btn-media-pip") as HTMLButtonElement;
 
   // Streaming apps list & add form
   const appsList = sidebar.querySelector("#streaming-apps-list") as HTMLElement;
@@ -578,6 +580,32 @@ export function createMediaController(
     }
   }
 
+  function syncVolumeUI(volumeNorm: number, muted: boolean) {
+    const volPct = Math.round(Math.max(0, Math.min(1, volumeNorm)) * 100);
+    const displayedPct = muted ? 0 : volPct;
+    if (volumeSlider) volumeSlider.value = String(displayedPct);
+    if (volumeLabel) volumeLabel.textContent = `${displayedPct}%`;
+    if (volumeIcon) {
+      volumeIcon.textContent =
+        muted || volPct === 0
+          ? "volume_off"
+          : volPct < 50
+            ? "volume_down"
+            : "volume_up";
+    }
+  }
+
+  function schedulePersistVolume(volPct: number) {
+    if (volumePersistTimer !== null) {
+      window.clearTimeout(volumePersistTimer);
+    }
+    volumePersistTimer = window.setTimeout(() => {
+      volumePersistTimer = null;
+      onVolumeChange?.(volPct);
+      void tauriIpc.setMediaVolume(volPct, true);
+    }, 250);
+  }
+
   // Tab Playback Control Event Handlers
   btnPlayPause?.addEventListener("click", async () => {
     isTabMediaPlaying = !isTabMediaPlaying;
@@ -621,9 +649,7 @@ export function createMediaController(
 
   btnMute?.addEventListener("click", async () => {
     isTabMediaMuted = !isTabMediaMuted;
-    if (volumeIcon) {
-      volumeIcon.textContent = isTabMediaMuted ? "volume_off" : tabMediaVolume < 0.5 ? "volume_down" : "volume_up";
-    }
+    syncVolumeUI(tabMediaVolume, isTabMediaMuted);
     await tauriIpc.mediaCommand("mute", activeTabReference?.id);
   });
 
@@ -633,23 +659,24 @@ export function createMediaController(
   volumeSlider?.addEventListener("pointerup", () => {
     isAdjustingVolume = false;
   });
-  volumeSlider?.addEventListener("change", () => {
+  volumeSlider?.addEventListener("change", async () => {
     isAdjustingVolume = false;
+    const val = Math.max(0, Math.min(100, parseInt(volumeSlider.value, 10) || 0));
+    if (volumePersistTimer !== null) {
+      window.clearTimeout(volumePersistTimer);
+      volumePersistTimer = null;
+    }
+    onVolumeChange?.(val);
+    await tauriIpc.setMediaVolume(val, true);
   });
 
   volumeSlider?.addEventListener("input", async () => {
-    const val = parseInt(volumeSlider.value, 10);
+    const val = Math.max(0, Math.min(100, parseInt(volumeSlider.value, 10) || 0));
     tabMediaVolume = val / 100;
     isTabMediaMuted = val === 0;
-    if (volumeLabel) volumeLabel.textContent = `${val}%`;
-    if (volumeIcon) {
-      volumeIcon.textContent = isTabMediaMuted ? "volume_off" : tabMediaVolume < 0.5 ? "volume_down" : "volume_up";
-    }
+    syncVolumeUI(tabMediaVolume, isTabMediaMuted);
+    schedulePersistVolume(val);
     await tauriIpc.mediaCommand("volume", activeTabReference?.id, tabMediaVolume);
-  });
-
-  btnPip?.addEventListener("click", async () => {
-    await tauriIpc.mediaCommand("pip", activeTabReference?.id);
   });
 
   btnJumpTab?.addEventListener("click", () => {
@@ -667,10 +694,14 @@ export function createMediaController(
     isTabMediaPlaying = false;
     tabMediaDuration = 0;
     tabMediaSeek = 0;
+    isTabMediaMuted = tabMediaVolume === 0;
     if (playIcon) playIcon.textContent = "play_arrow";
     if (seekSlider && !isSeeking) seekSlider.value = "0";
     if (timeCurrent) timeCurrent.textContent = "0:00";
     if (timeTotal) timeTotal.textContent = "--:--";
+    if (!isAdjustingVolume) {
+      syncVolumeUI(tabMediaVolume, isTabMediaMuted);
+    }
     notifyOverallMediaState();
   }
 
@@ -684,7 +715,6 @@ export function createMediaController(
 
     isTabMediaPlaying = state.isPlaying;
     isTabMediaMuted = state.muted;
-    tabMediaVolume = state.volume;
     tabMediaDuration = state.duration > 0 ? state.duration : 0;
 
     if (playIcon) {
@@ -705,17 +735,7 @@ export function createMediaController(
     }
 
     if (!isAdjustingVolume) {
-      const volPct = Math.round(Math.max(0, Math.min(1, state.volume)) * 100);
-      if (volumeSlider) volumeSlider.value = String(state.muted ? 0 : volPct);
-      if (volumeLabel) volumeLabel.textContent = `${state.muted ? 0 : volPct}%`;
-    }
-
-    if (volumeIcon) {
-      volumeIcon.textContent = state.muted || state.volume === 0
-        ? "volume_off"
-        : state.volume < 0.5
-          ? "volume_down"
-          : "volume_up";
+      syncVolumeUI(tabMediaVolume, isTabMediaMuted);
     }
 
     if (state.title && npTitle) {
@@ -806,6 +826,9 @@ export function createMediaController(
     updateActiveTab: updateTabInfo,
     updateMediaState,
     destroy: () => {
+      if (volumePersistTimer !== null) {
+        window.clearTimeout(volumePersistTimer);
+      }
       sidebar.remove();
     },
   };

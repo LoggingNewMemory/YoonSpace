@@ -16,7 +16,34 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use serde::{Deserialize, Serialize};
+
+static SAVED_MEDIA_VOLUME: AtomicU8 = AtomicU8::new(100);
+static SAVED_MEDIA_VOLUME_INIT: AtomicBool = AtomicBool::new(false);
+
+fn default_media_volume() -> u8 {
+    100
+}
+
+pub fn get_saved_media_volume() -> u8 {
+    if !SAVED_MEDIA_VOLUME_INIT.load(Ordering::SeqCst) {
+        let _ = load_config();
+    }
+    SAVED_MEDIA_VOLUME.load(Ordering::SeqCst).min(100)
+}
+
+pub fn set_saved_media_volume(volume: u8, persist: bool) -> Result<(), String> {
+    let clamped = volume.min(100);
+    SAVED_MEDIA_VOLUME.store(clamped, Ordering::SeqCst);
+    SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
+    if persist {
+        let mut cfg = load_config();
+        cfg.media_volume = clamped;
+        save_config(&cfg)?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchEngine {
@@ -114,6 +141,8 @@ pub struct AppConfig {
     pub shield_settings: ShieldSettings,
     #[serde(default)]
     pub download_settings: DownloadSettings,
+    #[serde(default = "default_media_volume")]
+    pub media_volume: u8,
 }
 
 impl Default for AppConfig {
@@ -159,6 +188,7 @@ impl Default for AppConfig {
             ],
             shield_settings: ShieldSettings::default(),
             download_settings: DownloadSettings::default(),
+            media_volume: default_media_volume(),
         }
     }
 }
@@ -176,18 +206,27 @@ pub fn get_config_path() -> PathBuf {
 pub fn load_config() -> AppConfig {
     let path = get_config_path();
     if let Ok(content) = fs::read_to_string(&path) {
-        if let Ok(cfg) = serde_json::from_str::<AppConfig>(&content) {
+        if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&content) {
+            cfg.media_volume = cfg.media_volume.min(100);
+            SAVED_MEDIA_VOLUME.store(cfg.media_volume, Ordering::SeqCst);
+            SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
             return cfg;
         }
     }
 
     let default_cfg = AppConfig::default();
+    SAVED_MEDIA_VOLUME.store(default_cfg.media_volume.min(100), Ordering::SeqCst);
+    SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
     let _ = save_config(&default_cfg);
     default_cfg
 }
 
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
+    let mut sanitized = config.clone();
+    sanitized.media_volume = sanitized.media_volume.min(100);
+    SAVED_MEDIA_VOLUME.store(sanitized.media_volume, Ordering::SeqCst);
+    SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
     let path = get_config_path();
-    let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&sanitized).map_err(|e| e.to_string())?;
     fs::write(path, json).map_err(|e| e.to_string())
 }

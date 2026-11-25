@@ -135,6 +135,7 @@ export const tauriIpc = {
             right_url: "https://www.youtube.com",
           },
         ],
+        media_volume: 100,
       };
     }
   },
@@ -144,6 +145,15 @@ export const tauriIpc = {
       await invoke("update_app_config", { config });
     } catch (e) {
       console.warn("update_app_config failed:", e);
+    }
+  },
+
+  async setMediaVolume(volume: number, persist = true): Promise<void> {
+    try {
+      const clamped = Math.max(0, Math.min(100, Math.round(volume)));
+      await invoke("set_media_volume", { volume: clamped, persist });
+    } catch (e) {
+      console.warn("set_media_volume failed:", e);
     }
   },
 
@@ -237,7 +247,7 @@ export const tauriIpc = {
   },
 
   async mediaCommand(
-    command: "play_pause" | "play" | "pause" | "next" | "prev" | "seek" | "volume" | "mute" | "pip",
+    command: "play_pause" | "play" | "pause" | "next" | "prev" | "seek" | "volume" | "mute",
     tabId?: string,
     value?: number
   ): Promise<void> {

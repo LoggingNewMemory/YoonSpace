@@ -1240,6 +1240,10 @@ async function init() {
     },
     (isPlaying) => {
       dock.setMediaPlaying(isPlaying);
+    },
+    currentConfig.media_volume ?? 100,
+    (volumePct) => {
+      currentConfig.media_volume = volumePct;
     }
   );
   mediaController.setLeftOffset(dock.getWidth());

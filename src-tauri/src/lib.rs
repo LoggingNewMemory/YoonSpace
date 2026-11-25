@@ -80,6 +80,7 @@ pub fn run() {
             commands::user_data::clear_persistent_cookies,
             commands::config::get_app_config,
             commands::config::update_app_config,
+            commands::config::set_media_volume,
             commands::bookmarks::list_bookmarks,
             commands::bookmarks::add_bookmark,
             commands::bookmarks::update_bookmark,
