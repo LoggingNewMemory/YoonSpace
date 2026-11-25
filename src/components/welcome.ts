@@ -175,12 +175,6 @@ export function createWelcomeScreen(
 
   input?.addEventListener("input", () => {
     updateOmniClear();
-    // Synchronize to top omnibar input in real time
-    const globalInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (globalInput && document.activeElement === input) {
-      globalInput.value = input.value;
-      globalInput.dispatchEvent(new Event("input", { bubbles: true }));
-    }
   });
 
   omniClearBtn?.addEventListener("click", (e) => {
@@ -188,11 +182,6 @@ export function createWelcomeScreen(
     input.value = "";
     updateOmniClear();
     input.focus();
-    const globalInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (globalInput) {
-      globalInput.value = "";
-      globalInput.dispatchEvent(new Event("input", { bubbles: true }));
-    }
   });
 
   form?.addEventListener("submit", (e) => {

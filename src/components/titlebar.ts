@@ -397,12 +397,6 @@ export function createTitlebar(
 
   input.addEventListener("input", () => {
     updateClearButton();
-    // Synchronize to welcome screen omnibar if it is currently mounted
-    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
-    if (welcomeInput && document.activeElement === input) {
-      welcomeInput.value = input.value;
-      welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
-    }
   });
 
   clearBtn?.addEventListener("click", (e) => {
@@ -410,11 +404,6 @@ export function createTitlebar(
     input.value = "";
     updateClearButton();
     input.focus();
-    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
-    if (welcomeInput) {
-      welcomeInput.value = "";
-      welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
-    }
   });
 
   (container as TitlebarElement).focusOmnibar = () => {
