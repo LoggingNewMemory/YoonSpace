@@ -162,6 +162,12 @@ impl Default for AppConfig {
                     query_url: "https://duckduckgo.com/?q=".to_string(),
                     icon: "search".to_string(),
                 },
+                SearchEngine {
+                    id: "brave".to_string(),
+                    name: "Brave Search".to_string(),
+                    query_url: "https://search.brave.com/search?q=".to_string(),
+                    icon: "shield".to_string(),
+                },
             ],
             split_presets: vec![
                 SplitPreset {
@@ -207,9 +213,19 @@ pub fn load_config() -> AppConfig {
     let path = get_config_path();
     if let Ok(content) = fs::read_to_string(&path) {
         if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&content) {
+            let mut merged = false;
+            for default_engine in AppConfig::default().search_engines {
+                if !cfg.search_engines.iter().any(|e| e.id == default_engine.id) {
+                    cfg.search_engines.push(default_engine);
+                    merged = true;
+                }
+            }
             cfg.media_volume = cfg.media_volume.min(100);
             SAVED_MEDIA_VOLUME.store(cfg.media_volume, Ordering::SeqCst);
             SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
+            if merged {
+                let _ = save_config(&cfg);
+            }
             return cfg;
         }
     }

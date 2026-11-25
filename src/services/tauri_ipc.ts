@@ -111,6 +111,12 @@ export const tauriIpc = {
             query_url: "https://duckduckgo.com/?q=",
             icon: "search",
           },
+          {
+            id: "brave",
+            name: "Brave Search",
+            query_url: "https://search.brave.com/search?q=",
+            icon: "shield",
+          },
         ],
         split_presets: [
           {
