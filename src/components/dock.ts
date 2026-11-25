@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import type { MinimizedTab } from "../types";
-import { getFaviconUrl, getFallbackIcon } from "../utils/favicon";
+import { getCachedFaviconSync, getFaviconUrl, getFallbackIcon } from "../utils/favicon";
 import { escapeHtml, hideDockContextMenu, showDockContextMenu } from "./dock_context_menu";
 
 export { hideDockContextMenu };
@@ -35,6 +35,8 @@ export interface DockController {
   getTab: (tabId: string) => MinimizedTab | undefined;
   setMediaActive: (active: boolean) => void;
   setMediaPlaying: (playing: boolean) => void;
+  setBookmarkActive: (active: boolean) => void;
+  refreshIcons: () => void;
   // Backward-compatible aliases
   addMinimizedTab: (tab: MinimizedTab) => void;
   removeMinimizedTab: (tabId: string) => void;
@@ -47,7 +49,7 @@ function renderSingleIcon(tab: MinimizedTab): string {
   const favicon = getFaviconUrl(tab.url);
   const fallback = tab.icon || getFallbackIcon(tab.url, tab.title);
   return `
-    <div class="site-icon-box pointer-events-none w-6 h-6 rounded-md flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 select-none">
+    <div class="site-icon-box pointer-events-none w-6 h-6 rounded-md flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 select-none" data-favicon-url="${escapeHtml(tab.url || "")}" data-icon-size="w-[18px] h-[18px] object-contain rounded-sm">
       ${
         favicon
           ? `<img src="${favicon}" alt="" draggable="false" class="site-favicon-img pointer-events-none w-[18px] h-[18px] object-contain rounded-sm select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
@@ -71,13 +73,13 @@ function renderSplitIcons(tab: MinimizedTab): string {
   return `
     <div class="flex items-center justify-center gap-1 shrink-0 h-6 pointer-events-none select-none">
       <!-- Left Site Icon -->
-      <div class="w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 pointer-events-none select-none">
+      <div class="site-icon-box w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 pointer-events-none select-none" data-favicon-url="${escapeHtml(tab.leftUrl || "")}" data-icon-size="w-3.5 h-3.5 object-contain">
         ${
           leftFavicon
-            ? `<img src="${leftFavicon}" alt="" draggable="false" class="w-3.5 h-3.5 object-contain pointer-events-none select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
+            ? `<img src="${leftFavicon}" alt="" draggable="false" class="site-favicon-img w-3.5 h-3.5 object-contain pointer-events-none select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
             : ""
         }
-        <span class="material-symbols-outlined pointer-events-none select-none text-[12px] text-[#ffb59e] ${
+        <span class="material-symbols-outlined site-fallback-icon pointer-events-none select-none text-[12px] text-[#ffb59e] ${
           leftFavicon ? "hidden" : "flex"
         } items-center justify-center" style="${leftFavicon ? "display: none;" : "display: flex;"}">
           ${leftFallback}
@@ -88,13 +90,13 @@ function renderSplitIcons(tab: MinimizedTab): string {
       <div class="w-px h-3.5 bg-[#454545] shrink-0 pointer-events-none"></div>
 
       <!-- Right Site Icon -->
-      <div class="w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 pointer-events-none select-none">
+      <div class="site-icon-box w-4 h-4 rounded-sm flex items-center justify-center overflow-hidden shrink-0 bg-[#252528]/80 pointer-events-none select-none" data-favicon-url="${escapeHtml(tab.rightUrl || "")}" data-icon-size="w-3.5 h-3.5 object-contain">
         ${
           rightFavicon
-            ? `<img src="${rightFavicon}" alt="" draggable="false" class="w-3.5 h-3.5 object-contain pointer-events-none select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
+            ? `<img src="${rightFavicon}" alt="" draggable="false" class="site-favicon-img w-3.5 h-3.5 object-contain pointer-events-none select-none" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />`
             : ""
         }
-        <span class="material-symbols-outlined pointer-events-none select-none text-[12px] text-[#ffb59e] ${
+        <span class="material-symbols-outlined site-fallback-icon pointer-events-none select-none text-[12px] text-[#ffb59e] ${
           rightFavicon ? "hidden" : "flex"
         } items-center justify-center" style="${rightFavicon ? "display: none;" : "display: flex;"}">
           ${rightFallback}
@@ -126,6 +128,19 @@ export function createDock(
   let isExpanded = false;
   let isMediaActiveState = false;
   let isMediaPlayingState = false;
+  let isBookmarkActiveState = false;
+
+  const updateBookmarkButtonUI = () => {
+    const addBtn = aside.querySelector("#dock-btn-add");
+    if (!addBtn) return;
+    if (isBookmarkActiveState) {
+      addBtn.classList.add("bg-[#222224]", "text-[#f85e2a]", "shadow-sm");
+      addBtn.classList.remove("text-[#e2bfb4]");
+    } else {
+      addBtn.classList.remove("bg-[#222224]", "text-[#f85e2a]", "shadow-sm");
+      addBtn.classList.add("text-[#e2bfb4]");
+    }
+  };
 
   const updateMediaButtonUI = () => {
     const mediaBtn = aside.querySelector("#dock-btn-media");
@@ -174,10 +189,10 @@ export function createDock(
               <span class="material-symbols-outlined text-[22px]">grid_view</span>
             </button>
 
-            <!-- Add Button (+) -->
+            <!-- Add Bookmark Button (+) -->
             <button
               id="dock-btn-add"
-              title="New Tab / Search"
+              title="Bookmarks (Ctrl+D)"
               class="dock-item w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
             >
               <span class="material-symbols-outlined text-[22px]">add</span>
@@ -249,14 +264,14 @@ export function createDock(
             </button>
           </div>
 
-          <!-- New Tab / Search full row button -->
+          <!-- Bookmarks full row button -->
           <button
             id="dock-btn-add"
-            title="New Tab / Search"
+            title="Bookmarks (Ctrl+D)"
             class="w-full h-8 px-2.5 rounded-xl flex items-center gap-2 text-[#e2bfb4] hover:bg-[#202022] hover:text-[#e5e2e1] border border-[#2b2b2e] hover:border-[#3d3d42] transition-colors cursor-pointer text-xs font-medium"
           >
             <span class="material-symbols-outlined text-[17px]">add</span>
-            <span class="truncate">New Tab / Search</span>
+            <span class="truncate">Bookmarks</span>
           </button>
 
           <!-- Divider line below top buttons -->
@@ -319,6 +334,7 @@ export function createDock(
     });
 
     updateMediaButtonUI();
+    updateBookmarkButtonUI();
   };
 
   const updateDockDropHighlight = (x: number, y: number, sourceWrapper: HTMLElement) => {
@@ -685,6 +701,37 @@ export function createDock(
     setMediaPlaying: (playing: boolean) => {
       isMediaPlayingState = playing;
       updateMediaButtonUI();
+    },
+    setBookmarkActive: (active: boolean) => {
+      isBookmarkActiveState = active;
+      updateBookmarkButtonUI();
+    },
+    refreshIcons: () => {
+      aside.querySelectorAll<HTMLElement>(".site-icon-box[data-favicon-url]").forEach((box) => {
+        const url = box.getAttribute("data-favicon-url");
+        if (!url) return;
+        const cached = getCachedFaviconSync(url);
+        if (!cached) return;
+        let img = box.querySelector<HTMLImageElement>("img.site-favicon-img");
+        const fallback = box.querySelector<HTMLElement>(".site-fallback-icon");
+        if (!img) {
+          img = document.createElement("img");
+          const sizeClasses = box.getAttribute("data-icon-size") || "w-[18px] h-[18px] object-contain rounded-sm";
+          img.className = `site-favicon-img pointer-events-none select-none ${sizeClasses}`;
+          img.alt = "";
+          img.draggable = false;
+          img.onerror = () => {
+            img!.style.display = "none";
+            if (fallback) fallback.style.display = "flex";
+          };
+          box.insertBefore(img, box.firstChild);
+        }
+        if (img.getAttribute("src") !== cached) {
+          img.src = cached;
+          img.style.display = "block";
+          if (fallback) fallback.style.display = "none";
+        }
+      });
     },
     // Backward-compatible aliases
     addMinimizedTab: addTab,

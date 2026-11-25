@@ -179,3 +179,31 @@ export interface VaultStats {
   cookies_size_bytes: number;
   cookies_formatted_size: string;
 }
+
+export interface BookmarkItem {
+  id: string;
+  title: string;
+  url: string;
+  icon_url?: string;
+  icon_data_url?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ResolvedSiteLogo {
+  origin: string;
+  data_url: string;
+  icon_url?: string;
+  title?: string;
+  from_cache: boolean;
+}
+
+export interface FaviconCachedEvent {
+  tab_id: string;
+  url: string;
+  origin: string;
+  data_url: string;
+  icon_url?: string;
+  title?: string;
+  from_cache: boolean;
+}

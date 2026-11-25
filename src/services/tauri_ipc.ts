@@ -18,10 +18,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppConfig,
+  BookmarkItem,
   CacheInfo,
   DownloadItem,
   EngineerToken,
   MemoryStats,
+  ResolvedSiteLogo,
   SavedCredential,
   ShieldBlockEvent,
   ShieldSettings,
@@ -625,6 +627,81 @@ export const tauriIpc = {
       await invoke("set_overlay_right_offset", { offset });
     } catch (e) {
       console.warn("set_overlay_right_offset failed:", e);
+    }
+  },
+
+  // Bookmarks & Site Logo Cache
+  async listBookmarks(): Promise<BookmarkItem[]> {
+    try {
+      return await invoke<BookmarkItem[]>("list_bookmarks");
+    } catch (e) {
+      console.warn("list_bookmarks failed:", e);
+      return [];
+    }
+  },
+
+  async addBookmark(
+    url: string,
+    title?: string,
+    candidateIconUrl?: string
+  ): Promise<BookmarkItem> {
+    return await invoke<BookmarkItem>("add_bookmark", {
+      title: title || null,
+      url,
+      candidateIconUrl: candidateIconUrl || null,
+    });
+  },
+
+  async updateBookmark(
+    id: string,
+    url: string,
+    title?: string,
+    refreshIcon?: boolean
+  ): Promise<BookmarkItem> {
+    return await invoke<BookmarkItem>("update_bookmark", {
+      id,
+      title: title || null,
+      url,
+      refreshIcon: refreshIcon ?? false,
+    });
+  },
+
+  async deleteBookmark(id: string): Promise<void> {
+    await invoke("delete_bookmark", { id });
+  },
+
+  async getCachedFavicon(url: string): Promise<ResolvedSiteLogo | null> {
+    try {
+      return await invoke<ResolvedSiteLogo | null>("get_cached_favicon", { url });
+    } catch {
+      return null;
+    }
+  },
+
+  async resolveSiteLogo(
+    url: string,
+    candidateIconUrl?: string,
+    title?: string,
+    forceRefresh?: boolean
+  ): Promise<ResolvedSiteLogo | null> {
+    try {
+      return await invoke<ResolvedSiteLogo>("resolve_site_logo", {
+        url,
+        candidateIconUrl: candidateIconUrl || null,
+        title: title || null,
+        forceRefresh: forceRefresh ?? false,
+      });
+    } catch (e) {
+      console.warn("resolve_site_logo failed:", e);
+      return null;
+    }
+  },
+
+  async clearFaviconCache(): Promise<void> {
+    try {
+      await invoke("clear_favicon_cache");
+    } catch (e) {
+      console.warn("clear_favicon_cache failed:", e);
     }
   },
 };

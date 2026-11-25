@@ -336,6 +336,89 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
                 }
             });
             let _ = ucm.register_script_message_handler("media_state");
+
+            let app_favicon = app_handle.clone();
+            let tab_id_favicon = tab_id_str.clone();
+            ucm.connect_script_message_received(Some("site_favicon"), move |_ucm, js_res| {
+                if let Some(js_val) = js_res.js_value() {
+                    use javascriptcore::ValueExt;
+                    use tauri::Emitter;
+                    let msg_str = js_val.to_str();
+                    #[derive(serde::Deserialize)]
+                    #[serde(rename_all = "camelCase")]
+                    struct SiteFaviconPayload {
+                        tab_id: Option<String>,
+                        page_url: Option<String>,
+                        icon_url: Option<String>,
+                        title: Option<String>,
+                    }
+                    #[derive(Clone, serde::Serialize)]
+                    struct FaviconCachedEvent {
+                        tab_id: String,
+                        url: String,
+                        origin: String,
+                        data_url: String,
+                        icon_url: Option<String>,
+                        title: Option<String>,
+                        from_cache: bool,
+                    }
+                    if let Ok(payload) = serde_json::from_str::<SiteFaviconPayload>(msg_str.as_str()) {
+                        let page_url = match payload.page_url {
+                            Some(u) if u.starts_with("http://") || u.starts_with("https://") => u,
+                            _ => return,
+                        };
+                        let target_tab = payload.tab_id.unwrap_or_else(|| tab_id_favicon.clone());
+
+                        // Fast path: already cached on disk/memory -> emit immediately without any network fetch
+                        if let Some(cached) = crate::core::favicon_cache::get_cached_favicon(&page_url) {
+                            if !cached.data_url.is_empty() {
+                                let _ = app_favicon.emit(
+                                    "webview-favicon-cached",
+                                    FaviconCachedEvent {
+                                        tab_id: target_tab,
+                                        url: page_url,
+                                        origin: cached.origin,
+                                        data_url: cached.data_url,
+                                        icon_url: cached.icon_url,
+                                        title: payload.title.or(cached.title),
+                                        from_cache: true,
+                                    },
+                                );
+                            }
+                            return;
+                        }
+
+                        // Not cached yet: detect & cache in background thread
+                        let app_bg = app_favicon.clone();
+                        let cand_icon = payload.icon_url;
+                        let cand_title = payload.title;
+                        tauri::async_runtime::spawn_blocking(move || {
+                            if let Ok(resolved) = crate::core::favicon_cache::resolve_site_logo(
+                                &page_url,
+                                cand_icon.as_deref(),
+                                cand_title.as_deref(),
+                                false,
+                            ) {
+                                if !resolved.data_url.is_empty() {
+                                    let _ = app_bg.emit(
+                                        "webview-favicon-cached",
+                                        FaviconCachedEvent {
+                                            tab_id: target_tab,
+                                            url: page_url,
+                                            origin: resolved.origin,
+                                            data_url: resolved.data_url,
+                                            icon_url: resolved.icon_url,
+                                            title: resolved.title,
+                                            from_cache: resolved.from_cache,
+                                        },
+                                    );
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+            let _ = ucm.register_script_message_handler("site_favicon");
         }
 
         // 5a. Load progress tracking via WebKitGTK estimated load progress
@@ -539,9 +622,11 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
     let tab_id_load = tab_id.clone();
     let shield_script = crate::core::shield::get_shield_injection_script(&tab_id);
     let media_script = get_media_observer_script(&tab_id);
+    let favicon_script = get_favicon_observer_script(&tab_id);
     let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(blank_url))
         .initialization_script(&shield_script)
         .initialization_script(&media_script)
+        .initialization_script(&favicon_script)
         .on_document_title_changed(move |_webview, title| {
             if title == "about:blank" || title.is_empty() {
                 return;
@@ -667,9 +752,11 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let tab_id_left = tab_id.clone();
     let left_shield = crate::core::shield::get_shield_injection_script(&left_label);
     let left_media = get_media_observer_script(&left_label);
+    let left_favicon = get_favicon_observer_script(&left_label);
     let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(blank_url.clone()))
         .initialization_script(&left_shield)
         .initialization_script(&left_media)
+        .initialization_script(&left_favicon)
         .on_document_title_changed(move |_webview, title| {
             if title == "about:blank" || title.is_empty() {
                 return;
@@ -732,9 +819,11 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let tab_id_right = tab_id.clone();
     let right_shield = crate::core::shield::get_shield_injection_script(&right_label);
     let right_media = get_media_observer_script(&right_label);
+    let right_favicon = get_favicon_observer_script(&right_label);
     let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(blank_url))
         .initialization_script(&right_shield)
         .initialization_script(&right_media)
+        .initialization_script(&right_favicon)
         .on_document_title_changed(move |_webview, title| {
             if title == "about:blank" || title.is_empty() {
                 return;
@@ -943,6 +1032,80 @@ fn get_media_observer_script(tab_id: &str) -> String {
       ensurePolling();
     }});
   }}
+}})();"##,
+        tab_id = tab_id_escaped
+    )
+}
+
+fn get_favicon_observer_script(tab_id: &str) -> String {
+    let tab_id_escaped = tab_id.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        r##"(function() {{
+  if (window.__YOONSPACE_FAVICON_OBSERVER__) return;
+  window.__YOONSPACE_FAVICON_OBSERVER__ = true;
+  const TAB_ID = "{tab_id}";
+  let lastReportedKey = "";
+
+  function pickBestIconUrl() {{
+    const links = Array.from(document.querySelectorAll('link[rel]'));
+    let bestUrl = "";
+    let bestScore = -1;
+    for (const link of links) {{
+      const rel = (link.getAttribute('rel') || '').toLowerCase();
+      const href = link.href;
+      if (!href) continue;
+      const tokens = rel.split(/\s+/);
+      const isIcon = tokens.includes('icon') || tokens.includes('apple-touch-icon') || tokens.includes('apple-touch-icon-precomposed') || rel === 'shortcut icon';
+      if (!isIcon) continue;
+
+      let score = 10;
+      const lowerHref = href.toLowerCase();
+      const type = (link.getAttribute('type') || '').toLowerCase();
+      const sizes = (link.getAttribute('sizes') || '').toLowerCase();
+      if (lowerHref.includes('.svg') || type.includes('svg')) score += 60;
+      else if (lowerHref.includes('.png') || type.includes('png')) score += 40;
+      if (rel.includes('apple-touch-icon')) score += 35;
+      if (tokens.includes('icon')) score += 25;
+      const sizeMatch = sizes.match(/(\d+)x\d+/);
+      if (sizeMatch) score += Math.min(128, parseInt(sizeMatch[1], 10)) / 2;
+
+      if (score > bestScore) {{
+        bestScore = score;
+        bestUrl = href;
+      }}
+    }}
+    if (!bestUrl && location.origin && location.origin !== 'null') {{
+      bestUrl = location.origin + '/favicon.ico';
+    }}
+    return bestUrl;
+  }}
+
+  function reportFavicon() {{
+    try {{
+      if (!location.href || !/^https?:\/\//i.test(location.href)) return;
+      const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.site_favicon;
+      if (!handler) return;
+      const iconUrl = pickBestIconUrl();
+      const key = location.origin + '|' + iconUrl;
+      if (key === lastReportedKey) return;
+      lastReportedKey = key;
+      handler.postMessage(JSON.stringify({{
+        tabId: TAB_ID,
+        pageUrl: location.href,
+        iconUrl: iconUrl || null,
+        title: document.title || null
+      }}));
+    }} catch (e) {{}}
+  }}
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {{
+    setTimeout(reportFavicon, 120);
+  }} else {{
+    window.addEventListener('DOMContentLoaded', () => setTimeout(reportFavicon, 120), {{ once: true }});
+  }}
+  window.addEventListener('load', () => setTimeout(reportFavicon, 200));
+  window.addEventListener('popstate', () => setTimeout(reportFavicon, 200));
+  window.addEventListener('yt-navigate-finish', () => setTimeout(reportFavicon, 250));
 }})();"##,
         tab_id = tab_id_escaped
     )

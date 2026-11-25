@@ -24,6 +24,7 @@ import { createSplitPresetsSection } from "./components/split_presets";
 import type {
   AppConfig,
   DownloadItem,
+  FaviconCachedEvent,
   MinimizedTab,
   SplitBounds,
   SplitPreset,
@@ -36,6 +37,11 @@ import {
   getTabEffectiveTitle,
 } from "./utils/url";
 import {
+  normalizeUrlForCache,
+  onFaviconCached,
+  setCachedFaviconDataUrl,
+} from "./utils/favicon";
+import {
   createDragSplitOverlay,
   type DragSplitOverlayController,
 } from "./components/split/drag_overlay";
@@ -47,6 +53,11 @@ import {
   createMediaController,
   type MediaController,
 } from "./components/media_controller";
+import {
+  createBookmarksController,
+  createWelcomeBookmarksSection,
+  type BookmarksController,
+} from "./components/bookmarks";
 
 let currentConfig: AppConfig;
 let isViewOpen = false;
@@ -56,7 +67,9 @@ let webBar: WebBarController;
 let isShieldOpen = false;
 let isDownloadOpen = false;
 let isMediaOpen = false;
+let isBookmarkOpen = false;
 let mediaController: MediaController;
+let bookmarksController: BookmarksController;
 let isSpawning = false;
 let dragOverlay: DragSplitOverlayController;
 let settingsPage: SettingsPageController;
@@ -67,7 +80,7 @@ let mainWrapper: HTMLElement;
 
 function getSplitBounds(): SplitBounds {
   const dockWidth = dock ? dock.getWidth() : 64;
-  const leftOffset = isMediaOpen ? 360 : 0;
+  const leftOffset = isMediaOpen || isBookmarkOpen ? 360 : 0;
   const rightOffset = isShieldOpen || isDownloadOpen ? 360 : 0;
   const headerHeight = 80;
   const webBarHeight = 28;
@@ -83,6 +96,7 @@ function getSplitBounds(): SplitBounds {
 
 function updateShieldForTab(tab: MinimizedTab | null) {
   mediaController?.updateActiveTab(tab);
+  bookmarksController?.updateActiveSite(tab, isViewOpen && Boolean(tab));
   const header = document.querySelector("header") as any;
   if (!header || !header.shieldController) return;
   if (!tab) {
@@ -875,19 +889,56 @@ async function handleHomeClick() {
   }
 }
 
-// User clicked Add (+) in dock -> goes to home / focuses omnibar
-async function handleNewTab() {
-  await handleHomeClick();
-  const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
-  if (welcomeInput) {
-    welcomeInput.focus();
-    welcomeInput.select();
-  } else {
-    const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
-    if (omnibarInput) {
-      omnibarInput.focus();
-      omnibarInput.select();
+// Open a bookmarked URL in a dedicated new tab (or switch to Settings off first)
+async function handleOpenBookmark(rawUrl: string, title?: string) {
+  if (isSettingsOpen) {
+    isSettingsOpen = false;
+    settingsPage?.hide();
+  }
+  if (isSpawning) {
+    console.warn("[YoonSpace] Open bookmark ignored: already initializing a view");
+    return;
+  }
+  isSpawning = true;
+
+  const targetUrl = normalizeUrlForCache(rawUrl);
+  const displayTitle = title?.trim() || deriveTitleFromInput(targetUrl);
+  const tabId = "tab-" + Date.now();
+
+  activeTab = {
+    id: tabId,
+    title: displayTitle,
+    url: targetUrl,
+    query: targetUrl,
+    isSplit: false,
+  };
+
+  dock.addTab(activeTab);
+  dock.setActiveTabId(activeTab.id);
+
+  const bounds = getSplitBounds();
+
+  try {
+    webBar.startProgress("single");
+    const headerEl = document.querySelector("header") as any;
+    headerEl?.setLoading?.(true);
+
+    await tauriIpc.spawnSingleView(targetUrl, bounds, activeTab.id);
+    isViewOpen = true;
+
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.add("hidden");
     }
+
+    webBar.setSingleMode(displayTitle);
+    webBar.show();
+    setOmnibarText(targetUrl);
+    updateShieldForTab(activeTab);
+  } catch (e) {
+    console.error("Failed to open bookmark:", e);
+  } finally {
+    isSpawning = false;
   }
 }
 
@@ -1024,9 +1075,10 @@ async function init() {
 
   const updateLayoutOffset = () => {
     const dockWidth = dock ? dock.getWidth() : 64;
-    const leftOffset = isMediaOpen ? 360 : 0;
+    const leftOffset = isMediaOpen || isBookmarkOpen ? 360 : 0;
     const rightOffset = isShieldOpen || isDownloadOpen ? 360 : 0;
     mediaController?.setLeftOffset(dockWidth);
+    bookmarksController?.setLeftOffset(dockWidth);
     webBar.setLeftOffset(dockWidth + leftOffset);
     webBar.setRightOffset(rightOffset);
     mainWrapper.style.paddingLeft = `${dockWidth + leftOffset}px`;
@@ -1042,11 +1094,34 @@ async function init() {
   const handleMediaToggle = (isOpen?: boolean) => {
     isMediaOpen = typeof isOpen === "boolean" ? isOpen : !isMediaOpen;
     if (isMediaOpen) {
+      if (isBookmarkOpen) {
+        bookmarksController?.hide();
+        isBookmarkOpen = false;
+        dock?.setBookmarkActive(false);
+      }
       mediaController?.show();
       dock?.setMediaActive(true);
     } else {
       mediaController?.hide();
       dock?.setMediaActive(false);
+    }
+    updateLayoutOffset();
+  };
+
+  const handleBookmarkToggle = (isOpen?: boolean) => {
+    isBookmarkOpen = typeof isOpen === "boolean" ? isOpen : !isBookmarkOpen;
+    if (isBookmarkOpen) {
+      if (isMediaOpen) {
+        mediaController?.hide();
+        isMediaOpen = false;
+        dock?.setMediaActive(false);
+      }
+      bookmarksController?.updateActiveSite(isViewOpen ? activeTab : null, isViewOpen);
+      bookmarksController?.show();
+      dock?.setBookmarkActive(true);
+    } else {
+      bookmarksController?.hide();
+      dock?.setBookmarkActive(false);
     }
     updateLayoutOffset();
   };
@@ -1107,6 +1182,8 @@ async function init() {
           settingsPage?.hide();
         }
         handleHomeClick();
+      } else if (tabId === "bookmarks") {
+        handleBookmarkToggle();
       } else if (tabId === "settings") {
         if (isSettingsOpen) {
           handleBackFromSettings();
@@ -1117,11 +1194,12 @@ async function init() {
     },
     handleRestoreTab,
     handleCloseTab,
-    handleNewTab,
+    () => handleBookmarkToggle(),
     (isExpanded) => {
       const dockWidth = isExpanded ? 220 : 64;
       mediaController?.setLeftOffset(dockWidth);
-      const leftOffset = isMediaOpen ? 360 : 0;
+      bookmarksController?.setLeftOffset(dockWidth);
+      const leftOffset = isMediaOpen || isBookmarkOpen ? 360 : 0;
       webBar.setLeftOffset(dockWidth + leftOffset);
       mainWrapper.style.paddingLeft = `${dockWidth + leftOffset}px`;
       if (isViewOpen) {
@@ -1166,6 +1244,28 @@ async function init() {
   );
   mediaController.setLeftOffset(dock.getWidth());
 
+  // Welcome screen bookmarks quick-access section
+  const welcomeBookmarks = createWelcomeBookmarksSection(
+    (url, title) => handleOpenBookmark(url, title),
+    () => handleBookmarkToggle(true)
+  );
+
+  // Bookmarks Drawer (Left Drawer adjacent to Dock, triggered by + button)
+  bookmarksController = createBookmarksController(
+    () => {
+      isBookmarkOpen = false;
+      dock.setBookmarkActive(false);
+      updateLayoutOffset();
+    },
+    (url, title) => {
+      handleOpenBookmark(url, title);
+    },
+    (bookmarksList) => {
+      welcomeBookmarks.render(bookmarksList);
+    }
+  );
+  bookmarksController.setLeftOffset(dock.getWidth());
+
   // Drag Split Overlay for dropping tab onto active view
   dragOverlay = createDragSplitOverlay();
   app.appendChild(dragOverlay.element);
@@ -1192,9 +1292,17 @@ async function init() {
         handleOpenSettings();
       }
     }
-    // Escape closes Media or Settings if open
+    // 0b. Bookmarks (Ctrl+D / Cmd+D)
+    else if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D")) {
+      e.preventDefault();
+      handleBookmarkToggle();
+    }
+    // Escape closes Bookmarks, Media, or Settings if open
     else if (e.key === "Escape") {
-      if (isMediaOpen) {
+      if (isBookmarkOpen) {
+        e.preventDefault();
+        handleBookmarkToggle(false);
+      } else if (isMediaOpen) {
         e.preventDefault();
         handleMediaToggle(false);
       } else if (isSettingsOpen) {
@@ -1251,6 +1359,7 @@ async function init() {
     currentConfig.split_presets,
     handleSpawnPreset
   );
+  welcome.appendChild(welcomeBookmarks.element);
   welcome.appendChild(presets);
 
   main.appendChild(welcome);
@@ -1270,6 +1379,7 @@ async function init() {
       webBar.setSingleMode(event.payload);
       dock.updateTabTitle(activeTab.id, event.payload);
       mediaController?.updateActiveTab(activeTab);
+      bookmarksController?.updateActiveSite(activeTab, isViewOpen);
     }
   });
 
@@ -1281,6 +1391,7 @@ async function init() {
       activeTab.title = combined;
       dock.updateTabTitle(activeTab.id, combined, event.payload, activeTab.rightTitle);
       mediaController?.updateActiveTab(activeTab);
+      bookmarksController?.updateActiveSite(activeTab, isViewOpen);
     }
   });
 
@@ -1292,7 +1403,21 @@ async function init() {
       activeTab.title = combined;
       dock.updateTabTitle(activeTab.id, combined, activeTab.leftTitle, event.payload);
       mediaController?.updateActiveTab(activeTab);
+      bookmarksController?.updateActiveSite(activeTab, isViewOpen);
     }
+  });
+
+  // 5c. Detected & cached site logos from native WebViews
+  tauriIpc.listen<FaviconCachedEvent>("webview-favicon-cached", (event) => {
+    const payload = event.payload;
+    if (!payload?.url || !payload?.data_url) return;
+    setCachedFaviconDataUrl(payload.url, payload.data_url);
+  });
+
+  onFaviconCached(() => {
+    dock.refreshIcons();
+    bookmarksController?.updateActiveSite(isViewOpen ? activeTab : null, isViewOpen);
+    welcomeBookmarks.render(bookmarksController.getBookmarks());
   });
 
   // 5b. Real-time HTML5 media playback state from active WebView
