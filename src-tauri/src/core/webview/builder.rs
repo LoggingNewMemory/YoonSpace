@@ -61,9 +61,9 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
             settings.set_enable_fullscreen(true);
         }
 
-        // 1c. Enable WebBrowser CacheModel for aggressive disk & memory caching
+        // 1c. Enable WebBrowser CacheModel for aggressive disk & memory caching on the actual WebView context
         use webkit2gtk::WebContextExt;
-        if let Some(context) = webkit2gtk::WebContext::default() {
+        if let Some(context) = WebViewExt::context(&inner_wv) {
             context.set_cache_model(webkit2gtk::CacheModel::WebBrowser);
         }
         if let Some(data_manager) = inner_wv.website_data_manager() {

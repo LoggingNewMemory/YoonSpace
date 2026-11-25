@@ -466,16 +466,44 @@ export const tauriIpc = {
       return await invoke<CacheInfo>("get_cache_info");
     } catch (e) {
       console.warn("get_cache_info failed:", e);
-      return { size_bytes: 0, formatted_size: "0 B" };
+      return {
+        size_bytes: 0,
+        formatted_size: "0 B",
+        http_cache_bytes: 0,
+        http_cache_formatted: "0 B",
+        site_data_bytes: 0,
+        site_data_formatted: "0 B",
+        favicon_cache_bytes: 0,
+        favicon_cache_formatted: "0 B",
+        shield_cache_bytes: 0,
+        shield_cache_formatted: "0 B",
+        cache_dir: "",
+        cache_limit_mb: 512,
+        categories: [],
+      };
     }
   },
 
-  async clearBrowserCache(): Promise<CacheInfo> {
+  async clearBrowserCache(scope: "http_cache" | "site_data" | "favicons" | "all" = "all"): Promise<CacheInfo> {
     try {
-      return await invoke<CacheInfo>("clear_browser_cache");
+      return await invoke<CacheInfo>("clear_browser_cache", { scope });
     } catch (e) {
       console.warn("clear_browser_cache failed:", e);
-      return { size_bytes: 0, formatted_size: "0 B" };
+      return {
+        size_bytes: 0,
+        formatted_size: "0 B",
+        http_cache_bytes: 0,
+        http_cache_formatted: "0 B",
+        site_data_bytes: 0,
+        site_data_formatted: "0 B",
+        favicon_cache_bytes: 0,
+        favicon_cache_formatted: "0 B",
+        shield_cache_bytes: 0,
+        shield_cache_formatted: "0 B",
+        cache_dir: "",
+        cache_limit_mb: 512,
+        categories: [],
+      };
     }
   },
 

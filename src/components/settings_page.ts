@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { tauriIpc } from "../services/tauri_ipc";
-import type { AppConfig } from "../types";
+import type { AppConfig, CacheClearScope, CacheInfo, StorageCategoryInfo } from "../types";
 
 export interface SettingsPageController {
   element: HTMLElement;
@@ -66,35 +66,70 @@ export function createSettingsPage(
     <div class="flex flex-col gap-8 pb-16">
       <!-- 1. Browser Cache & Storage Section -->
       <section class="flex flex-col gap-3.5">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-[#f85e2a]/15 text-[#f85e2a] flex items-center justify-center">
-            <span class="material-symbols-outlined text-lg">cached</span>
+        <div class="flex items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-[#f85e2a]/15 text-[#f85e2a] flex items-center justify-center">
+              <span class="material-symbols-outlined text-lg">hard_drive</span>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-[#e5e2e1] uppercase tracking-wider">Browser Cache & Storage</h2>
+            </div>
           </div>
-          <div>
-            <h2 class="text-sm font-bold text-[#e5e2e1] uppercase tracking-wider">Browser Cache & Storage</h2>
+
+          <div class="flex items-center gap-2">
+            <div id="settings-cache-disk-usage" class="flex items-center gap-2 text-xs">
+              <span class="text-[#8e8d91] uppercase tracking-wider text-[11px] font-medium">Total Usage</span>
+              <span
+                id="settings-page-cache-size"
+                class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] shadow-inner"
+              >
+                Calculating...
+              </span>
+            </div>
+            <button
+              type="button"
+              id="btn-settings-refresh-cache"
+              class="p-1.5 rounded-lg bg-[#1c1c20] hover:bg-[#28282e] text-[#a09e9d] hover:text-[#e5e2e1] border border-[#2e2e34] transition-all cursor-pointer"
+              title="Recalculate storage usage"
+            >
+              <span class="material-symbols-outlined text-base">refresh</span>
+            </button>
           </div>
         </div>
 
         <div class="bg-[#18181b] border border-[#28282e] rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
-          <div>
-            <div class="text-sm font-semibold text-[#e5e2e1]">Page Assets & Resource Cache</div>
-            <p class="text-xs text-[#a09e9d] mt-1 leading-relaxed">
-              Caches images, stylesheets, scripts, and documents locally for faster page loads.
-            </p>
+          <!-- Segmented Storage Distribution Bar -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between text-[11px] text-[#8e8d91]">
+              <span class="font-medium uppercase tracking-wider">Storage Distribution</span>
+              <span id="settings-cache-dir-path" class="font-mono text-[10px] text-[#76757a] truncate max-w-[60%]" title=""></span>
+            </div>
+            <div id="settings-cache-bar" class="w-full h-2.5 rounded-full bg-[#222227] border border-[#2c2c34] overflow-hidden flex">
+              <div id="bar-seg-http_cache" class="h-full bg-[#f85e2a] transition-all duration-300" style="width: 0%"></div>
+              <div id="bar-seg-site_data" class="h-full bg-[#60a5fa] transition-all duration-300" style="width: 0%"></div>
+              <div id="bar-seg-favicons" class="h-full bg-[#34d399] transition-all duration-300" style="width: 0%"></div>
+              <div id="bar-seg-shield_cache" class="h-full bg-[#a78bfa] transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#a09e9d]">
+              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#f85e2a]"></span>Page Cache</span>
+              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#60a5fa]"></span>Site Data</span>
+              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#34d399]"></span>Favicons</span>
+              <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#a78bfa]"></span>Shields Engine</span>
+            </div>
           </div>
 
+          <!-- Granular Category Breakdown -->
+          <div id="settings-cache-categories" class="flex flex-col divide-y divide-[#232328] border-t border-[#232328]">
+            <!-- Populated dynamically -->
+          </div>
+
+          <!-- Footer Action Bar -->
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3.5 border-t border-[#232328]">
-            <div class="flex items-center gap-2">
-              <div id="settings-cache-disk-usage" class="flex items-center gap-2.5 text-xs">
-                <span class="text-[#8e8d91] uppercase tracking-wider text-[11px] font-medium">Disk Usage</span>
-                <span
-                  id="settings-page-cache-size"
-                  class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] shadow-inner"
-                >
-                  Calculating...
-                </span>
-              </div>
+            <div class="flex items-center gap-2 min-h-[24px]">
               <div id="settings-cache-feedback" class="hidden text-xs text-[#8e8d91] flex items-center gap-1.5"></div>
+              <span id="settings-cache-note" class="text-[11px] text-[#76757a]">
+                Clearing cache keeps your saved passwords, vault tokens, and cookies intact.
+              </span>
             </div>
 
             <button
@@ -103,7 +138,7 @@ export function createSettingsPage(
               class="px-4 py-2 rounded-xl bg-[#25252b] hover:bg-[#93000a]/50 text-[#ffb4ab] border border-[#383842] hover:border-[#ff5449] text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm shrink-0"
             >
               <span class="material-symbols-outlined text-base">delete_sweep</span>
-              <span id="btn-settings-clear-cache-label">Clear Browser Cache</span>
+              <span id="btn-settings-clear-cache-label">Clear All Browsing Cache</span>
             </button>
           </div>
         </div>
@@ -233,9 +268,12 @@ export function createSettingsPage(
   const backBtn = container.querySelector("#btn-settings-back") as HTMLElement;
   const clearCacheBtn = container.querySelector("#btn-settings-clear-cache") as HTMLButtonElement;
   const clearCacheLabel = container.querySelector("#btn-settings-clear-cache-label") as HTMLElement;
+  const refreshCacheBtn = container.querySelector("#btn-settings-refresh-cache") as HTMLButtonElement;
   const cacheSizeEl = container.querySelector("#settings-page-cache-size") as HTMLElement;
-  const cacheDiskUsageEl = container.querySelector("#settings-cache-disk-usage") as HTMLElement;
+  const cacheDirPathEl = container.querySelector("#settings-cache-dir-path") as HTMLElement;
+  const cacheCategoriesEl = container.querySelector("#settings-cache-categories") as HTMLElement;
   const cacheFeedback = container.querySelector("#settings-cache-feedback") as HTMLElement;
+  const cacheNote = container.querySelector("#settings-cache-note") as HTMLElement;
   const engineListEl = container.querySelector("#settings-page-engine-list") as HTMLElement;
 
   // User Data Elements
@@ -298,37 +336,126 @@ export function createSettingsPage(
     });
   }
 
+  const CATEGORY_COLORS: Record<string, string> = {
+    http_cache: "#f85e2a",
+    site_data: "#60a5fa",
+    favicons: "#34d399",
+    shield_cache: "#a78bfa",
+  };
+
+  function renderCacheInfo(info: CacheInfo) {
+    cacheSizeEl.textContent = info.formatted_size;
+    if (cacheDirPathEl) {
+      cacheDirPathEl.textContent = info.cache_dir || "";
+      cacheDirPathEl.title = info.cache_dir || "";
+    }
+
+    const total = Math.max(info.size_bytes, 1);
+    const segments: Array<[string, number]> = [
+      ["http_cache", info.http_cache_bytes],
+      ["site_data", info.site_data_bytes],
+      ["favicons", info.favicon_cache_bytes],
+      ["shield_cache", info.shield_cache_bytes],
+    ];
+    for (const [id, bytes] of segments) {
+      const segEl = container.querySelector(`#bar-seg-${id}`) as HTMLElement | null;
+      if (segEl) {
+        const pct = info.size_bytes > 0 ? Math.max(bytes > 0 ? 1.5 : 0, (bytes / total) * 100) : 0;
+        segEl.style.width = `${pct.toFixed(2)}%`;
+      }
+    }
+
+    cacheCategoriesEl.innerHTML = "";
+    const categories: StorageCategoryInfo[] = info.categories || [];
+    categories.forEach((cat) => {
+      const color = CATEGORY_COLORS[cat.id] || "#a09e9d";
+      const row = document.createElement("div");
+      row.className = "py-3 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3";
+
+      const left = document.createElement("div");
+      left.className = "flex flex-col gap-0.5 min-w-0";
+      left.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${color}"></span>
+          <span class="text-xs font-semibold text-[#e5e2e1] truncate">${cat.label}</span>
+          <span class="text-[10px] font-mono text-[#76757a] px-1.5 py-0.5 rounded bg-[#202025] border border-[#2c2c34]">${cat.file_count.toLocaleString()} files</span>
+        </div>
+        <p class="text-[11px] text-[#8e8d91] pl-4 leading-relaxed">${cat.description}</p>
+      `;
+
+      const right = document.createElement("div");
+      right.className = "flex items-center gap-2.5 shrink-0 pl-4 sm:pl-0";
+
+      const sizeBadge = document.createElement("span");
+      sizeBadge.className = "text-xs font-mono font-bold text-[#ffb59e] min-w-[64px] text-right";
+      sizeBadge.textContent = cat.formatted_size;
+      right.appendChild(sizeBadge);
+
+      if (cat.clearable) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className =
+          "px-2.5 py-1 rounded-lg bg-[#222227] hover:bg-[#93000a]/40 text-[#e2bfb4] hover:text-[#ffb4ab] border border-[#32323a] hover:border-[#ff5449] text-[11px] font-medium transition-all cursor-pointer disabled:opacity-50";
+        btn.textContent = cat.id === "http_cache" ? "Clear Cache" : cat.id === "site_data" ? "Clear Site Data" : "Clear Icons";
+        btn.disabled = cat.size_bytes === 0;
+        btn.addEventListener("click", () => {
+          if (
+            cat.id === "site_data" &&
+            !confirm("Clear all Site Data (IndexedDB, LocalStorage, Service Workers)? Offline web app state will be reset.")
+          ) {
+            return;
+          }
+          handleClearCache(cat.id as CacheClearScope, btn);
+        });
+        right.appendChild(btn);
+      } else {
+        const badge = document.createElement("span");
+        badge.className =
+          "px-2 py-1 rounded-lg bg-[#202025] text-[#76757a] border border-[#2c2c34] text-[10px] font-medium";
+        badge.textContent = "Managed";
+        right.appendChild(badge);
+      }
+
+      row.appendChild(left);
+      row.appendChild(right);
+      cacheCategoriesEl.appendChild(row);
+    });
+  }
+
   async function refreshCacheSize() {
     try {
       cacheSizeEl.textContent = "Calculating...";
       const info = await tauriIpc.getCacheInfo();
-      cacheSizeEl.textContent = info.formatted_size;
+      renderCacheInfo(info);
     } catch {
       cacheSizeEl.textContent = "0 B";
     }
   }
 
-  async function handleClearCache() {
+  async function handleClearCache(scope: CacheClearScope = "all", triggerBtn?: HTMLButtonElement) {
     clearCacheBtn.disabled = true;
-    clearCacheLabel.textContent = "Clearing...";
-    cacheDiskUsageEl.classList.add("hidden");
+    if (triggerBtn) triggerBtn.disabled = true;
+    if (scope === "all") {
+      clearCacheLabel.textContent = "Clearing...";
+    }
+    cacheNote.classList.add("hidden");
     cacheFeedback.classList.remove("hidden");
     cacheFeedback.innerHTML = `
       <span class="material-symbols-outlined text-sm text-[#f85e2a] animate-spin">refresh</span>
-      <span class="text-[#ffb59e]">Purging memory and WebKit disk cache...</span>
+      <span class="text-[#ffb59e]">Purging ${scope === "all" ? "all browsing cache" : scope.replace("_", " ")}...</span>
     `;
 
     try {
-      const res = await tauriIpc.clearBrowserCache();
-      cacheSizeEl.textContent = res.formatted_size;
+      const res = await tauriIpc.clearBrowserCache(scope);
+      renderCacheInfo(res);
       cacheFeedback.innerHTML = `
         <span class="material-symbols-outlined text-sm text-[#71d98d]">done_all</span>
-        <span class="text-[#71d98d] font-semibold">Cache cleared successfully!</span>
+        <span class="text-[#71d98d] font-semibold">Cleared successfully!</span>
       `;
       setTimeout(() => {
         cacheFeedback.classList.add("hidden");
         cacheFeedback.innerHTML = "";
-        cacheDiskUsageEl.classList.remove("hidden");
+        cacheNote.classList.remove("hidden");
       }, 3000);
     } catch (e) {
       console.error("Failed to clear cache:", e);
@@ -338,7 +465,7 @@ export function createSettingsPage(
       `;
     } finally {
       clearCacheBtn.disabled = false;
-      clearCacheLabel.textContent = "Clear Browser Cache";
+      clearCacheLabel.textContent = "Clear All Browsing Cache";
     }
   }
 
@@ -364,7 +491,8 @@ export function createSettingsPage(
     }
   });
 
-  clearCacheBtn.addEventListener("click", handleClearCache);
+  clearCacheBtn.addEventListener("click", () => handleClearCache("all"));
+  refreshCacheBtn?.addEventListener("click", refreshCacheSize);
   backBtn.addEventListener("click", onBack);
 
   // Download Settings Event Listeners
@@ -419,7 +547,7 @@ export function createSettingsPage(
     renderDownloadSettings();
     cacheFeedback.classList.add("hidden");
     cacheFeedback.innerHTML = "";
-    cacheDiskUsageEl.classList.remove("hidden");
+    cacheNote.classList.remove("hidden");
     refreshCacheSize();
     refreshVault();
     container.classList.remove("hidden");

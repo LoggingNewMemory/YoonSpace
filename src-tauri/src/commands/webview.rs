@@ -135,13 +135,13 @@ pub fn close_split(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn get_cache_info() -> Result<CacheInfo, String> {
-    Ok(core_get_cache_info())
+pub fn get_cache_info(app: AppHandle) -> Result<CacheInfo, String> {
+    Ok(core_get_cache_info(&app))
 }
 
 #[tauri::command]
-pub fn clear_browser_cache(app: AppHandle) -> Result<CacheInfo, String> {
-    core_clear_browser_cache(&app)
+pub fn clear_browser_cache(app: AppHandle, scope: Option<String>) -> Result<CacheInfo, String> {
+    core_clear_browser_cache(&app, scope.as_deref())
 }
 
 #[tauri::command]

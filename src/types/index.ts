@@ -145,10 +145,34 @@ export interface MinimizedTab {
   splitRatio?: number;
 }
 
+export interface StorageCategoryInfo {
+  id: string;
+  label: string;
+  description: string;
+  size_bytes: number;
+  formatted_size: string;
+  file_count: number;
+  path: string;
+  clearable: boolean;
+}
+
 export interface CacheInfo {
   size_bytes: number;
   formatted_size: string;
+  http_cache_bytes: number;
+  http_cache_formatted: string;
+  site_data_bytes: number;
+  site_data_formatted: string;
+  favicon_cache_bytes: number;
+  favicon_cache_formatted: string;
+  shield_cache_bytes: number;
+  shield_cache_formatted: string;
+  cache_dir: string;
+  cache_limit_mb: number;
+  categories: StorageCategoryInfo[];
 }
+
+export type CacheClearScope = "http_cache" | "site_data" | "favicons" | "all";
 
 export interface SavedCredential {
   id: string;
