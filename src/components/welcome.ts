@@ -16,14 +16,27 @@
 
 import type { AppConfig } from "../types";
 
+export interface WelcomeScreenElement extends HTMLDivElement {
+  refreshEngines: (updatedConfig: AppConfig) => void;
+}
+
+const escapeChipHtml = (str: string) =>
+  str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 export function createWelcomeScreen(
   config: AppConfig,
   onSearch: (query: string, engineId: string) => void,
   onSelectEngine: (engineId: string) => void
-) {
-  const container = document.createElement("div");
+): WelcomeScreenElement {
+  const container = document.createElement("div") as WelcomeScreenElement;
   container.className = "w-full max-w-3xl flex flex-col items-center gap-7 mx-auto";
 
+  let currentConfig = config;
   let activeEngine = config.active_search_engine;
 
   container.innerHTML = `
@@ -93,57 +106,51 @@ export function createWelcomeScreen(
 
         <!-- Search Engine Chips -->
         <div id="search-engine-chips" class="flex items-center justify-center gap-2 flex-wrap pt-1 select-none">
-          ${config.search_engines
-            .map((engine) => {
-              const isActive = engine.id === activeEngine;
-              return `
-              <button
-                type="button"
-                data-engine-id="${engine.id}"
-                class="engine-chip px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-                  isActive
-                    ? "bg-[#f85e2a] text-[#521300] shadow-sm font-semibold"
-                    : "bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50"
-                }"
-              >
-                <span class="material-symbols-outlined text-[14px]">${engine.icon}</span>
-                <span>${engine.name}</span>
-              </button>
-            `;
-            })
-            .join("")}
-          
-          <button
-            id="btn-add-engine"
-            type="button"
-            title="Configure or add custom search engine"
-            class="px-3 py-1 rounded-full bg-[#202020]/60 hover:bg-[#202020] text-[#aa8a80] hover:text-[#e5e2e1] text-xs font-medium flex items-center gap-1 transition-all border border-dashed border-[#5a4139] cursor-pointer"
-          >
-            <span class="material-symbols-outlined text-[14px]">add</span>
-            <span>Add Search Engine</span>
-          </button>
         </div>
       </div>
     </section>
   `;
 
-  // Engine selection handling
-  container.querySelectorAll(".engine-chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const engineId = btn.getAttribute("data-engine-id")!;
-      activeEngine = engineId;
+  const chipsContainer = container.querySelector("#search-engine-chips") as HTMLElement;
 
-      container.querySelectorAll(".engine-chip").forEach((b) => {
-        b.className =
-          "engine-chip px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50 cursor-pointer";
+  const renderSearchEngineChips = () => {
+    chipsContainer.innerHTML = currentConfig.search_engines
+      .map((engine) => {
+        const isActive = engine.id === activeEngine;
+        const pillBase = isActive
+          ? "bg-[#f85e2a] text-[#521300] shadow-sm font-semibold"
+          : "bg-[#202020] text-[#e2bfb4] hover:text-[#e5e2e1] hover:bg-[#2a2a2a] border border-[#353535]/50 font-medium";
+
+        return `
+          <button
+            type="button"
+            data-engine-id="${escapeChipHtml(engine.id)}"
+            class="engine-chip px-3 py-1 rounded-full text-xs flex items-center transition-all cursor-pointer ${pillBase}"
+          >
+            <span>${escapeChipHtml(engine.name)}</span>
+          </button>
+        `;
+      })
+      .join("");
+
+    chipsContainer.querySelectorAll(".engine-chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const engineId = btn.getAttribute("data-engine-id")!;
+        activeEngine = engineId;
+        currentConfig.active_search_engine = engineId;
+        renderSearchEngineChips();
+        onSelectEngine(engineId);
       });
-
-      btn.className =
-        "engine-chip px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all bg-[#f85e2a] text-[#521300] shadow-sm cursor-pointer";
-
-      onSelectEngine(engineId);
     });
-  });
+  };
+
+  container.refreshEngines = (updatedConfig: AppConfig) => {
+    currentConfig = updatedConfig;
+    activeEngine = updatedConfig.active_search_engine;
+    renderSearchEngineChips();
+  };
+
+  renderSearchEngineChips();
 
   // Search submission and typing capability
   const form = container.querySelector("#omni-search-form") as HTMLFormElement;

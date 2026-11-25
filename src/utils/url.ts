@@ -45,7 +45,11 @@ export function normalizeUrl(
     searchEngines[0] || {
       query_url: "https://www.google.com/search?q=",
     };
-  return `${engine.query_url}${encodeURIComponent(trimmed)}`;
+  const encoded = encodeURIComponent(trimmed);
+  if (/%s|\{searchTerms\}/i.test(engine.query_url)) {
+    return engine.query_url.replace(/%s|\{searchTerms\}/gi, encoded);
+  }
+  return `${engine.query_url}${encoded}`;
 }
 
 export function deriveTitleFromInput(input: string): string {

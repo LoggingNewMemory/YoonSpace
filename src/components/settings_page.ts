@@ -886,19 +886,19 @@ export function createSettingsPage(
           ? "border-[#f85e2a] bg-[#f85e2a]/15 text-[#ffb59e] font-semibold shadow-sm"
           : "border-[#2e2e34] bg-[#222227] hover:bg-[#28282e] text-[#e5e2e1]"
       }`;
-      btn.innerHTML = `
-        <div class="flex items-center gap-2.5 truncate">
-          <span class="material-symbols-outlined text-lg ${
-            isSelected ? "text-[#f85e2a]" : "text-[#a09e9d]"
-          }">${engine.icon || "search"}</span>
-          <span class="font-medium truncate">${engine.name}</span>
-        </div>
-        ${
-          isSelected
-            ? '<span class="material-symbols-outlined text-[#f85e2a] text-base shrink-0">check_circle</span>'
-            : ""
-        }
-      `;
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "font-medium truncate";
+      nameSpan.textContent = engine.name;
+      btn.appendChild(nameSpan);
+
+      if (isSelected) {
+        const checkIcon = document.createElement("span");
+        checkIcon.className = "material-symbols-outlined text-[#f85e2a] text-base shrink-0 ml-2";
+        checkIcon.textContent = "check_circle";
+        btn.appendChild(checkIcon);
+      }
+
       btn.addEventListener("click", async () => {
         currentEngineId = engine.id;
         config.active_search_engine = engine.id;
@@ -1209,6 +1209,7 @@ export function createSettingsPage(
       .then((fresh) => {
         if (fresh) {
           Object.assign(config, fresh);
+          currentEngineId = fresh.active_search_engine;
           renderSearchEngines();
           renderDownloadSettings();
           void renderWallpaperSettings();

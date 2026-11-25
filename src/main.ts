@@ -1297,6 +1297,7 @@ async function init() {
     async (newConfig) => {
       currentConfig = newConfig;
       await tauriIpc.updateAppConfig(newConfig);
+      welcome.refreshEngines(newConfig);
       (titlebar as any).downloadController?.refresh();
       void homepageWallpaper.applySettings(newConfig.wallpaper_settings);
     },
