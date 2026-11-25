@@ -49,6 +49,7 @@ export interface WallpaperSettings {
   folder_path: string;
   transparency: number;
   order?: WallpaperOrder;
+  change_interval_secs?: number;
 }
 
 export interface DownloadItem {

@@ -34,6 +34,10 @@ fn default_wallpaper_order() -> String {
     "randomized".to_string()
 }
 
+fn default_wallpaper_interval_secs() -> u64 {
+    300
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WallpaperSettings {
@@ -43,6 +47,8 @@ pub struct WallpaperSettings {
     pub transparency: u8,
     #[serde(default = "default_wallpaper_order")]
     pub order: String,
+    #[serde(default = "default_wallpaper_interval_secs")]
+    pub change_interval_secs: u64,
 }
 
 impl Default for WallpaperSettings {
@@ -51,6 +57,7 @@ impl Default for WallpaperSettings {
             folder_path: String::new(),
             transparency: default_wallpaper_transparency(),
             order: default_wallpaper_order(),
+            change_interval_secs: default_wallpaper_interval_secs(),
         }
     }
 }

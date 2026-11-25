@@ -1275,7 +1275,21 @@ async function init() {
   dragOverlay = createDragSplitOverlay();
   app.appendChild(dragOverlay.element);
 
-  const homepageWallpaper = createHomepageWallpaper();
+  const homepageWallpaper = createHomepageWallpaper((transparency, persist) => {
+    if (!currentConfig.wallpaper_settings) {
+      currentConfig.wallpaper_settings = {
+        folder_path: "",
+        transparency,
+        order: "randomized",
+        change_interval_secs: 0,
+      };
+    } else {
+      currentConfig.wallpaper_settings.transparency = transparency;
+    }
+    if (persist) {
+      void tauriIpc.updateAppConfig(currentConfig);
+    }
+  });
 
   // Settings Page with Cache, Search Engine, Shields & Preferences
   settingsPage = createSettingsPage(
@@ -1374,7 +1388,7 @@ async function init() {
 
   main.appendChild(homepageWallpaper.layerElement);
   main.appendChild(welcome);
-  main.appendChild(homepageWallpaper.cycleButton);
+  main.appendChild(homepageWallpaper.controlsElement);
   mainWrapper.appendChild(main);
   app.appendChild(mainWrapper);
 

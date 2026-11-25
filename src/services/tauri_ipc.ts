@@ -146,6 +146,7 @@ export const tauriIpc = {
           folder_path: "",
           transparency: 50,
           order: "randomized",
+          change_interval_secs: 300,
         },
       };
     }

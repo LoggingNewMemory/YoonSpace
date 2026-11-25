@@ -168,6 +168,360 @@ export function createSettingsPage(
 
           <div class="w-full h-px bg-[#232328]"></div>
 
+          <!-- Change Every Timer Dropdown -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Change Every</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Automatically switch to the next wallpaper on a schedule.
+              </p>
+            </div>
+
+            <div class="relative shrink-0" id="settings-wallpaper-interval-dropdown">
+              <button
+                type="button"
+                id="settings-wallpaper-interval-btn"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                class="min-w-[148px] px-3 py-2 rounded-xl bg-[#222227] hover:bg-[#2a2a30] border border-[#34343d] hover:border-[#464652] text-xs font-semibold text-[#e5e2e1] flex items-center justify-between gap-2 cursor-pointer transition-colors"
+              >
+                <span id="settings-wallpaper-interval-label">5 minutes</span>
+                <span class="material-symbols-outlined text-base text-[#a09e9d]">expand_more</span>
+              </button>
+              <div
+                id="settings-wallpaper-interval-menu"
+                role="listbox"
+                class="hidden absolute right-0 mt-1.5 w-full min-w-[148px] rounded-xl bg-[#222227] border border-[#34343d] shadow-xl py-1 z-30 overflow-hidden"
+              >
+                <button type="button" data-interval="60" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>1 minute</span>
+                </button>
+                <button type="button" data-interval="300" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>5 minutes</span>
+                </button>
+                <button type="button" data-interval="1800" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>30 minutes</span>
+                </button>
+                <button type="button" data-interval="3600" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>1 hour</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Transparency Slider -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Transparency</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Adjust homepage wallpaper transparency (0% = solid, 100% = fully transparent).
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3 shrink-0 min-w-[220px]">
+              <input
+                type="range"
+                id="settings-wallpaper-transparency"
+                min="0"
+                max="100"
+                step="1"
+                value="50"
+                class="w-36 accent-[#f85e2a] cursor-pointer"
+              />
+              <span
+                id="settings-wallpaper-transparency-value"
+                class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] min-w-[52px] text-center"
+              >
+                50%
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 1. Browser Cache & Storage Section -->
+      <section class="flex flex-col gap-3.5">
+        <div class="flex items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-[#f85e2a]/15 text-[#f85e2a] flex items-center justify-center">
+              <span class="material-symbols-outlined text-lg">wallpaper</span>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-[#e5e2e1] uppercase tracking-wider">Wallpaper</h2>
+            </div>
+          </div>
+
+          <span
+            id="settings-wallpaper-count"
+            class="hidden px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-[11px] font-mono text-[#a09e9d]"
+          ></span>
+        </div>
+
+        <div class="bg-[#18181b] border border-[#28282e] rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
+          <!-- Wallpaper Folder -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl min-w-0">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Wallpaper Folder</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Select a local folder containing images to display as your homepage background.
+              </p>
+              <div class="mt-2">
+                <span id="settings-wallpaper-path" class="px-3 py-1.5 rounded-xl bg-[#202025] border border-[#2c2c34] text-xs font-mono text-[#ffb59e] select-all inline-block truncate max-w-full">
+                  No folder selected
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                id="btn-settings-clear-wallpaper-dir"
+                class="hidden px-3 py-1.5 rounded-xl bg-[#25252b] hover:bg-[#93000a]/40 text-[#e2bfb4] hover:text-[#ffb4ab] border border-[#34343e] hover:border-[#ff5449] text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Remove wallpaper"
+              >
+                <span class="material-symbols-outlined text-base">close</span>
+                <span>Clear</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-settings-select-wallpaper-dir"
+                class="px-3 py-1.5 rounded-xl bg-[#f85e2a] hover:bg-[#ff7d47] text-[#521300] hover:text-black font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Select folder containing wallpaper images"
+              >
+                <span class="material-symbols-outlined text-base">folder_open</span>
+                <span>Select Folder</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Image Order Dropdown -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Image Order</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Choose how images from the selected folder are ordered.
+              </p>
+            </div>
+
+            <div class="relative shrink-0" id="settings-wallpaper-order-dropdown">
+              <button
+                type="button"
+                id="settings-wallpaper-order-btn"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                class="min-w-[148px] px-3 py-2 rounded-xl bg-[#222227] hover:bg-[#2a2a30] border border-[#34343d] hover:border-[#464652] text-xs font-semibold text-[#e5e2e1] flex items-center justify-between gap-2 cursor-pointer transition-colors"
+              >
+                <span id="settings-wallpaper-order-label">Randomized</span>
+                <span class="material-symbols-outlined text-base text-[#a09e9d]">expand_more</span>
+              </button>
+              <div
+                id="settings-wallpaper-order-menu"
+                role="listbox"
+                class="hidden absolute right-0 mt-1.5 w-full min-w-[148px] rounded-xl bg-[#222227] border border-[#34343d] shadow-xl py-1 z-30 overflow-hidden"
+              >
+                <button type="button" data-order="a_z" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>A-Z</span>
+                </button>
+                <button type="button" data-order="z_a" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>Z-A</span>
+                </button>
+                <button type="button" data-order="randomized" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>Randomized</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Change Every Timer Dropdown -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Change Every</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Automatically switch to the next wallpaper on a schedule.
+              </p>
+            </div>
+
+            <div class="relative shrink-0" id="settings-wallpaper-interval-dropdown">
+              <button
+                type="button"
+                id="settings-wallpaper-interval-btn"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                class="min-w-[164px] px-3 py-2 rounded-xl bg-[#222227] hover:bg-[#2a2a30] border border-[#34343d] hover:border-[#464652] text-xs font-semibold text-[#e5e2e1] flex items-center justify-between gap-2 cursor-pointer transition-colors"
+              >
+                <span id="settings-wallpaper-interval-label">Never (Manual)</span>
+                <span class="material-symbols-outlined text-base text-[#a09e9d]">expand_more</span>
+              </button>
+              <div
+                id="settings-wallpaper-interval-menu"
+                role="listbox"
+                class="hidden absolute right-0 mt-1.5 w-full min-w-[164px] rounded-xl bg-[#222227] border border-[#34343d] shadow-xl py-1 z-30 overflow-hidden"
+              >
+                <button type="button" data-interval="0" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>Never (Manual)</span>
+                </button>
+                <button type="button" data-interval="15" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>15 seconds</span>
+                </button>
+                <button type="button" data-interval="30" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>30 seconds</span>
+                </button>
+                <button type="button" data-interval="60" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>1 minute</span>
+                </button>
+                <button type="button" data-interval="300" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>5 minutes</span>
+                </button>
+                <button type="button" data-interval="900" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>15 minutes</span>
+                </button>
+                <button type="button" data-interval="1800" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>30 minutes</span>
+                </button>
+                <button type="button" data-interval="3600" class="wallpaper-interval-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>1 hour</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Transparency Slider -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Transparency</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Adjust homepage wallpaper transparency (0% = solid, 100% = fully transparent).
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3 shrink-0 min-w-[220px]">
+              <input
+                type="range"
+                id="settings-wallpaper-transparency"
+                min="0"
+                max="100"
+                step="1"
+                value="50"
+                class="w-36 accent-[#f85e2a] cursor-pointer"
+              />
+              <span
+                id="settings-wallpaper-transparency-value"
+                class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] min-w-[52px] text-center"
+              >
+                50%
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 1. Browser Cache & Storage Section -->
+      <section class="flex flex-col gap-3.5">
+        <div class="flex items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-[#f85e2a]/15 text-[#f85e2a] flex items-center justify-center">
+              <span class="material-symbols-outlined text-lg">wallpaper</span>
+            </div>
+            <div>
+              <h2 class="text-sm font-bold text-[#e5e2e1] uppercase tracking-wider">Wallpaper</h2>
+            </div>
+          </div>
+
+          <span
+            id="settings-wallpaper-count"
+            class="hidden px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-[11px] font-mono text-[#a09e9d]"
+          ></span>
+        </div>
+
+        <div class="bg-[#18181b] border border-[#28282e] rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
+          <!-- Wallpaper Folder -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl min-w-0">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Wallpaper Folder</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Select a local folder containing images to display as your homepage background.
+              </p>
+              <div class="mt-2">
+                <span id="settings-wallpaper-path" class="px-3 py-1.5 rounded-xl bg-[#202025] border border-[#2c2c34] text-xs font-mono text-[#ffb59e] select-all inline-block truncate max-w-full">
+                  No folder selected
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                id="btn-settings-clear-wallpaper-dir"
+                class="hidden px-3 py-1.5 rounded-xl bg-[#25252b] hover:bg-[#93000a]/40 text-[#e2bfb4] hover:text-[#ffb4ab] border border-[#34343e] hover:border-[#ff5449] text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Remove wallpaper"
+              >
+                <span class="material-symbols-outlined text-base">close</span>
+                <span>Clear</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-settings-select-wallpaper-dir"
+                class="px-3 py-1.5 rounded-xl bg-[#f85e2a] hover:bg-[#ff7d47] text-[#521300] hover:text-black font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Select folder containing wallpaper images"
+              >
+                <span class="material-symbols-outlined text-base">folder_open</span>
+                <span>Select Folder</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
+          <!-- Image Order Dropdown -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="max-w-xl">
+              <div class="text-sm font-semibold text-[#e5e2e1]">Image Order</div>
+              <p class="text-xs text-[#a09e9d] mt-1">
+                Choose how images from the selected folder are ordered.
+              </p>
+            </div>
+
+            <div class="relative shrink-0" id="settings-wallpaper-order-dropdown">
+              <button
+                type="button"
+                id="settings-wallpaper-order-btn"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                class="min-w-[148px] px-3 py-2 rounded-xl bg-[#222227] hover:bg-[#2a2a30] border border-[#34343d] hover:border-[#464652] text-xs font-semibold text-[#e5e2e1] flex items-center justify-between gap-2 cursor-pointer transition-colors"
+              >
+                <span id="settings-wallpaper-order-label">Randomized</span>
+                <span class="material-symbols-outlined text-base text-[#a09e9d]">expand_more</span>
+              </button>
+              <div
+                id="settings-wallpaper-order-menu"
+                role="listbox"
+                class="hidden absolute right-0 mt-1.5 w-full min-w-[148px] rounded-xl bg-[#222227] border border-[#34343d] shadow-xl py-1 z-30 overflow-hidden"
+              >
+                <button type="button" data-order="a_z" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>A-Z</span>
+                </button>
+                <button type="button" data-order="z_a" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>Z-A</span>
+                </button>
+                <button type="button" data-order="randomized" class="wallpaper-order-opt w-full px-3 py-2 text-left text-xs text-[#e5e2e1] hover:bg-[#2e2e36] flex items-center justify-between cursor-pointer transition-colors">
+                  <span>Randomized</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="w-full h-px bg-[#232328]"></div>
+
           <!-- Transparency Slider -->
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="max-w-xl">
@@ -391,6 +745,10 @@ export function createSettingsPage(
   const wallpaperOrderBtn = container.querySelector("#settings-wallpaper-order-btn") as HTMLButtonElement;
   const wallpaperOrderLabel = container.querySelector("#settings-wallpaper-order-label") as HTMLElement;
   const wallpaperOrderMenu = container.querySelector("#settings-wallpaper-order-menu") as HTMLElement;
+  const wallpaperIntervalDropdown = container.querySelector("#settings-wallpaper-interval-dropdown") as HTMLElement;
+  const wallpaperIntervalBtn = container.querySelector("#settings-wallpaper-interval-btn") as HTMLButtonElement;
+  const wallpaperIntervalLabel = container.querySelector("#settings-wallpaper-interval-label") as HTMLElement;
+  const wallpaperIntervalMenu = container.querySelector("#settings-wallpaper-interval-menu") as HTMLElement;
   const wallpaperTransparencyInput = container.querySelector("#settings-wallpaper-transparency") as HTMLInputElement;
   const wallpaperTransparencyValueEl = container.querySelector("#settings-wallpaper-transparency-value") as HTMLElement;
 
@@ -430,11 +788,44 @@ export function createSettingsPage(
     });
   }
 
+  const INTERVAL_LABELS: Record<number, string> = {
+    60: "1 minute",
+    300: "5 minutes",
+    1800: "30 minutes",
+    3600: "1 hour",
+  };
+
+  function renderWallpaperInterval(secs: number) {
+    const normalized = secs in INTERVAL_LABELS ? secs : 300;
+    if (wallpaperIntervalLabel) {
+      wallpaperIntervalLabel.textContent = INTERVAL_LABELS[normalized];
+    }
+    wallpaperIntervalMenu?.querySelectorAll(".wallpaper-interval-opt").forEach((optEl) => {
+      const optVal = Number(optEl.getAttribute("data-interval"));
+      const isActive = optVal === normalized;
+      optEl.className = `wallpaper-interval-opt w-full px-3 py-2 text-left text-xs flex items-center justify-between cursor-pointer transition-colors ${
+        isActive
+          ? "bg-[#f85e2a]/15 text-[#ffb59e] font-semibold"
+          : "text-[#e5e2e1] hover:bg-[#2e2e36]"
+      }`;
+      const existingCheck = optEl.querySelector(".interval-check");
+      if (isActive && !existingCheck) {
+        const icon = document.createElement("span");
+        icon.className = "interval-check material-symbols-outlined text-sm text-[#f85e2a]";
+        icon.textContent = "check";
+        optEl.appendChild(icon);
+      } else if (!isActive && existingCheck) {
+        existingCheck.remove();
+      }
+    });
+  }
+
   async function renderWallpaperSettings() {
     const ws = config.wallpaper_settings ?? {
       folder_path: "",
       transparency: 50,
       order: "randomized" as WallpaperOrder,
+      change_interval_secs: 0,
     };
     const folder = ws.folder_path?.trim() || "";
     const transparency = Math.max(0, Math.min(100, Math.round(ws.transparency ?? 50)));
@@ -442,8 +833,10 @@ export function createSettingsPage(
       ws.order === "a_z" || ws.order === "z_a" || ws.order === "randomized"
         ? ws.order
         : "randomized";
+    const intervalSecs = typeof ws.change_interval_secs === "number" ? ws.change_interval_secs : 300;
 
     renderWallpaperOrder(order);
+    renderWallpaperInterval(intervalSecs);
     if (wallpaperTransparencyInput) {
       wallpaperTransparencyInput.value = String(transparency);
     }
@@ -711,10 +1104,42 @@ export function createSettingsPage(
     });
   });
 
+  wallpaperIntervalBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isHidden = wallpaperIntervalMenu.classList.contains("hidden");
+    wallpaperIntervalMenu.classList.toggle("hidden", !isHidden);
+    wallpaperIntervalBtn.setAttribute("aria-expanded", String(isHidden));
+  });
+
+  wallpaperIntervalMenu?.querySelectorAll(".wallpaper-interval-opt").forEach((optEl) => {
+    optEl.addEventListener("click", async () => {
+      const secs = Number(optEl.getAttribute("data-interval")) || 0;
+      wallpaperIntervalMenu.classList.add("hidden");
+      wallpaperIntervalBtn.setAttribute("aria-expanded", "false");
+      if (!config.wallpaper_settings) {
+        config.wallpaper_settings = {
+          folder_path: "",
+          transparency: 50,
+          order: "randomized",
+          change_interval_secs: secs,
+        };
+      } else {
+        config.wallpaper_settings.change_interval_secs = secs;
+      }
+      renderWallpaperInterval(secs);
+      await tauriIpc.updateAppConfig(config);
+      onConfigUpdated(config);
+    });
+  });
+
   document.addEventListener("click", (e) => {
     if (wallpaperOrderDropdown && !wallpaperOrderDropdown.contains(e.target as Node)) {
       wallpaperOrderMenu?.classList.add("hidden");
       wallpaperOrderBtn?.setAttribute("aria-expanded", "false");
+    }
+    if (wallpaperIntervalDropdown && !wallpaperIntervalDropdown.contains(e.target as Node)) {
+      wallpaperIntervalMenu?.classList.add("hidden");
+      wallpaperIntervalBtn?.setAttribute("aria-expanded", "false");
     }
   });
 
@@ -728,7 +1153,6 @@ export function createSettingsPage(
     } else {
       config.wallpaper_settings.transparency = val;
     }
-    onConfigUpdated(config);
   });
 
   wallpaperTransparencyInput?.addEventListener("change", async () => {
