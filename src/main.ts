@@ -1192,11 +1192,6 @@ async function init() {
         handleOpenSettings();
       }
     }
-    // Media Control (Ctrl+M / Cmd+M)
-    else if ((e.ctrlKey || e.metaKey) && (e.key === "m" || e.key === "M")) {
-      e.preventDefault();
-      handleMediaToggle();
-    }
     // Escape closes Media or Settings if open
     else if (e.key === "Escape") {
       if (isMediaOpen) {
@@ -1274,6 +1269,7 @@ async function init() {
       activeTab.title = event.payload;
       webBar.setSingleMode(event.payload);
       dock.updateTabTitle(activeTab.id, event.payload);
+      mediaController?.updateActiveTab(activeTab);
     }
   });
 
@@ -1284,6 +1280,7 @@ async function init() {
       const combined = `${event.payload} | ${activeTab.rightTitle || "Right"}`;
       activeTab.title = combined;
       dock.updateTabTitle(activeTab.id, combined, event.payload, activeTab.rightTitle);
+      mediaController?.updateActiveTab(activeTab);
     }
   });
 
@@ -1294,6 +1291,30 @@ async function init() {
       const combined = `${activeTab.leftTitle || "Left"} | ${event.payload}`;
       activeTab.title = combined;
       dock.updateTabTitle(activeTab.id, combined, activeTab.leftTitle, event.payload);
+      mediaController?.updateActiveTab(activeTab);
+    }
+  });
+
+  // 5b. Real-time HTML5 media playback state from active WebView
+  tauriIpc.listen<{
+    tabId?: string;
+    hasMedia: boolean;
+    isPlaying: boolean;
+    currentTime: number;
+    duration: number;
+    volume: number;
+    muted: boolean;
+    title: string;
+    artist: string;
+  }>("webview-media-state", (event) => {
+    const payload = event.payload;
+    if (!payload || !activeTab) return;
+    if (
+      !payload.tabId ||
+      payload.tabId === activeTab.id ||
+      payload.tabId.startsWith(`${activeTab.id}_`)
+    ) {
+      mediaController?.updateMediaState(payload);
     }
   });
 

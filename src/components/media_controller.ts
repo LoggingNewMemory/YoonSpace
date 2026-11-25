@@ -17,6 +17,18 @@
 import { tauriIpc } from "../services/tauri_ipc";
 import type { MinimizedTab } from "../types";
 
+export interface WebviewMediaState {
+  tabId?: string;
+  hasMedia: boolean;
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  volume: number;
+  muted: boolean;
+  title: string;
+  artist: string;
+}
+
 export interface MediaController {
   element: HTMLElement;
   show: () => void;
@@ -25,98 +37,60 @@ export interface MediaController {
   isOpen: () => boolean;
   setLeftOffset: (offset: number) => void;
   updateActiveTab: (tab: MinimizedTab | null) => void;
+  updateMediaState: (state: WebviewMediaState) => void;
   destroy: () => void;
 }
 
-interface FocusStation {
-  id: string;
+interface QuickApp {
   name: string;
-  category: string;
+  url: string;
   icon: string;
-  description: string;
-  accent: string;
+  color: string;
+  desc: string;
+  custom?: boolean;
 }
 
-const FOCUS_STATIONS: FocusStation[] = [
+const CUSTOM_APPS_STORAGE_KEY = "yoonspace_custom_quick_apps";
+
+const DEFAULT_QUICK_APPS: QuickApp[] = [
   {
-    id: "rain",
-    name: "Rain & Thunder",
-    category: "Nature Ambience",
-    icon: "rainy",
-    description: "Deep soothing rainstorm with distant thunder rumbles",
-    accent: "#38bdf8",
-  },
-  {
-    id: "lofi",
-    name: "Lo-Fi Study Beats",
-    category: "Coding & Study",
-    icon: "headphones",
-    description: "Mellow chords, chillhop rhythm & subtle vinyl crackle",
-    accent: "#f85e2a",
-  },
-  {
-    id: "synthwave",
-    name: "Synthwave Cyberpunk",
-    category: "Engineering Focus",
-    icon: "electric_bolt",
-    description: "Pulsing retro synthesizer bassline and 80s neon rhythm",
-    accent: "#ec4899",
-  },
-  {
-    id: "waves",
-    name: "Ocean Waves",
-    category: "Alpha Focus",
-    icon: "water",
-    description: "Rhythmic shoreline tides for deep concentration",
-    accent: "#2dd4bf",
-  },
-  {
-    id: "cafe",
-    name: "Coffee Shop",
-    category: "Warm Background",
-    icon: "coffee",
-    description: "Atmospheric acoustic warmth of a late-night cafe",
-    accent: "#f59e0b",
+    name: "YouTube",
+    url: "https://www.youtube.com",
+    icon: "smart_display",
+    color: "#ff0000",
+    desc: "Watch videos, music & live streams",
   },
 ];
 
-const STREAMING_APPS = [
-  {
-    name: "Spotify",
-    url: "https://open.spotify.com",
-    icon: "library_music",
-    color: "#1db954",
-    desc: "Stream millions of songs & playlists",
-  },
-  {
-    name: "YouTube Music",
-    url: "https://music.youtube.com",
-    icon: "smart_display",
-    color: "#ff0000",
-    desc: "Official albums, live tracks & remixes",
-  },
-  {
-    name: "SoundCloud",
-    url: "https://soundcloud.com",
-    icon: "cloud",
-    color: "#ff5500",
-    desc: "Indie artists, DJ mixes & electronic",
-  },
-  {
-    name: "Apple Music",
-    url: "https://music.apple.com",
-    icon: "music_note",
-    color: "#fa2d48",
-    desc: "Lossless audio & curated radio stations",
-  },
-  {
-    name: "Lofi Girl",
-    url: "https://www.youtube.com/watch?v=jfKfPfyJRdk",
-    icon: "radio",
-    color: "#f85e2a",
-    desc: "24/7 lofi hip hop radio to study & code",
-  },
-];
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function loadCustomApps(): QuickApp[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_APPS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is QuickApp =>
+        Boolean(item && typeof item.name === "string" && typeof item.url === "string")
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomApps(apps: QuickApp[]): void {
+  try {
+    localStorage.setItem(CUSTOM_APPS_STORAGE_KEY, JSON.stringify(apps));
+  } catch {}
+}
 
 export function createMediaController(
   onClose?: () => void,
@@ -132,23 +106,29 @@ export function createMediaController(
 
   let isDrawerVisible = false;
   let activeTabReference: MinimizedTab | null = null;
-  let activeSection: "now-playing" | "focus" | "apps" = "now-playing";
+  let activeSection: "now-playing" | "apps" = "now-playing";
+  let customApps: QuickApp[] = loadCustomApps();
 
   // Tab media playback state
   let isTabMediaPlaying = false;
   let isTabMediaMuted = false;
   let tabMediaVolume = 1.0;
   let tabMediaSeek = 0;
+  let tabMediaDuration = 0;
+  let isSeeking = false;
+  let isAdjustingVolume = false;
 
-  // Built-in Focus Sound Audio Engine
-  let audioCtx: AudioContext | null = null;
-  let isFocusPlaying = false;
-  let currentStationId = "rain";
-  let focusVolume = 0.7;
-  let masterGainNode: GainNode | null = null;
-  let activeAudioNodes: { stop?: () => void; disconnect?: () => void }[] = [];
-  let lofiTimer: number | null = null;
-  let synthwaveTimer: number | null = null;
+  function formatTime(totalSeconds: number): string {
+    if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "0:00";
+    const s = Math.floor(totalSeconds);
+    const hrs = Math.floor(s / 3600);
+    const mins = Math.floor((s % 3600) / 60);
+    const secs = s % 60;
+    if (hrs > 0) {
+      return `${hrs}:${mins < 10 ? "0" : ""}${mins}:${secs < 10 ? "0" : ""}${secs}`;
+    }
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  }
 
   sidebar.innerHTML = `
     <!-- Header -->
@@ -158,11 +138,8 @@ export function createMediaController(
           <span id="media-header-icon" class="material-symbols-outlined text-[18px]">music_note</span>
         </div>
         <div>
-          <div class="flex items-center gap-2">
-            <h2 class="text-sm font-semibold text-white tracking-tight">Music &amp; Media</h2>
-            <span id="media-status-pill" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#f85e2a]/20 text-[#f85e2a] border border-[#f85e2a]/30">STANDBY</span>
-          </div>
-          <p id="media-header-sub" class="text-[11px] text-neutral-400 font-mono mt-0.5 truncate max-w-[200px]">Tab control &amp; focus audio</p>
+          <h2 class="text-sm font-semibold text-white tracking-tight">Music &amp; Media</h2>
+          <p id="media-header-sub" class="text-[11px] text-neutral-400 font-mono mt-0.5 truncate max-w-[200px]">Tab control &amp; playback</p>
         </div>
       </div>
 
@@ -170,7 +147,7 @@ export function createMediaController(
         type="button"
         id="btn-close-media"
         aria-label="Close Media Control"
-        title="Close Media Control (Ctrl+M)"
+        title="Close Media Control"
         class="w-7 h-7 rounded-lg flex items-center justify-center text-[#9c9a98] hover:text-[#e5e2e1] hover:bg-[#28282b] active:scale-95 transition-all cursor-pointer select-none"
       >
         <span class="material-symbols-outlined text-[18px]">close</span>
@@ -186,15 +163,6 @@ export function createMediaController(
       >
         <span class="material-symbols-outlined text-[15px]">play_circle</span>
         <span>Now Playing</span>
-      </button>
-
-      <button
-        type="button"
-        id="tab-btn-focus"
-        class="media-nav-tab flex-1 py-1.5 px-2 rounded-lg text-xs font-medium transition-all text-center cursor-pointer text-neutral-400 hover:text-white hover:bg-[#202022] flex items-center justify-center gap-1.5"
-      >
-        <span class="material-symbols-outlined text-[15px]">headphones</span>
-        <span>Focus Sounds</span>
       </button>
 
       <button
@@ -329,110 +297,72 @@ export function createMediaController(
             <span id="media-volume-label" class="text-[11px] font-mono text-neutral-400 w-8 text-right">100%</span>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 pt-1 border-t border-[#26262a]">
+          <div class="pt-1 border-t border-[#26262a]">
             <button
               type="button"
               id="btn-media-pip"
-              class="py-1.5 px-2.5 rounded-lg bg-[#242428] hover:bg-[#2d2d32] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              class="w-full py-1.5 px-2.5 rounded-lg bg-[#242428] hover:bg-[#2d2d32] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             >
               <span class="material-symbols-outlined text-[16px] text-[#ffb59e]">picture_in_picture_alt</span>
               <span>Pop-out PiP</span>
             </button>
-
-            <button
-              type="button"
-              id="btn-media-open-lofi"
-              class="py-1.5 px-2.5 rounded-lg bg-[#242428] hover:bg-[#2d2d32] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-            >
-              <span class="material-symbols-outlined text-[16px] text-[#f85e2a]">radio</span>
-              <span>Lofi Stream</span>
-            </button>
           </div>
         </div>
       </section>
 
-      <!-- 2. FOCUS AMBIENT SOUNDS SECTION -->
-      <section id="section-focus" class="space-y-4 hidden">
-        <!-- Focus Player Banner Card -->
-        <div class="rounded-2xl bg-gradient-to-br from-[#1e2329] via-[#191d24] to-[#14161a] border border-[#2b3540] p-4 shadow-lg space-y-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-[20px] text-[#38bdf8]">headphones</span>
-              <h3 class="text-sm font-semibold text-white">Engineers' Focus Sounds</h3>
-            </div>
-            <span id="focus-live-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#38bdf8]/20 text-[#38bdf8] border border-[#38bdf8]/30">OFFLINE READY</span>
-          </div>
-          <p class="text-xs text-neutral-400 leading-relaxed">
-            Synthesized Web Audio ambience for zero latency coding without internet buffering.
-          </p>
-
-          <!-- Current Focus Station Card -->
-          <div class="rounded-xl bg-[#111317] border border-[#28303b] p-3 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div id="focus-station-icon-box" class="w-10 h-10 rounded-lg bg-[#1e293b] flex items-center justify-center text-[#38bdf8] shrink-0">
-                <span id="focus-station-icon" class="material-symbols-outlined text-[22px]">rainy</span>
-              </div>
-              <div>
-                <h4 id="focus-station-name" class="text-xs font-semibold text-white">Rain &amp; Thunder</h4>
-                <p id="focus-station-desc" class="text-[11px] text-neutral-400 mt-0.5">Deep soothing rainstorm</p>
-              </div>
-            </div>
-
-            <!-- Master Focus Toggle Button -->
-            <button
-              type="button"
-              id="btn-focus-toggle-play"
-              class="w-10 h-10 rounded-full bg-[#38bdf8] hover:bg-[#60a5fa] text-slate-900 shadow-md flex items-center justify-center active:scale-95 transition-all cursor-pointer font-bold shrink-0"
-              title="Play / Pause Focus Audio"
-            >
-              <span id="focus-play-icon" class="material-symbols-outlined text-[22px]">play_arrow</span>
-            </button>
-          </div>
-
-          <!-- Focus Volume Slider -->
-          <div class="flex items-center gap-2 pt-1">
-            <span class="material-symbols-outlined text-[17px] text-neutral-400">volume_down</span>
-            <input
-              type="range"
-              id="focus-volume-slider"
-              min="0"
-              max="100"
-              value="70"
-              class="flex-1 h-1.5 bg-[#252d38] rounded-lg appearance-none cursor-pointer accent-[#38bdf8]"
-            />
-            <span id="focus-volume-label" class="text-[11px] font-mono text-neutral-400 w-8 text-right">70%</span>
-          </div>
-        </div>
-
-        <!-- Station Selector List -->
-        <div class="space-y-2">
-          <label class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-400 px-1">Choose Soundscape</label>
-          <div class="grid grid-cols-1 gap-2" id="focus-stations-list">
-            <!-- Dynamically populated -->
-          </div>
-        </div>
-      </section>
-
-      <!-- 3. QUICK STREAMING APPS SECTION -->
+      <!-- 2. QUICK STREAMING APPS SECTION -->
       <section id="section-apps" class="space-y-3 hidden">
         <div class="flex items-center justify-between px-1">
-          <label class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-400">Launch Music Services</label>
-          <span class="text-[10px] text-neutral-500 font-mono">1-Click Tab</span>
+          <label class="text-[11px] font-mono font-semibold uppercase tracking-wider text-neutral-400">Launch Apps</label>
+          <button
+            type="button"
+            id="btn-add-quick-app"
+            title="Add custom app"
+            class="w-6 h-6 rounded-md bg-[#242428] hover:bg-[#f85e2a] hover:text-black text-neutral-300 flex items-center justify-center transition-all cursor-pointer active:scale-95"
+          >
+            <span class="material-symbols-outlined text-[16px]">add</span>
+          </button>
         </div>
+
+        <!-- Add Custom App Inline Form -->
+        <form id="add-quick-app-form" class="hidden p-3 rounded-xl bg-[#1a1a1d] border border-[#2c2c30] space-y-2.5">
+          <div class="space-y-1.5">
+            <input
+              type="text"
+              id="quick-app-name-input"
+              placeholder="App name (e.g. Spotify)"
+              required
+              class="w-full px-2.5 py-1.5 rounded-lg bg-[#121214] border border-[#2c2c30] focus:border-[#f85e2a] outline-none text-xs text-white placeholder-neutral-500"
+            />
+            <input
+              type="text"
+              id="quick-app-url-input"
+              placeholder="URL (e.g. open.spotify.com)"
+              required
+              class="w-full px-2.5 py-1.5 rounded-lg bg-[#121214] border border-[#2c2c30] focus:border-[#f85e2a] outline-none text-xs text-white placeholder-neutral-500"
+            />
+          </div>
+          <div class="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              id="btn-cancel-quick-app"
+              class="px-2.5 py-1 rounded-lg bg-[#242428] hover:bg-[#2d2d32] text-xs text-neutral-300 cursor-pointer transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="px-3 py-1 rounded-lg bg-[#f85e2a] hover:bg-[#ff7240] text-black text-xs font-semibold cursor-pointer transition-colors"
+            >
+              Add
+            </button>
+          </div>
+        </form>
 
         <div class="grid grid-cols-1 gap-2.5" id="streaming-apps-list">
           <!-- Dynamically populated -->
         </div>
       </section>
-    </div>
-
-    <!-- Footer -->
-    <div class="px-4 py-2.5 border-t border-[#2e2e30] bg-[#1a1a1c] flex items-center justify-between text-[11px] text-neutral-400">
-      <div class="flex items-center gap-1.5">
-        <span class="material-symbols-outlined text-sm text-[#f85e2a]">tune</span>
-        <span>YoonSpace Audio Hub</span>
-      </div>
-      <span class="font-mono text-[10px] text-neutral-500">Shortcut: Ctrl+M</span>
     </div>
   `;
 
@@ -446,18 +376,15 @@ export function createMediaController(
 
   // Element selectors
   const btnClose = sidebar.querySelector("#btn-close-media") as HTMLButtonElement;
-  const statusPill = sidebar.querySelector("#media-status-pill") as HTMLElement;
   const headerIcon = sidebar.querySelector("#media-header-icon") as HTMLElement;
   const headerSub = sidebar.querySelector("#media-header-sub") as HTMLElement;
 
   // Nav buttons
   const tabBtnNowPlaying = sidebar.querySelector("#tab-btn-now-playing") as HTMLButtonElement;
-  const tabBtnFocus = sidebar.querySelector("#tab-btn-focus") as HTMLButtonElement;
   const tabBtnApps = sidebar.querySelector("#tab-btn-apps") as HTMLButtonElement;
 
   // Sections
   const secNowPlaying = sidebar.querySelector("#section-now-playing") as HTMLElement;
-  const secFocus = sidebar.querySelector("#section-focus") as HTMLElement;
   const secApps = sidebar.querySelector("#section-apps") as HTMLElement;
 
   // Now Playing Controls
@@ -479,92 +406,62 @@ export function createMediaController(
   const volumeSlider = sidebar.querySelector("#media-volume-slider") as HTMLInputElement;
   const volumeLabel = sidebar.querySelector("#media-volume-label") as HTMLElement;
   const btnPip = sidebar.querySelector("#btn-media-pip") as HTMLButtonElement;
-  const btnOpenLofi = sidebar.querySelector("#btn-media-open-lofi") as HTMLButtonElement;
 
-  // Focus Audio Controls
-  const btnFocusToggle = sidebar.querySelector("#btn-focus-toggle-play") as HTMLButtonElement;
-  const focusPlayIcon = sidebar.querySelector("#focus-play-icon") as HTMLElement;
-  const focusStationName = sidebar.querySelector("#focus-station-name") as HTMLElement;
-  const focusStationDesc = sidebar.querySelector("#focus-station-desc") as HTMLElement;
-  const focusStationIcon = sidebar.querySelector("#focus-station-icon") as HTMLElement;
-  const focusVolumeSlider = sidebar.querySelector("#focus-volume-slider") as HTMLInputElement;
-  const focusVolumeLabel = sidebar.querySelector("#focus-volume-label") as HTMLElement;
-  const focusStationsList = sidebar.querySelector("#focus-stations-list") as HTMLElement;
-
-  // Streaming apps list
+  // Streaming apps list & add form
   const appsList = sidebar.querySelector("#streaming-apps-list") as HTMLElement;
+  const btnAddQuickApp = sidebar.querySelector("#btn-add-quick-app") as HTMLButtonElement;
+  const addQuickAppForm = sidebar.querySelector("#add-quick-app-form") as HTMLFormElement;
+  const quickAppNameInput = sidebar.querySelector("#quick-app-name-input") as HTMLInputElement;
+  const quickAppUrlInput = sidebar.querySelector("#quick-app-url-input") as HTMLInputElement;
+  const btnCancelQuickApp = sidebar.querySelector("#btn-cancel-quick-app") as HTMLButtonElement;
 
-  // Render Focus Stations List
-  function renderFocusStations() {
-    if (!focusStationsList) return;
-    focusStationsList.innerHTML = FOCUS_STATIONS.map((station) => {
-      const isSelected = station.id === currentStationId;
-      return `
-        <button
-          type="button"
-          data-station-id="${station.id}"
-          class="focus-station-card w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-            isSelected
-              ? "bg-[#202734] border-[#38bdf8] text-white shadow-sm"
-              : "bg-[#181a1f] border-[#292c34] text-neutral-300 hover:bg-[#20232a] hover:border-[#383d49]"
-          }"
-        >
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-              isSelected ? "bg-[#38bdf8]/20 text-[#38bdf8]" : "bg-[#252830] text-neutral-400"
-            }">
-              <span class="material-symbols-outlined text-[18px]">${station.icon}</span>
-            </div>
-            <div>
-              <div class="flex items-center gap-1.5">
-                <span class="text-xs font-semibold">${station.name}</span>
-                <span class="text-[9px] font-mono px-1 rounded bg-[#272b35] text-neutral-400">${station.category}</span>
-              </div>
-              <p class="text-[11px] text-neutral-400 truncate max-w-[200px] mt-0.5">${station.description}</p>
-            </div>
-          </div>
-          <span class="material-symbols-outlined text-[16px] ${isSelected ? "text-[#38bdf8]" : "text-neutral-500"}">
-            ${isSelected && isFocusPlaying ? "graphic_eq" : isSelected ? "check_circle" : "play_circle"}
-          </span>
-        </button>
-      `;
-    }).join("");
-
-    focusStationsList.querySelectorAll(".focus-station-card").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const id = btn.getAttribute("data-station-id");
-        if (!id) return;
-        selectFocusStation(id);
-      });
-    });
-  }
-
-  // Render Streaming Apps List
+  // Render Quick Apps List
   function renderStreamingApps() {
     if (!appsList) return;
-    appsList.innerHTML = STREAMING_APPS.map((app) => `
+    const allApps: QuickApp[] = [...DEFAULT_QUICK_APPS, ...customApps];
+    appsList.innerHTML = allApps.map((app, index) => {
+      const customIdx = index - DEFAULT_QUICK_APPS.length;
+      const safeName = escapeHtml(app.name);
+      const safeUrl = escapeHtml(app.url);
+      const safeDesc = escapeHtml(app.desc);
+      return `
       <div class="p-3 rounded-xl bg-[#1a1a1d] border border-[#2c2c30] hover:border-[#3e3e44] transition-all flex items-center justify-between group">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-[#242428] text-white shadow-sm" style="color: ${app.color};">
-            <span class="material-symbols-outlined text-[20px]">${app.icon}</span>
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-[#242428] text-white shadow-sm" style="color: ${escapeHtml(app.color)};">
+            <span class="material-symbols-outlined text-[20px]">${escapeHtml(app.icon)}</span>
           </div>
-          <div>
-            <h4 class="text-xs font-semibold text-white tracking-tight">${app.name}</h4>
-            <p class="text-[11px] text-neutral-400 mt-0.5 truncate max-w-[170px]">${app.desc}</p>
+          <div class="min-w-0">
+            <h4 class="text-xs font-semibold text-white tracking-tight truncate">${safeName}</h4>
+            <p class="text-[11px] text-neutral-400 mt-0.5 truncate max-w-[155px]">${safeDesc}</p>
           </div>
         </div>
 
-        <button
-          type="button"
-          data-app-url="${app.url}"
-          data-app-name="${app.name}"
-          class="btn-launch-app px-2.5 py-1.5 rounded-lg bg-[#27272b] hover:bg-[#f85e2a] hover:text-black text-xs font-medium text-neutral-200 transition-all cursor-pointer flex items-center gap-1 active:scale-95"
-        >
-          <span>Open</span>
-          <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-        </button>
+        <div class="flex items-center gap-1.5 shrink-0">
+          ${
+            app.custom
+              ? `<button
+                  type="button"
+                  data-remove-idx="${customIdx}"
+                  title="Remove app"
+                  class="btn-remove-app w-7 h-7 rounded-lg text-neutral-500 hover:text-red-400 hover:bg-[#27272b] flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <span class="material-symbols-outlined text-[15px]">delete</span>
+                </button>`
+              : ""
+          }
+          <button
+            type="button"
+            data-app-url="${safeUrl}"
+            data-app-name="${safeName}"
+            class="btn-launch-app px-2.5 py-1.5 rounded-lg bg-[#27272b] hover:bg-[#f85e2a] hover:text-black text-xs font-medium text-neutral-200 transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+          >
+            <span>Open</span>
+            <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+          </button>
+        </div>
       </div>
-    `).join("");
+    `;
+    }).join("");
 
     appsList.querySelectorAll(".btn-launch-app").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -575,23 +472,75 @@ export function createMediaController(
         }
       });
     });
+
+    appsList.querySelectorAll(".btn-remove-app").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idxStr = btn.getAttribute("data-remove-idx");
+        if (idxStr === null) return;
+        const idx = parseInt(idxStr, 10);
+        if (!Number.isNaN(idx) && idx >= 0 && idx < customApps.length) {
+          customApps.splice(idx, 1);
+          saveCustomApps(customApps);
+          renderStreamingApps();
+        }
+      });
+    });
   }
 
+  btnAddQuickApp?.addEventListener("click", () => {
+    if (!addQuickAppForm) return;
+    const isHidden = addQuickAppForm.classList.contains("hidden");
+    if (isHidden) {
+      addQuickAppForm.classList.remove("hidden");
+      quickAppNameInput?.focus();
+    } else {
+      addQuickAppForm.classList.add("hidden");
+    }
+  });
+
+  btnCancelQuickApp?.addEventListener("click", () => {
+    addQuickAppForm?.classList.add("hidden");
+    addQuickAppForm?.reset();
+  });
+
+  addQuickAppForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = quickAppNameInput?.value.trim();
+    let url = quickAppUrlInput?.value.trim();
+    if (!name || !url) return;
+
+    if (!/^https?:\/\//i.test(url)) {
+      url = `https://${url}`;
+    }
+
+    let desc = url;
+    try {
+      desc = new URL(url).hostname.replace(/^www\./, "");
+    } catch {}
+
+    customApps.push({
+      name,
+      url,
+      icon: "language",
+      color: "#f85e2a",
+      desc,
+      custom: true,
+    });
+    saveCustomApps(customApps);
+    renderStreamingApps();
+    addQuickAppForm.reset();
+    addQuickAppForm.classList.add("hidden");
+  });
+
   // Navigation tab switcher
-  function switchTab(section: "now-playing" | "focus" | "apps") {
+  function switchTab(section: "now-playing" | "apps") {
     activeSection = section;
     if (headerSub) {
-      if (activeSection === "now-playing") {
-        headerSub.textContent = "Tab control & playback";
-      } else if (activeSection === "focus") {
-        headerSub.textContent = "Engineers' ambient audio";
-      } else {
-        headerSub.textContent = "Streaming service shortcuts";
-      }
+      headerSub.textContent =
+        activeSection === "now-playing" ? "Tab control & playback" : "Quick app shortcuts";
     }
     const tabs = [
       { id: "now-playing", btn: tabBtnNowPlaying, sec: secNowPlaying },
-      { id: "focus", btn: tabBtnFocus, sec: secFocus },
       { id: "apps", btn: tabBtnApps, sec: secApps },
     ];
 
@@ -609,314 +558,12 @@ export function createMediaController(
   }
 
   tabBtnNowPlaying?.addEventListener("click", () => switchTab("now-playing"));
-  tabBtnFocus?.addEventListener("click", () => switchTab("focus"));
   tabBtnApps?.addEventListener("click", () => switchTab("apps"));
-
-  // Web Audio Context initialization
-  function ensureAudioContext(): AudioContext {
-    if (!audioCtx) {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      audioCtx = new AudioCtxClass();
-      masterGainNode = audioCtx.createGain();
-      masterGainNode.gain.setValueAtTime(focusVolume, audioCtx.currentTime);
-      masterGainNode.connect(audioCtx.destination);
-    }
-    if (audioCtx.state === "suspended") {
-      audioCtx.resume();
-    }
-    return audioCtx;
-  }
-
-  function stopFocusAudio() {
-    activeAudioNodes.forEach((node) => {
-      try {
-        node.stop?.();
-        node.disconnect?.();
-      } catch {}
-    });
-    activeAudioNodes = [];
-    if (lofiTimer) {
-      window.clearInterval(lofiTimer);
-      lofiTimer = null;
-    }
-    if (synthwaveTimer) {
-      window.clearInterval(synthwaveTimer);
-      synthwaveTimer = null;
-    }
-    isFocusPlaying = false;
-    updateFocusUI();
-    notifyOverallMediaState();
-  }
-
-  function startFocusAudio(stationId: string) {
-    stopFocusAudio();
-    const ctx = ensureAudioContext();
-    if (!masterGainNode) return;
-
-    currentStationId = stationId;
-
-    if (stationId === "rain") {
-      // 1. Pink Noise rain generator with Paul Kellet's algorithm
-      const bufferSize = ctx.sampleRate * 2;
-      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-      for (let i = 0; i < bufferSize; i++) {
-        const white = Math.random() * 2 - 1;
-        b0 = 0.99886 * b0 + white * 0.0555179;
-        b1 = 0.99332 * b1 + white * 0.0750759;
-        b2 = 0.96900 * b2 + white * 0.1538520;
-        b3 = 0.86650 * b3 + white * 0.3104856;
-        b4 = 0.55000 * b4 + white * 0.5329522;
-        b5 = -0.7616 * b5 - white * 0.0168980;
-        output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
-        b6 = white * 0.115926;
-      }
-
-      const whiteNoise = ctx.createBufferSource();
-      whiteNoise.buffer = noiseBuffer;
-      whiteNoise.loop = true;
-
-      const rainFilter = ctx.createBiquadFilter();
-      rainFilter.type = "lowpass";
-      rainFilter.frequency.setValueAtTime(800, ctx.currentTime);
-
-      whiteNoise.connect(rainFilter);
-      rainFilter.connect(masterGainNode);
-      whiteNoise.start();
-      activeAudioNodes.push(whiteNoise, rainFilter);
-
-      // Periodic gentle thunder rumble
-      const thunderInterval = window.setInterval(() => {
-        if (!isFocusPlaying) return;
-        try {
-          const osc = ctx.createOscillator();
-          const thunderGain = ctx.createGain();
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(55, ctx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(35, ctx.currentTime + 3.0);
-
-          thunderGain.gain.setValueAtTime(0.01, ctx.currentTime);
-          thunderGain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.8);
-          thunderGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 3.2);
-
-          osc.connect(thunderGain);
-          thunderGain.connect(masterGainNode!);
-          osc.start();
-          osc.stop(ctx.currentTime + 3.5);
-        } catch {}
-      }, 9000);
-      lofiTimer = thunderInterval;
-
-    } else if (stationId === "waves") {
-      // 2. Modulated Shoreline Ocean Waves
-      const bufferSize = ctx.sampleRate * 3;
-      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        output[i] = (Math.random() * 2 - 1) * 0.2;
-      }
-
-      const noise = ctx.createBufferSource();
-      noise.buffer = noiseBuffer;
-      noise.loop = true;
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.setValueAtTime(320, ctx.currentTime);
-      filter.Q.setValueAtTime(1.2, ctx.currentTime);
-
-      const waveGain = ctx.createGain();
-      waveGain.gain.setValueAtTime(0.2, ctx.currentTime);
-
-      // Slow LFO for ocean wave swells (0.12 Hz)
-      const lfo = ctx.createOscillator();
-      const lfoGain = ctx.createGain();
-      lfo.type = "sine";
-      lfo.frequency.setValueAtTime(0.12, ctx.currentTime);
-      lfoGain.gain.setValueAtTime(0.35, ctx.currentTime);
-
-      lfo.connect(lfoGain);
-      lfoGain.connect(waveGain.gain);
-
-      noise.connect(filter);
-      filter.connect(waveGain);
-      waveGain.connect(masterGainNode);
-
-      lfo.start();
-      noise.start();
-      activeAudioNodes.push(noise, filter, waveGain, lfo, lfoGain);
-
-    } else if (stationId === "lofi") {
-      // 3. Relaxing Lo-Fi chords + vinyl crackle
-      const chordNotes = [
-        [261.63, 329.63, 392.0, 493.88], // Cmaj7
-        [220.0, 261.63, 329.63, 392.0],  // Am7
-        [174.61, 220.0, 261.63, 329.63], // Fmaj7
-        [196.0, 246.94, 293.66, 349.23], // G7
-      ];
-      let chordIndex = 0;
-
-      const playChord = () => {
-        if (!isFocusPlaying) return;
-        const currentNotes = chordNotes[chordIndex % chordNotes.length];
-        chordIndex++;
-
-        currentNotes.forEach((freq) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          const filter = ctx.createBiquadFilter();
-
-          osc.type = "triangle";
-          osc.frequency.setValueAtTime(freq, ctx.currentTime);
-
-          filter.type = "lowpass";
-          filter.frequency.setValueAtTime(750, ctx.currentTime);
-
-          gain.gain.setValueAtTime(0.001, ctx.currentTime);
-          gain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 0.4);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 3.2);
-
-          osc.connect(filter);
-          filter.connect(gain);
-          gain.connect(masterGainNode!);
-
-          osc.start();
-          osc.stop(ctx.currentTime + 3.4);
-        });
-      };
-
-      playChord();
-      lofiTimer = window.setInterval(playChord, 3500);
-
-    } else if (stationId === "synthwave") {
-      // 4. Synthwave Cyberpunk Rhythm
-      const bassNotes = [110, 110, 130.81, 146.83, 110, 164.81, 146.83, 98];
-      let step = 0;
-
-      const playBass = () => {
-        if (!isFocusPlaying) return;
-        const freq = bassNotes[step % bassNotes.length];
-        step++;
-
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const filter = ctx.createBiquadFilter();
-
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(freq, ctx.currentTime);
-
-        filter.type = "lowpass";
-        filter.frequency.setValueAtTime(600, ctx.currentTime);
-        filter.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.2);
-
-        gain.gain.setValueAtTime(0.09, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(masterGainNode!);
-
-        osc.start();
-        osc.stop(ctx.currentTime + 0.28);
-      };
-
-      playBass();
-      synthwaveTimer = window.setInterval(playBass, 260);
-
-    } else if (stationId === "cafe") {
-      // 5. Warm Cafe Acoustic Ambience
-      const bufferSize = ctx.sampleRate * 2;
-      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      let lastOut = 0.0;
-      for (let i = 0; i < bufferSize; i++) {
-        const white = Math.random() * 2 - 1;
-        output[i] = (lastOut + 0.02 * white) / 1.02;
-        lastOut = output[i];
-        output[i] *= 0.6;
-      }
-
-      const noise = ctx.createBufferSource();
-      noise.buffer = noiseBuffer;
-      noise.loop = true;
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.setValueAtTime(550, ctx.currentTime);
-      filter.Q.setValueAtTime(0.8, ctx.currentTime);
-
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(masterGainNode);
-
-      noise.start();
-      activeAudioNodes.push(noise, filter, gain);
-    }
-
-    isFocusPlaying = true;
-    updateFocusUI();
-    notifyOverallMediaState();
-  }
-
-  function selectFocusStation(stationId: string) {
-    currentStationId = stationId;
-    const station = FOCUS_STATIONS.find((s) => s.id === stationId);
-    if (station) {
-      if (focusStationName) focusStationName.textContent = station.name;
-      if (focusStationDesc) focusStationDesc.textContent = station.description;
-      if (focusStationIcon) focusStationIcon.textContent = station.icon;
-    }
-    renderFocusStations();
-    if (isFocusPlaying) {
-      startFocusAudio(stationId);
-    }
-  }
-
-  function updateFocusUI() {
-    if (focusPlayIcon) {
-      focusPlayIcon.textContent = isFocusPlaying ? "pause" : "play_arrow";
-    }
-    renderFocusStations();
-  }
-
-  btnFocusToggle?.addEventListener("click", () => {
-    if (isFocusPlaying) {
-      stopFocusAudio();
-    } else {
-      startFocusAudio(currentStationId);
-    }
-  });
-
-  focusVolumeSlider?.addEventListener("input", () => {
-    const val = parseInt(focusVolumeSlider.value, 10);
-    focusVolume = val / 100;
-    if (focusVolumeLabel) focusVolumeLabel.textContent = `${val}%`;
-    if (masterGainNode && audioCtx) {
-      masterGainNode.gain.setValueAtTime(focusVolume, audioCtx.currentTime);
-    }
-  });
 
   // Overall Media State Notification (updates dock indicator)
   function notifyOverallMediaState() {
-    const isAnyPlaying = isFocusPlaying || isTabMediaPlaying;
+    const isAnyPlaying = isTabMediaPlaying;
     onMediaStateChange?.(isAnyPlaying);
-
-    if (statusPill) {
-      if (isFocusPlaying) {
-        statusPill.textContent = "FOCUS AUDIO";
-        statusPill.className = "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#38bdf8]/20 text-[#38bdf8] border border-[#38bdf8]/30";
-      } else if (isTabMediaPlaying) {
-        statusPill.textContent = "PLAYING";
-        statusPill.className = "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#f85e2a]/20 text-[#f85e2a] border border-[#f85e2a]/30";
-      } else {
-        statusPill.textContent = "STANDBY";
-        statusPill.className = "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-neutral-800 text-neutral-400 border border-neutral-700";
-      }
-    }
 
     if (visualizerBars) {
       if (isAnyPlaying) {
@@ -949,18 +596,25 @@ export function createMediaController(
     await tauriIpc.mediaCommand("next", activeTabReference?.id);
   });
 
+  seekSlider?.addEventListener("pointerdown", () => {
+    isSeeking = true;
+  });
+  seekSlider?.addEventListener("pointerup", () => {
+    isSeeking = false;
+  });
+  seekSlider?.addEventListener("change", () => {
+    isSeeking = false;
+  });
+
   seekSlider?.addEventListener("input", async () => {
     const val = parseFloat(seekSlider.value) / 100;
     tabMediaSeek = val;
     if (timeCurrent) {
-      const totalEstimatedSecs = 180;
-      const curSecs = Math.round(tabMediaSeek * totalEstimatedSecs);
-      const mins = Math.floor(curSecs / 60);
-      const secs = curSecs % 60;
-      timeCurrent.textContent = `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+      const refDuration = tabMediaDuration > 0 ? tabMediaDuration : 180;
+      timeCurrent.textContent = formatTime(tabMediaSeek * refDuration);
     }
-    if (timeTotal && timeTotal.textContent === "--:--") {
-      timeTotal.textContent = "3:00";
+    if (timeTotal && timeTotal.textContent === "--:--" && tabMediaDuration > 0) {
+      timeTotal.textContent = formatTime(tabMediaDuration);
     }
     await tauriIpc.mediaCommand("seek", activeTabReference?.id, val);
   });
@@ -971,6 +625,16 @@ export function createMediaController(
       volumeIcon.textContent = isTabMediaMuted ? "volume_off" : tabMediaVolume < 0.5 ? "volume_down" : "volume_up";
     }
     await tauriIpc.mediaCommand("mute", activeTabReference?.id);
+  });
+
+  volumeSlider?.addEventListener("pointerdown", () => {
+    isAdjustingVolume = true;
+  });
+  volumeSlider?.addEventListener("pointerup", () => {
+    isAdjustingVolume = false;
+  });
+  volumeSlider?.addEventListener("change", () => {
+    isAdjustingVolume = false;
   });
 
   volumeSlider?.addEventListener("input", async () => {
@@ -994,17 +658,82 @@ export function createMediaController(
     }
   });
 
-  btnOpenLofi?.addEventListener("click", () => {
-    onOpenUrl?.("https://www.youtube.com/watch?v=jfKfPfyJRdk", "Lofi Girl");
-  });
-
   btnClose?.addEventListener("click", () => {
     hide();
     onClose?.();
   });
 
+  function resetMediaProgressUI() {
+    isTabMediaPlaying = false;
+    tabMediaDuration = 0;
+    tabMediaSeek = 0;
+    if (playIcon) playIcon.textContent = "play_arrow";
+    if (seekSlider && !isSeeking) seekSlider.value = "0";
+    if (timeCurrent) timeCurrent.textContent = "0:00";
+    if (timeTotal) timeTotal.textContent = "--:--";
+    notifyOverallMediaState();
+  }
+
+  function updateMediaState(state: WebviewMediaState) {
+    if (!state.hasMedia) {
+      if (isTabMediaPlaying || tabMediaDuration > 0) {
+        resetMediaProgressUI();
+      }
+      return;
+    }
+
+    isTabMediaPlaying = state.isPlaying;
+    isTabMediaMuted = state.muted;
+    tabMediaVolume = state.volume;
+    tabMediaDuration = state.duration > 0 ? state.duration : 0;
+
+    if (playIcon) {
+      playIcon.textContent = isTabMediaPlaying ? "pause" : "play_arrow";
+    }
+
+    if (!isSeeking) {
+      const pct =
+        tabMediaDuration > 0
+          ? Math.max(0, Math.min(100, (state.currentTime / tabMediaDuration) * 100))
+          : 0;
+      if (seekSlider) seekSlider.value = pct.toFixed(1);
+      if (timeCurrent) timeCurrent.textContent = formatTime(state.currentTime);
+    }
+
+    if (timeTotal) {
+      timeTotal.textContent = tabMediaDuration > 0 ? formatTime(tabMediaDuration) : "--:--";
+    }
+
+    if (!isAdjustingVolume) {
+      const volPct = Math.round(Math.max(0, Math.min(1, state.volume)) * 100);
+      if (volumeSlider) volumeSlider.value = String(state.muted ? 0 : volPct);
+      if (volumeLabel) volumeLabel.textContent = `${state.muted ? 0 : volPct}%`;
+    }
+
+    if (volumeIcon) {
+      volumeIcon.textContent = state.muted || state.volume === 0
+        ? "volume_off"
+        : state.volume < 0.5
+          ? "volume_down"
+          : "volume_up";
+    }
+
+    if (state.title && npTitle) {
+      npTitle.textContent = state.title;
+    }
+    if (state.artist && npSub) {
+      npSub.textContent = state.artist;
+    }
+
+    notifyOverallMediaState();
+  }
+
   function updateTabInfo(tab: MinimizedTab | null) {
+    const isSameTab = tab?.id && activeTabReference?.id === tab.id;
     activeTabReference = tab;
+    if (!isSameTab) {
+      resetMediaProgressUI();
+    }
     if (!tab) {
       if (npTitle) npTitle.textContent = "No active tab media";
       if (npSub) npSub.textContent = "Open YouTube, Spotify, or any media site";
@@ -1064,8 +793,7 @@ export function createMediaController(
     sidebar.style.left = `${offset}px`;
   }
 
-  // Initial render of sub-lists
-  renderFocusStations();
+  // Initial render of quick apps
   renderStreamingApps();
 
   return {
@@ -1076,8 +804,8 @@ export function createMediaController(
     isOpen: () => isDrawerVisible,
     setLeftOffset,
     updateActiveTab: updateTabInfo,
+    updateMediaState,
     destroy: () => {
-      stopFocusAudio();
       sidebar.remove();
     },
   };

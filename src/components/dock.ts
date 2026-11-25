@@ -205,7 +205,7 @@ export function createDock(
           <!-- Music / Media Control Button -->
           <button
             id="dock-btn-media"
-            title="Music & Media Control (Ctrl+M)"
+            title="Music & Media Control"
             class="dock-item relative w-11 h-11 rounded-xl flex items-center justify-center text-[#e2bfb4] hover:bg-[#202020] hover:text-[#e5e2e1] transition-all cursor-pointer shrink-0"
           >
             <span id="dock-media-icon" class="material-symbols-outlined text-[22px]">music_note</span>
@@ -271,7 +271,7 @@ export function createDock(
           <!-- Music / Media Control Button -->
           <button
             id="dock-btn-media"
-            title="Music & Media Control (Ctrl+M)"
+            title="Music & Media Control"
             class="w-full h-9 px-2.5 rounded-xl flex items-center gap-2.5 text-[#e2bfb4] hover:bg-[#202022] hover:text-[#e5e2e1] transition-colors cursor-pointer text-xs font-medium relative"
           >
             <span id="dock-media-icon" class="material-symbols-outlined text-[18px]">music_note</span>

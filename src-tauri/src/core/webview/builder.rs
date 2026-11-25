@@ -306,6 +306,36 @@ fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &
                 }
             });
             let _ = ucm.register_script_message_handler("shield_block");
+
+            let app_media = app_handle.clone();
+            let tab_id_media = tab_id_str.clone();
+            ucm.connect_script_message_received(Some("media_state"), move |_ucm, js_res| {
+                if let Some(js_val) = js_res.js_value() {
+                    use javascriptcore::ValueExt;
+                    use tauri::Emitter;
+                    let msg_str = js_val.to_str();
+                    #[derive(Clone, serde::Serialize, serde::Deserialize)]
+                    #[serde(rename_all = "camelCase")]
+                    struct MediaStatePayload {
+                        tab_id: Option<String>,
+                        has_media: bool,
+                        is_playing: bool,
+                        current_time: f64,
+                        duration: f64,
+                        volume: f64,
+                        muted: bool,
+                        title: String,
+                        artist: String,
+                    }
+                    if let Ok(mut payload) = serde_json::from_str::<MediaStatePayload>(msg_str.as_str()) {
+                        if payload.tab_id.is_none() {
+                            payload.tab_id = Some(tab_id_media.clone());
+                        }
+                        let _ = app_media.emit("webview-media-state", payload);
+                    }
+                }
+            });
+            let _ = ucm.register_script_message_handler("media_state");
         }
 
         // 5a. Load progress tracking via WebKitGTK estimated load progress
@@ -508,8 +538,10 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
     let app_load = app.clone();
     let tab_id_load = tab_id.clone();
     let shield_script = crate::core::shield::get_shield_injection_script(&tab_id);
+    let media_script = get_media_observer_script(&tab_id);
     let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(blank_url))
         .initialization_script(&shield_script)
+        .initialization_script(&media_script)
         .on_document_title_changed(move |_webview, title| {
             if title == "about:blank" || title.is_empty() {
                 return;
@@ -634,8 +666,10 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let app_left_load = app.clone();
     let tab_id_left = tab_id.clone();
     let left_shield = crate::core::shield::get_shield_injection_script(&left_label);
+    let left_media = get_media_observer_script(&left_label);
     let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(blank_url.clone()))
         .initialization_script(&left_shield)
+        .initialization_script(&left_media)
         .on_document_title_changed(move |_webview, title| {
             if title == "about:blank" || title.is_empty() {
                 return;
@@ -697,8 +731,10 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     let app_right_load = app.clone();
     let tab_id_right = tab_id.clone();
     let right_shield = crate::core::shield::get_shield_injection_script(&right_label);
+    let right_media = get_media_observer_script(&right_label);
     let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(blank_url))
         .initialization_script(&right_shield)
+        .initialization_script(&right_media)
         .on_document_title_changed(move |_webview, title| {
             if title == "about:blank" || title.is_empty() {
                 return;
@@ -785,4 +821,129 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     });
 
     Ok(())
+}
+
+fn get_media_observer_script(tab_id: &str) -> String {
+    let tab_id_escaped = tab_id.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        r##"(function() {{
+  if (window.__YOONSPACE_MEDIA_OBSERVER__) return;
+  window.__YOONSPACE_MEDIA_OBSERVER__ = true;
+  const TAB_ID = "{tab_id}";
+  let lastSnapshot = "";
+  let timerId = null;
+
+  function pickActiveMedia() {{
+    const list = Array.from(document.querySelectorAll("video, audio"));
+    if (list.length === 0) return null;
+    const playing = list.find((m) => !m.paused && !m.ended && (m.readyState > 0 || m.currentTime > 0));
+    if (playing) return playing;
+    const withDuration = list.find((m) => Number.isFinite(m.duration) && m.duration > 0);
+    return withDuration || list[0];
+  }}
+
+  function getMetadata() {{
+    let title = "";
+    let artist = "";
+    try {{
+      const ms = navigator.mediaSession && navigator.mediaSession.metadata;
+      if (ms) {{
+        title = ms.title || "";
+        artist = ms.artist || "";
+      }}
+    }} catch (e) {{}}
+    if (!title) {{
+      const ytTitle = document.querySelector("h1.ytd-watch-metadata yt-formatted-string, #title h1 yt-formatted-string");
+      if (ytTitle && ytTitle.textContent) title = ytTitle.textContent.trim();
+    }}
+    if (!title && document.title) {{
+      title = document.title.replace(/^\(\d+\)\s*/, "").replace(/\s*-\s*YouTube$/, "").trim();
+    }}
+    if (!artist) {{
+      const ytChannel = document.querySelector("#owner #channel-name a, ytd-channel-name a");
+      if (ytChannel && ytChannel.textContent) artist = ytChannel.textContent.trim();
+    }}
+    return {{ title, artist }};
+  }}
+
+  function reportState(force) {{
+    try {{
+      const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.media_state;
+      if (!handler) return;
+      const m = pickActiveMedia();
+      if (!m) {{
+        const emptyPayload = {{
+          tabId: TAB_ID,
+          hasMedia: false,
+          isPlaying: false,
+          currentTime: 0,
+          duration: 0,
+          volume: 1,
+          muted: false,
+          title: "",
+          artist: ""
+        }};
+        const key = JSON.stringify(emptyPayload);
+        if (force || key !== lastSnapshot) {{
+          lastSnapshot = key;
+          handler.postMessage(key);
+        }}
+        return;
+      }}
+
+      const meta = getMetadata();
+      const duration = Number.isFinite(m.duration) && m.duration > 0 ? m.duration : 0;
+      const currentTime = Number.isFinite(m.currentTime) && m.currentTime >= 0 ? m.currentTime : 0;
+      const isPlaying = !m.paused && !m.ended;
+      const payload = {{
+        tabId: TAB_ID,
+        hasMedia: true,
+        isPlaying,
+        currentTime,
+        duration,
+        volume: Number.isFinite(m.volume) ? m.volume : 1,
+        muted: Boolean(m.muted),
+        title: meta.title || "",
+        artist: meta.artist || ""
+      }};
+      const key = JSON.stringify(payload);
+      if (force || key !== lastSnapshot) {{
+        lastSnapshot = key;
+        handler.postMessage(key);
+      }}
+    }} catch (e) {{}}
+  }}
+
+  function ensurePolling() {{
+    if (timerId !== null) return;
+    timerId = window.setInterval(() => {{
+      const m = pickActiveMedia();
+      if (m && (!m.paused && !m.ended)) {{
+        reportState(false);
+      }}
+    }}, 350);
+  }}
+
+  const events = ["play", "playing", "pause", "ended", "loadedmetadata", "durationchange", "volumechange", "seeked", "timeupdate"];
+  events.forEach((evt) => {{
+    document.addEventListener(evt, () => {{
+      reportState(evt !== "timeupdate");
+      ensurePolling();
+    }}, true);
+  }});
+
+  window.addEventListener("yt-navigate-finish", () => setTimeout(() => reportState(true), 250));
+  window.addEventListener("popstate", () => setTimeout(() => reportState(true), 250));
+  if (document.readyState === "complete" || document.readyState === "interactive") {{
+    reportState(true);
+    ensurePolling();
+  }} else {{
+    window.addEventListener("DOMContentLoaded", () => {{
+      reportState(true);
+      ensurePolling();
+    }});
+  }}
+}})();"##,
+        tab_id = tab_id_escaped
+    )
 }
