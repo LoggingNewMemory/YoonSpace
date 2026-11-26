@@ -188,14 +188,11 @@ export function createMediaController(
       <!-- 1. NOW PLAYING SECTION -->
       <section id="section-now-playing" class="space-y-4">
         <!-- Media Visual Card -->
-        <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#241f1e] via-[#1c1c1f] to-[#161618] border border-[#332f2e] p-4 shadow-lg">
-          <!-- Ambient Glow Background -->
-          <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-[#f85e2a]/10 blur-2xl pointer-events-none"></div>
-
+        <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#222226] via-[#1c1c1f] to-[#161618] border border-[#2e2e32] p-4 shadow-lg">
           <!-- Top Row: Domain / Source Badge & Jump Button -->
           <div class="flex items-center justify-between mb-3 relative z-10">
-            <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#141416]/90 border border-[#38383c] text-[11px] font-mono text-[#ffb59e]">
-              <span id="now-playing-icon" class="material-symbols-outlined text-[14px] text-[#f85e2a]">web</span>
+            <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#141416]/90 border border-[#38383c] text-[11px] font-mono text-neutral-300">
+              <span id="now-playing-icon" class="material-symbols-outlined text-[14px] text-neutral-300">web</span>
               <span id="now-playing-domain" class="truncate max-w-[170px]">Browser Media</span>
             </div>
 
@@ -211,13 +208,13 @@ export function createMediaController(
 
           <!-- Artwork / Equalizer Banner -->
           <div class="flex items-center gap-3.5 mb-3.5 relative z-10">
-            <div id="now-playing-artwork" class="w-14 h-14 rounded-xl bg-[#2b2b30] border border-[#3f3f46] flex items-center justify-center text-[#f85e2a] shadow-inner shrink-0 relative overflow-hidden">
+            <div id="now-playing-artwork" class="w-14 h-14 rounded-xl bg-[#2b2b30] border border-[#3f3f46] flex items-center justify-center text-neutral-300 shadow-inner shrink-0 relative overflow-hidden">
               <span class="material-symbols-outlined text-[28px]">graphic_eq</span>
               <div id="visualizer-bars" class="hidden absolute inset-0 bg-[#000000]/40 flex items-end justify-center gap-1 px-2 pb-2">
-                <span class="w-1 bg-[#f85e2a] rounded-t animate-pulse h-5"></span>
-                <span class="w-1 bg-[#ffb59e] rounded-t animate-pulse h-8 delay-75"></span>
-                <span class="w-1 bg-[#f85e2a] rounded-t animate-pulse h-4 delay-150"></span>
-                <span class="w-1 bg-[#ff7e4f] rounded-t animate-pulse h-7 delay-100"></span>
+                <span class="w-1 bg-white/90 rounded-t animate-pulse h-5"></span>
+                <span class="w-1 bg-neutral-400 rounded-t animate-pulse h-8 delay-75"></span>
+                <span class="w-1 bg-white/90 rounded-t animate-pulse h-4 delay-150"></span>
+                <span class="w-1 bg-neutral-400 rounded-t animate-pulse h-7 delay-100"></span>
               </div>
             </div>
 
@@ -240,7 +237,7 @@ export function createMediaController(
                 min="0"
                 max="100"
                 value="0"
-                class="w-full h-1.5 bg-[#333338] rounded-lg appearance-none cursor-pointer accent-[#f85e2a]"
+                class="w-full h-1.5 bg-[#333338] rounded-lg appearance-none cursor-pointer accent-white"
               />
             </div>
             <div class="flex items-center justify-between text-[10px] font-mono text-neutral-400">
@@ -266,7 +263,7 @@ export function createMediaController(
               type="button"
               id="btn-media-play-pause"
               title="Play / Pause"
-              class="w-12 h-12 rounded-full bg-[#f85e2a] hover:bg-[#ff7240] text-black shadow-lg shadow-[#f85e2a]/30 flex items-center justify-center active:scale-95 transition-all cursor-pointer font-bold"
+              class="w-12 h-12 rounded-full bg-[#e5e2e1] hover:bg-white text-black shadow-lg shadow-black/30 flex items-center justify-center active:scale-95 transition-all cursor-pointer font-bold"
             >
               <span id="media-play-icon" class="material-symbols-outlined text-[28px]">play_arrow</span>
             </button>
