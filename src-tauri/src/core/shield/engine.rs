@@ -42,7 +42,7 @@ pub struct ShieldManager {
     sources: SourceIndices,
     fast_domains_json: String,
     yt_scriptlet: String,
-    yt_hide_selectors: String,
+    yt_hide_selectors: Vec<String>,
 }
 
 static SHIELD_MANAGER: OnceLock<Arc<ShieldManager>> = OnceLock::new();
@@ -202,10 +202,14 @@ impl ShieldManager {
         // 5. Query official Brave cosmetic resources and scriptlets for YouTube from adblock-rust
         let yt_cosmetic = engine.url_cosmetic_resources("https://www.youtube.com/watch?v=test");
         let yt_scriptlet = yt_cosmetic.injected_script;
-        let yt_hide_selectors = yt_cosmetic.hide_selectors.into_iter().collect::<Vec<_>>().join(", ");
+        let yt_hide_selectors: Vec<String> = yt_cosmetic
+            .hide_selectors
+            .into_iter()
+            .filter(|s| !s.trim().is_empty())
+            .collect();
 
         eprintln!(
-            "[YoonSpace Shield] adblock-rust ready: {} fast domains, {} bytes YouTube scriptlets, selectors: {}",
+            "[YoonSpace Shield] adblock-rust ready: {} fast domains, {} bytes YouTube scriptlets, {} selectors",
             fast_domains_map.len(),
             yt_scriptlet.len(),
             yt_hide_selectors.len()
@@ -560,7 +564,19 @@ impl ShieldManager {
         &self.yt_scriptlet
     }
 
-    pub fn get_youtube_hide_selectors(&self) -> &str {
+    pub fn get_youtube_hide_selectors(&self) -> &[String] {
         &self.yt_hide_selectors
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_yt_cosmetic_resources_present() {
+        let mgr = ShieldManager::new();
+        assert!(!mgr.get_youtube_hide_selectors().is_empty());
+        assert!(!mgr.get_youtube_scriptlet().is_empty());
     }
 }
