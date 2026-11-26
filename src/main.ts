@@ -153,8 +153,8 @@ async function handleSpawnPreset(preset: SplitPreset) {
   isSpawning = true;
   const tabId = "preset-" + preset.id;
 
-  let leftTitle = "Left View";
-  let rightTitle = "Right View";
+  let leftTitle = deriveTitleFromInput(preset.left_url) || "Left View";
+  let rightTitle = deriveTitleFromInput(preset.right_url) || "Right View";
   if (preset.title.includes("|")) {
     const parts = preset.title.split("|").map((p) => p.trim());
     leftTitle = parts[0] || leftTitle;
@@ -1381,7 +1381,11 @@ async function init() {
 
   const presets = createSplitPresetsSection(
     currentConfig.split_presets,
-    handleSpawnPreset
+    handleSpawnPreset,
+    async (updatedPresets) => {
+      currentConfig.split_presets = updatedPresets;
+      await tauriIpc.updateAppConfig(currentConfig);
+    }
   );
   welcome.classList.add("relative", "z-10");
   welcome.appendChild(welcomeBookmarks.element);

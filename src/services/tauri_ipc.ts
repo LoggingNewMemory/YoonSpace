@@ -118,29 +118,7 @@ export const tauriIpc = {
             icon: "shield",
           },
         ],
-        split_presets: [
-          {
-            id: "gemini_notebook",
-            title: "Gemini | NotebookLM",
-            icon: "view_column",
-            left_url: "https://gemini.google.com",
-            right_url: "https://notebooklm.google.com",
-          },
-          {
-            id: "github_jira",
-            title: "GitHub | JIRA",
-            icon: "troubleshoot",
-            left_url: "https://github.com",
-            right_url: "https://www.atlassian.com/software/jira",
-          },
-          {
-            id: "claude_youtube",
-            title: "Claude | YouTube",
-            icon: "school",
-            left_url: "https://claude.ai",
-            right_url: "https://www.youtube.com",
-          },
-        ],
+        split_presets: [],
         media_volume: 100,
         wallpaper_settings: {
           folder_path: "",
