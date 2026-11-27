@@ -18,7 +18,9 @@ use std::sync::Mutex;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
 
 use super::gtk_overlay;
+use super::native_config::configure_native_webview;
 use super::navigation::normalize_url;
+use super::scripts::{get_favicon_observer_script, get_media_observer_script};
 use super::split::{
     get_tab_split_ratio, set_tab_split_ratio, SingleViewRequest, SplitViewRequest,
     MAX_SPLIT_RATIO, MIN_SPLIT_RATIO,
@@ -33,694 +35,111 @@ pub struct WebviewLoadProgressPayload {
     pub status: String,
 }
 
-fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview, tab_id: &str) {
-    use webkit2gtk::{
-        CookieManagerExt, PolicyDecisionExt, SettingsExt, URIRequestExt,
-        UserContentManagerExt, WebResourceExt, WebsiteDataManagerExt, WebViewExt,
-    };
-    let app_handle = app.clone();
-    let tab_id_str = tab_id.to_string();
+fn build_pane_webview(
+    app: &AppHandle,
+    webview_id: &str,
+    shield_tab_id: &str,
+    title_event: &'static str,
+    split_pane: Option<&'static str>,
+) -> Result<WebviewBuilder<tauri::Wry>, String> {
+    let blank_url: url::Url = "about:blank"
+        .parse()
+        .map_err(|e: url::ParseError| e.to_string())?;
+    let shield_script = crate::core::shield::get_shield_injection_script(webview_id);
+    let media_script = get_media_observer_script(webview_id);
+    let favicon_script = get_favicon_observer_script(webview_id);
 
-    let _ = webview.with_webview(move |platform_webview| {
-        let inner_wv = platform_webview.inner();
-        inner_wv.set_widget_name(&tab_id_str);
+    let app_title = app.clone();
+    let app_load = app.clone();
+    let progress_tab_id = webview_id.to_string();
+    let root_tab_id = shield_tab_id.to_string();
 
-        // 1. Optimize WebKitGTK settings for unrestricted media playback & modern web
-        if let Some(settings) = WebViewExt::settings(&inner_wv) {
-            settings.set_media_playback_requires_user_gesture(false);
-            settings.set_media_playback_allows_inline(true);
-            settings.set_enable_encrypted_media(true);
-            settings.set_enable_media(true);
-            settings.set_enable_mediasource(true);
-            settings.set_enable_media_stream(true);
-            settings.set_enable_media_capabilities(true);
-            settings.set_enable_webaudio(true);
-            settings.set_enable_webgl(true);
-            settings.set_enable_smooth_scrolling(true);
-            settings.set_enable_page_cache(true);
-            settings.set_enable_fullscreen(true);
-        }
-
-        // 1c. Enable WebBrowser CacheModel for aggressive disk & memory caching on the actual WebView context
-        use webkit2gtk::WebContextExt;
-        if let Some(context) = WebViewExt::context(&inner_wv) {
-            context.set_cache_model(webkit2gtk::CacheModel::WebBrowser);
-        }
-        if let Some(data_manager) = inner_wv.website_data_manager() {
-            if let Some(cookie_mgr) = data_manager.cookie_manager() {
-                let cookie_path = crate::core::user_data::get_cookies_db_path();
-                if let Some(path_str) = cookie_path.to_str() {
-                    cookie_mgr.set_persistent_storage(path_str, webkit2gtk::CookiePersistentStorage::Sqlite);
-                }
-                let manager = crate::core::shield::get_shield_manager();
-                if manager.is_enabled() && manager.is_block_trackers() {
-                    cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::NoThirdParty);
-                } else {
-                    cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::Always);
-                }
-            }
-        }
-
-        // 2. Unblock autoplay policy & filter popup ad windows via Brave adblock-rust
-        let app_popup = app_handle.clone();
-        let tab_id_popup = tab_id_str.clone();
-        inner_wv.connect_decide_policy(move |wv, decision, decision_type| {
-            if decision_type == webkit2gtk::PolicyDecisionType::NewWindowAction {
-                use gtk::prelude::Cast;
-                use webkit2gtk::NavigationPolicyDecisionExt;
-                if let Some(nav_action) = decision.dynamic_cast_ref::<webkit2gtk::NavigationPolicyDecision>() {
-                    #[allow(deprecated)]
-                    let req_opt = nav_action.navigation_action().and_then(|na| na.request()).or_else(|| nav_action.request());
-                    if let Some(req) = req_opt {
-                        if let Some(uri) = req.uri() {
-                            let manager = crate::core::shield::get_shield_manager();
-                            if manager.is_enabled() {
-                                let (should_block, category) = manager.check_url_categorized(uri.as_str(), "", "subdocument");
-                                if should_block || manager.is_aggressive_sandbox() {
-                                    decision.ignore();
-                                    crate::commands::shield::record_and_emit_block(
-                                        &app_popup,
-                                        &tab_id_popup,
-                                        uri.as_str(),
-                                        Some(category),
-                                        1,
-                                    );
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction {
-                use gtk::prelude::Cast;
-                use webkit2gtk::{NavigationPolicyDecisionExt, WebViewExt};
-                if let Some(nav_action) = decision.dynamic_cast_ref::<webkit2gtk::NavigationPolicyDecision>() {
-                    #[allow(deprecated)]
-                    let req_opt = nav_action.navigation_action().and_then(|na| na.request()).or_else(|| nav_action.request());
-                    if let Some(req) = req_opt {
-                        if let Some(uri) = req.uri() {
-                            let uri_str = uri.as_str();
-                            let manager = crate::core::shield::get_shield_manager();
-                            if manager.is_enabled() && manager.is_upgrade_https()
-                                && uri_str.starts_with("http://")
-                                && !uri_str.starts_with("http://localhost")
-                                && !uri_str.starts_with("http://127.0.0.1")
-                            {
-                                let upgraded = format!("https://{}", &uri_str[7..]);
-                                decision.ignore();
-                                wv.load_uri(&upgraded);
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if decision_type == webkit2gtk::PolicyDecisionType::Response {
-                use gtk::prelude::Cast;
-                use webkit2gtk::{ResponsePolicyDecisionExt, URIResponseExt};
-                if let Some(resp_decision) = decision.dynamic_cast_ref::<webkit2gtk::ResponsePolicyDecision>() {
-                    if let Some(resp) = resp_decision.response() {
-                        let status = resp.status_code();
-                        if status == 204 || status < 200 || status >= 300 {
-                            return false;
-                        }
-
-                        // Always honor explicit Content-Disposition: attachment
-                        let is_attachment = resp
-                            .http_headers()
-                            .and_then(|h| h.content_disposition())
-                            .map(|(disp, _)| disp.eq_ignore_ascii_case("attachment"))
-                            .unwrap_or(false);
-                        if is_attachment {
-                            decision.download();
-                            return true;
-                        }
-
-                        // Download unsupported MIME types unless it's an empty/RPC stream response
-                        if !resp_decision.is_mime_type_supported() {
-                            let mime = resp
-                                .mime_type()
-                                .map(|m| m.to_string().to_ascii_lowercase())
-                                .unwrap_or_default();
-                            if !mime.is_empty()
-                                && !matches!(
-                                    mime.as_str(),
-                                    "application/x-protobuf" | "application/grpc-web" | "application/vnd.yt-ump"
-                                )
-                            {
-                                decision.download();
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction
-                || decision_type == webkit2gtk::PolicyDecisionType::NewWindowAction
-            {
-                let policies = webkit2gtk::WebsitePolicies::builder()
-                    .autoplay(webkit2gtk::AutoplayPolicy::Allow)
-                    .build();
-                decision.use_with_policies(&policies);
-                return true;
-            }
-            false
-        });
-
-        // 3. Subresource blocking & HTTPS upgrade at the WebKitGTK network boundary
-        let app_resource = app_handle.clone();
-        let tab_id_resource = tab_id_str.clone();
-        inner_wv.connect_resource_load_started(move |wv, web_resource, req| {
-            let manager = crate::core::shield::get_shield_manager();
-            if !manager.is_enabled() {
+    Ok(WebviewBuilder::new(webview_id, WebviewUrl::External(blank_url))
+        .initialization_script(&shield_script)
+        .initialization_script(&media_script)
+        .initialization_script(&favicon_script)
+        .on_document_title_changed(move |_webview, title| {
+            if title == "about:blank" || title.is_empty() {
                 return;
             }
-            if let Some(uri) = req.uri() {
-                let uri_str = uri.as_str();
-                if uri_str.starts_with("http://") || uri_str.starts_with("https://") {
-                    // HTTPS upgrading
-                    if manager.is_upgrade_https()
-                        && uri_str.starts_with("http://")
-                        && !uri_str.starts_with("http://localhost")
-                        && !uri_str.starts_with("http://127.0.0.1")
-                    {
-                        let upgraded = format!("https://{}", &uri_str[7..]);
-                        req.set_uri(&upgraded);
-                    }
-
-                    let page_url = wv.uri().map(|u| u.to_string()).unwrap_or_default();
-                    let res_uri = web_resource.uri().map(|u| u.to_string()).unwrap_or_default();
-
-                    // Do not block top-level main frame navigation
-                    if !page_url.is_empty() && (uri_str == page_url || res_uri == page_url) {
-                        return;
-                    }
-
-                    let (should_block, category) = manager.check_url_categorized(uri_str, &page_url, "other");
-                    if should_block {
-                        req.set_uri("about:blank");
-                        let app_res = app_resource.clone();
-                        let tab_res = tab_id_resource.clone();
-                        let uri_owned = uri_str.to_string();
-                        tauri::async_runtime::spawn(async move {
-                            crate::commands::shield::record_and_emit_block(
-                                &app_res,
-                                &tab_res,
-                                &uri_owned,
-                                Some(category),
-                                1,
-                            );
-                        });
-                    }
-                }
-            }
-        });
-
-        // 4. Script message handler for in-page blocks & cosmetic elements
-        if let Some(ucm) = inner_wv.user_content_manager() {
-            let app_msg = app_handle.clone();
-            let tab_id_msg = tab_id_str.clone();
-            ucm.connect_script_message_received(Some("shield_block"), move |_ucm, js_res| {
-                if let Some(js_val) = js_res.js_value() {
-                    use javascriptcore::ValueExt;
-                    let msg_str = js_val.to_str();
-                    #[derive(serde::Deserialize)]
-                    struct ScriptBlockPayload {
-                        #[serde(rename = "tabId")]
-                        tab_id: Option<String>,
-                        url: Option<String>,
-                        category: Option<String>,
-                        count: Option<u64>,
-                    }
-                    if let Ok(payload) = serde_json::from_str::<ScriptBlockPayload>(msg_str.as_str()) {
-                        let target_tab = payload.tab_id.as_deref().unwrap_or(&tab_id_msg);
-                        let target_url = payload.url.as_deref().unwrap_or("shield-block");
-                        let override_cat = payload.category.as_deref().and_then(|c| match c.to_lowercase().as_str() {
-                            "tracker" => Some(crate::core::shield::ShieldCategory::Tracker),
-                            "miner" => Some(crate::core::shield::ShieldCategory::Miner),
-                            "ad" => Some(crate::core::shield::ShieldCategory::Ad),
-                            _ => None,
-                        });
-                        let count = payload.count.unwrap_or(1);
-                        crate::commands::shield::record_and_emit_block(
-                            &app_msg,
-                            target_tab,
-                            target_url,
-                            override_cat,
-                            count,
-                        );
-                    }
-                }
-            });
-            let _ = ucm.register_script_message_handler("shield_block");
-
-            let app_media = app_handle.clone();
-            let tab_id_media = tab_id_str.clone();
-            ucm.connect_script_message_received(Some("media_state"), move |_ucm, js_res| {
-                if let Some(js_val) = js_res.js_value() {
-                    use javascriptcore::ValueExt;
-                    use tauri::Emitter;
-                    let msg_str = js_val.to_str();
-                    #[derive(Clone, serde::Serialize, serde::Deserialize)]
-                    #[serde(rename_all = "camelCase")]
-                    struct MediaStatePayload {
-                        tab_id: Option<String>,
-                        has_media: bool,
-                        is_playing: bool,
-                        current_time: f64,
-                        duration: f64,
-                        volume: f64,
-                        muted: bool,
-                        title: String,
-                        artist: String,
-                    }
-                    if let Ok(mut payload) = serde_json::from_str::<MediaStatePayload>(msg_str.as_str()) {
-                        if payload.tab_id.is_none() {
-                            payload.tab_id = Some(tab_id_media.clone());
-                        }
-                        let _ = app_media.emit("webview-media-state", payload);
-                    }
-                }
-            });
-            let _ = ucm.register_script_message_handler("media_state");
-
-            let app_favicon = app_handle.clone();
-            let tab_id_favicon = tab_id_str.clone();
-            ucm.connect_script_message_received(Some("site_favicon"), move |_ucm, js_res| {
-                if let Some(js_val) = js_res.js_value() {
-                    use javascriptcore::ValueExt;
-                    use tauri::Emitter;
-                    let msg_str = js_val.to_str();
-                    #[derive(serde::Deserialize)]
-                    #[serde(rename_all = "camelCase")]
-                    struct SiteFaviconPayload {
-                        tab_id: Option<String>,
-                        page_url: Option<String>,
-                        icon_url: Option<String>,
-                        title: Option<String>,
-                    }
-                    #[derive(Clone, serde::Serialize)]
-                    struct FaviconCachedEvent {
-                        tab_id: String,
-                        url: String,
-                        origin: String,
-                        data_url: String,
-                        icon_url: Option<String>,
-                        title: Option<String>,
-                        from_cache: bool,
-                    }
-                    if let Ok(payload) = serde_json::from_str::<SiteFaviconPayload>(msg_str.as_str()) {
-                        let page_url = match payload.page_url {
-                            Some(u) if u.starts_with("http://") || u.starts_with("https://") => u,
-                            _ => return,
-                        };
-                        let target_tab = payload.tab_id.unwrap_or_else(|| tab_id_favicon.clone());
-
-                        // Fast path: already cached on disk/memory -> emit immediately without any network fetch
-                        if let Some(cached) = crate::core::favicon_cache::get_cached_favicon(&page_url) {
-                            if !cached.data_url.is_empty() {
-                                let _ = app_favicon.emit(
-                                    "webview-favicon-cached",
-                                    FaviconCachedEvent {
-                                        tab_id: target_tab,
-                                        url: page_url,
-                                        origin: cached.origin,
-                                        data_url: cached.data_url,
-                                        icon_url: cached.icon_url,
-                                        title: payload.title.or(cached.title),
-                                        from_cache: true,
-                                    },
-                                );
-                            }
-                            return;
-                        }
-
-                        // Not cached yet: detect & cache in background thread
-                        let app_bg = app_favicon.clone();
-                        let cand_icon = payload.icon_url;
-                        let cand_title = payload.title;
-                        tauri::async_runtime::spawn_blocking(move || {
-                            if let Ok(resolved) = crate::core::favicon_cache::resolve_site_logo(
-                                &page_url,
-                                cand_icon.as_deref(),
-                                cand_title.as_deref(),
-                                false,
-                            ) {
-                                if !resolved.data_url.is_empty() {
-                                    let _ = app_bg.emit(
-                                        "webview-favicon-cached",
-                                        FaviconCachedEvent {
-                                            tab_id: target_tab,
-                                            url: page_url,
-                                            origin: resolved.origin,
-                                            data_url: resolved.data_url,
-                                            icon_url: resolved.icon_url,
-                                            title: resolved.title,
-                                            from_cache: resolved.from_cache,
-                                        },
-                                    );
-                                }
-                            }
-                        });
-                    }
-                }
-            });
-            let _ = ucm.register_script_message_handler("site_favicon");
-        }
-
-        // 5a. Load progress tracking via WebKitGTK estimated load progress
-        let app_progress = app_handle.clone();
-        let tab_id_progress = tab_id_str.clone();
-        inner_wv.connect_estimated_load_progress_notify(move |wv| {
             use tauri::Emitter;
-            use webkit2gtk::WebViewExt;
-            let progress = wv.estimated_load_progress();
-            let _ = app_progress.emit(
-                "webview-load-progress",
-                WebviewLoadProgressPayload {
-                    tab_id: tab_id_progress.clone(),
-                    progress,
-                    status: if progress >= 1.0 { "finished".to_string() } else { "progress".to_string() },
-                },
-            );
-        });
-
-        // 5b. Load lifecycle events (Started, Finished) & interruption recovery
-        let last_interrupted = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-        let last_clone = last_interrupted.clone();
-        let app_load_event = app_handle.clone();
-        let tab_id_load_event = tab_id_str.clone();
-
-        inner_wv.connect_load_changed(move |wv, event| {
+            let _ = app_title.emit(title_event, title);
+        })
+        .on_page_load(move |webview, payload| {
+            if payload.url().as_str() == "about:blank" {
+                return;
+            }
             use tauri::Emitter;
-            use webkit2gtk::WebViewExt;
-            match event {
-                webkit2gtk::LoadEvent::Started => {
-                    let _ = app_load_event.emit(
-                        "webview-load-progress",
-                        WebviewLoadProgressPayload {
-                            tab_id: tab_id_load_event.clone(),
-                            progress: wv.estimated_load_progress().max(0.1),
-                            status: "started".to_string(),
-                        },
-                    );
+            let url_str = payload.url().as_str().to_string();
+
+            if let Some(pane_name) = split_pane {
+                #[derive(Clone, serde::Serialize)]
+                struct SplitUrlPayload {
+                    tab_id: String,
+                    pane: String,
+                    url: String,
                 }
-                webkit2gtk::LoadEvent::Finished => {
-                    if let Ok(mut last) = last_clone.lock() {
-                        last.clear();
-                    }
-                    let _ = app_load_event.emit(
-                        "webview-load-progress",
-                        WebviewLoadProgressPayload {
-                            tab_id: tab_id_load_event.clone(),
-                            progress: 1.0,
-                            status: "finished".to_string(),
-                        },
-                    );
+                let _ = app_load.emit(
+                    "webview-split-url-changed",
+                    SplitUrlPayload {
+                        tab_id: root_tab_id.clone(),
+                        pane: pane_name.to_string(),
+                        url: url_str.clone(),
+                    },
+                );
+            } else {
+                #[derive(Clone, serde::Serialize)]
+                struct UrlChangedPayload {
+                    tab_id: String,
+                    url: String,
                 }
-                _ => {}
+                let _ = app_load.emit(
+                    "webview-url-changed",
+                    UrlChangedPayload {
+                        tab_id: root_tab_id.clone(),
+                        url: url_str.clone(),
+                    },
+                );
             }
-        });
 
-        let app_failed = app_handle.clone();
-        let tab_id_failed = tab_id_str.clone();
-        inner_wv.connect_load_failed(move |wv, _event, failing_uri, error| {
-            use tauri::Emitter;
-            let _ = app_failed.emit(
-                "webview-load-progress",
-                WebviewLoadProgressPayload {
-                    tab_id: tab_id_failed.clone(),
-                    progress: 1.0,
-                    status: "failed".to_string(),
-                },
-            );
-            if error.matches(webkit2gtk::PolicyError::FrameLoadInterruptedByPolicyChange)
-                || error.message().contains("interrupted")
-            {
-                if crate::core::download::is_downloading_uri(failing_uri) {
-                    return true;
-                }
-                if !failing_uri.is_empty()
-                    && failing_uri != "about:blank"
-                    && !failing_uri.starts_with("data:")
-                {
-                    let is_main_frame = wv.uri().map(|u| u.as_str() == failing_uri).unwrap_or(false);
-                    if is_main_frame {
-                        let mut last = last_interrupted.lock().unwrap();
-                        if *last != failing_uri {
-                            *last = failing_uri.to_string();
-                            let target_uri = failing_uri.to_string();
-                            let wv_clone = wv.clone();
-                            gtk::glib::idle_add_local(move || {
-                                wv_clone.load_uri(&target_uri);
-                                gtk::glib::ControlFlow::Break
-                            });
-                            return true;
-                        }
-                    }
-                }
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                let _ = app_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: progress_tab_id.clone(),
+                        progress: 0.12,
+                        status: "started".to_string(),
+                    },
+                );
+                let (reset_tab, combined_breakdown) =
+                    crate::core::shield::get_shield_manager().reset_tab(&root_tab_id);
+                let _ = app_load.emit(
+                    "shield-blocked-event",
+                    crate::commands::shield::ShieldBlockEvent {
+                        tab_id: reset_tab,
+                        url: "reset".to_string(),
+                        category: "reset".to_string(),
+                        tab_count: combined_breakdown.total,
+                        total_count: crate::core::shield::get_shield_manager()
+                            .get_stats()
+                            .total_blocked,
+                        tab_breakdown: combined_breakdown,
+                    },
+                );
             }
-            false
-        });
 
-        // 6. Native keyboard navigation shortcuts: Reload (Ctrl+R / F5), Back (Alt+Left), Forward (Alt+Right)
-        use gtk::prelude::WidgetExt;
-        inner_wv.connect_key_press_event(|wv, event| {
-            use gtk::gdk;
-            let state = event.state();
-            let is_ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
-            let is_alt = state.contains(gdk::ModifierType::MOD1_MASK);
-
-            if let Some(name) = event.keyval().name() {
-                let name_str = name.as_str();
-                // 1. Reload: Ctrl+R or F5
-                if (is_ctrl && (name_str == "r" || name_str == "R")) || name_str == "F5" {
-                    wv.reload();
-                    return gtk::glib::Propagation::Stop;
-                }
-                // 2. Back: Alt+Left
-                if is_alt && (name_str == "Left" || name_str == "KP_Left") {
-                    if wv.can_go_back() {
-                        wv.go_back();
-                    }
-                    return gtk::glib::Propagation::Stop;
-                }
-                // 3. Forward: Alt+Right
-                if is_alt && (name_str == "Right" || name_str == "KP_Right") {
-                    if wv.can_go_forward() {
-                        wv.go_forward();
-                    }
-                    return gtk::glib::Propagation::Stop;
-                }
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                let _ = app_load.emit(
+                    "webview-load-progress",
+                    WebviewLoadProgressPayload {
+                        tab_id: progress_tab_id.clone(),
+                        progress: 1.0,
+                        status: "finished".to_string(),
+                    },
+                );
+                crate::core::shield::inject_page_cosmetics(&webview, &root_tab_id, &url_str);
             }
-            gtk::glib::Propagation::Proceed
-        });
-
-        // 7. Rename "Save Image As..." to "Save Image" in the context menu
-        inner_wv.connect_context_menu(move |_wv, context_menu, _event, hit_test_result| {
-            use webkit2gtk::{
-                ContextMenuAction, ContextMenuExt, ContextMenuItem, ContextMenuItemExt,
-                HitTestResultExt,
-            };
-
-            if hit_test_result.context_is_image() {
-                for (idx, item) in context_menu.items().iter().enumerate() {
-                    if item.stock_action() == ContextMenuAction::DownloadImageToDisk {
-                        let save_item = ContextMenuItem::from_stock_action_with_label(
-                            ContextMenuAction::DownloadImageToDisk,
-                            "Save Image",
-                        );
-                        context_menu.insert(&save_item, idx as i32);
-                        context_menu.remove(item);
-                        break;
-                    }
-                }
-            }
-            false
-        });
-
-        // 8. Attach download management to the webview's context
-        if let Some(context) = inner_wv.context() {
-            crate::core::download::attach_context_download_listener(&app_handle, &context);
-        }
-
-        // 9. HTML5 Fullscreen support (e.g. YouTube 'F' key or fullscreen button)
-        let app_fs_enter = app_handle.clone();
-        inner_wv.connect_enter_fullscreen(move |wv| {
-            use gtk::prelude::Cast;
-            gtk_overlay::enter_webview_fullscreen(&app_fs_enter, wv.upcast_ref());
-            false
-        });
-
-        let app_fs_leave = app_handle.clone();
-        inner_wv.connect_leave_fullscreen(move |wv| {
-            use gtk::prelude::Cast;
-            gtk_overlay::leave_webview_fullscreen(&app_fs_leave, wv.upcast_ref());
-            false
-        });
-
-        // 10. Popup window support (e.g. OAuth / Sign in with Google, window.open)
-        attach_popup_handler(&inner_wv, &app_handle, &tab_id_str);
-    });
-}
-
-fn attach_popup_handler(
-    parent_wv: &webkit2gtk::WebView,
-    app_handle: &AppHandle,
-    tab_id: &str,
-) {
-    use gtk::prelude::*;
-    use webkit2gtk::{
-        NavigationPolicyDecisionExt, PolicyDecisionExt, URIRequestExt, WebViewExt,
-    };
-
-    let app_popup = app_handle.clone();
-    let tab_id_popup = tab_id.to_string();
-
-    parent_wv.connect_create(move |wv, nav_action| {
-        if let Some(req) = nav_action.request() {
-            if let Some(uri) = req.uri() {
-                let uri_str = uri.as_str();
-                if !uri_str.is_empty() && uri_str != "about:blank" {
-                    let manager = crate::core::shield::get_shield_manager();
-                    if manager.is_enabled() {
-                        let (should_block, category) =
-                            manager.check_url_categorized(uri_str, "", "subdocument");
-                        if should_block || manager.is_aggressive_sandbox() {
-                            crate::commands::shield::record_and_emit_block(
-                                &app_popup,
-                                &tab_id_popup,
-                                uri_str,
-                                Some(category),
-                                1,
-                            );
-                            return None;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Create a related WebView so window.opener, postMessage, cookies, and WebContext are shared
-        let popup_wv = webkit2gtk::WebView::with_related_view(wv);
-
-        let popup_win = gtk::Window::new(gtk::WindowType::Toplevel);
-        popup_win.set_default_size(520, 680);
-        popup_win.set_position(gtk::WindowPosition::CenterOnParent);
-        if let Some(toplevel) = wv.toplevel() {
-            if let Ok(parent_win) = toplevel.downcast::<gtk::Window>() {
-                popup_win.set_transient_for(Some(&parent_win));
-            }
-        }
-
-        let header = gtk::HeaderBar::new();
-        header.set_show_close_button(true);
-        header.set_title(Some("YoonSpace"));
-        popup_win.set_titlebar(Some(&header));
-        popup_win.set_title("YoonSpace");
-
-        popup_win.add(&popup_wv);
-
-        // Sync popup title & domain subtitle for OAuth security visibility
-        let header_title = header.clone();
-        let win_title = popup_win.clone();
-        popup_wv.connect_title_notify(move |pv| {
-            let title = pv
-                .title()
-                .map(|t| t.to_string())
-                .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| "YoonSpace".to_string());
-            header_title.set_title(Some(&title));
-            win_title.set_title(&title);
-        });
-
-        let header_uri = header.clone();
-        popup_wv.connect_uri_notify(move |pv| {
-            if let Some(uri) = pv.uri() {
-                if let Ok(parsed) = url::Url::parse(uri.as_str()) {
-                    if let Some(host) = parsed.host_str() {
-                        header_uri.set_subtitle(Some(host));
-                        return;
-                    }
-                }
-            }
-            header_uri.set_subtitle(None);
-        });
-
-        // Show when WebKit signals ready-to-show (and immediately map the widget)
-        let win_ready = popup_win.clone();
-        popup_wv.connect_ready_to_show(move |_| {
-            win_ready.show_all();
-            win_ready.present();
-        });
-
-        // Close window cleanly when page calls window.close()
-        let win_close = popup_win.clone();
-        popup_wv.connect_close(move |_| {
-            win_close.close();
-        });
-
-        // Apply Shield & HTTPS upgrade rules inside the popup too
-        let app_inner = app_popup.clone();
-        let tab_inner = tab_id_popup.clone();
-        popup_wv.connect_decide_policy(move |pv, decision, decision_type| {
-            if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction {
-                if let Some(nav_dec) =
-                    decision.dynamic_cast_ref::<webkit2gtk::NavigationPolicyDecision>()
-                {
-                    #[allow(deprecated)]
-                    let req_opt = nav_dec
-                        .navigation_action()
-                        .and_then(|na| na.request())
-                        .or_else(|| nav_dec.request());
-                    if let Some(req) = req_opt {
-                        if let Some(uri) = req.uri() {
-                            let uri_str = uri.as_str();
-                            let manager = crate::core::shield::get_shield_manager();
-                            if manager.is_enabled() {
-                                if manager.is_upgrade_https()
-                                    && uri_str.starts_with("http://")
-                                    && !uri_str.starts_with("http://localhost")
-                                    && !uri_str.starts_with("http://127.0.0.1")
-                                {
-                                    let upgraded = format!("https://{}", &uri_str[7..]);
-                                    decision.ignore();
-                                    pv.load_uri(&upgraded);
-                                    return true;
-                                }
-                                let (should_block, category) =
-                                    manager.check_url_categorized(uri_str, "", "subdocument");
-                                if should_block {
-                                    decision.ignore();
-                                    crate::commands::shield::record_and_emit_block(
-                                        &app_inner,
-                                        &tab_inner,
-                                        uri_str,
-                                        Some(category),
-                                        1,
-                                    );
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            false
-        });
-
-        // Allow nested popups if an auth provider opens a secondary popup
-        attach_popup_handler(&popup_wv, &app_popup, &tab_id_popup);
-
-        popup_win.show_all();
-        popup_win.present();
-
-        Some(popup_wv.upcast())
-    });
+        }))
 }
 
 pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<(), String> {
@@ -754,77 +173,15 @@ pub fn spawn_single_view(app: &AppHandle, mut req: SingleViewRequest) -> Result<
     gtk_overlay::hide_all_tab_views(app)?;
 
     let target_url: url::Url = req.url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let blank_url: url::Url = "about:blank".parse().map_err(|e: url::ParseError| e.to_string())?;
-    let app_title = app.clone();
-    let app_load = app.clone();
-    let tab_id_load = tab_id.clone();
-    let shield_script = crate::core::shield::get_shield_injection_script(&tab_id);
-    let media_script = get_media_observer_script(&tab_id);
-    let favicon_script = get_favicon_observer_script(&tab_id);
-    let builder = WebviewBuilder::new(&tab_id, WebviewUrl::External(blank_url))
-        .initialization_script(&shield_script)
-        .initialization_script(&media_script)
-        .initialization_script(&favicon_script)
-        .on_document_title_changed(move |_webview, title| {
-            if title == "about:blank" || title.is_empty() {
-                return;
-            }
-            use tauri::Emitter;
-            let _ = app_title.emit("webview-title-changed", title);
-        })
-        .on_page_load(move |webview, payload| {
-            if payload.url().as_str() == "about:blank" {
-                return;
-            }
-            use tauri::Emitter;
-            #[derive(Clone, serde::Serialize)]
-            struct UrlChangedPayload {
-                tab_id: String,
-                url: String,
-            }
-            let _ = app_load.emit("webview-url-changed", UrlChangedPayload {
-                tab_id: tab_id_load.clone(),
-                url: payload.url().as_str().to_string(),
-            });
+    let builder = build_pane_webview(app, &tab_id, &tab_id, "webview-title-changed", None)?;
 
-            if payload.event() == tauri::webview::PageLoadEvent::Started {
-                let _ = app_load.emit(
-                    "webview-load-progress",
-                    WebviewLoadProgressPayload {
-                        tab_id: tab_id_load.clone(),
-                        progress: 0.12,
-                        status: "started".to_string(),
-                    },
-                );
-                let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_load);
-                let _ = app_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
-                    tab_id: root_tab,
-                    url: "reset".to_string(),
-                    category: "reset".to_string(),
-                    tab_count: combined_breakdown.total,
-                    total_count: crate::core::shield::get_shield_manager().get_stats().total_blocked,
-                    tab_breakdown: combined_breakdown,
-                });
-            }
-
-            if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                let _ = app_load.emit(
-                    "webview-load-progress",
-                    WebviewLoadProgressPayload {
-                        tab_id: tab_id_load.clone(),
-                        progress: 1.0,
-                        status: "finished".to_string(),
-                    },
-                );
-                crate::core::shield::inject_page_cosmetics(&webview, &tab_id_load, payload.url().as_str());
-            }
-        });
-
-    let single_view = window.add_child(
-        builder,
-        LogicalPosition::new(req.bounds.x, req.bounds.y),
-        LogicalSize::new(req.bounds.width, req.bounds.height),
-    ).map_err(|e| e.to_string())?;
+    let single_view = window
+        .add_child(
+            builder,
+            LogicalPosition::new(req.bounds.x, req.bounds.y),
+            LogicalSize::new(req.bounds.width, req.bounds.height),
+        )
+        .map_err(|e| e.to_string())?;
 
     configure_native_webview(app, &single_view, &tab_id);
     gtk_overlay::attach_single_view(app, &tab_id, req.bounds)?;
@@ -852,7 +209,10 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
 
     let is_attached = gtk_overlay::is_tab_view_attached(app, &tab_id);
 
-    let ratio = req.bounds.split_ratio.unwrap_or_else(|| get_tab_split_ratio(&tab_id))
+    let ratio = req
+        .bounds
+        .split_ratio
+        .unwrap_or_else(|| get_tab_split_ratio(&tab_id))
         .clamp(MIN_SPLIT_RATIO, MAX_SPLIT_RATIO);
     req.bounds.split_ratio = Some(ratio);
     set_tab_split_ratio(&tab_id, ratio);
@@ -881,155 +241,45 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
 
     gtk_overlay::hide_all_tab_views(app)?;
 
-    let target_left_url: url::Url = req.left_url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let target_right_url: url::Url = req.right_url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let blank_url: url::Url = "about:blank".parse().map_err(|e: url::ParseError| e.to_string())?;
+    let target_left_url: url::Url = req
+        .left_url
+        .parse()
+        .map_err(|e: url::ParseError| e.to_string())?;
+    let target_right_url: url::Url = req
+        .right_url
+        .parse()
+        .map_err(|e: url::ParseError| e.to_string())?;
 
-    let app_left = app.clone();
-    let app_left_load = app.clone();
-    let tab_id_left = tab_id.clone();
-    let left_shield = crate::core::shield::get_shield_injection_script(&left_label);
-    let left_media = get_media_observer_script(&left_label);
-    let left_favicon = get_favicon_observer_script(&left_label);
-    let left_builder = WebviewBuilder::new(&left_label, WebviewUrl::External(blank_url.clone()))
-        .initialization_script(&left_shield)
-        .initialization_script(&left_media)
-        .initialization_script(&left_favicon)
-        .on_document_title_changed(move |_webview, title| {
-            if title == "about:blank" || title.is_empty() {
-                return;
-            }
-            use tauri::Emitter;
-            let _ = app_left.emit("webview-split-left-title-changed", title);
-        })
-        .on_page_load(move |webview, payload| {
-            if payload.url().as_str() == "about:blank" {
-                return;
-            }
-            use tauri::Emitter;
-            #[derive(Clone, serde::Serialize)]
-            struct SplitUrlPayload {
-                tab_id: String,
-                pane: String,
-                url: String,
-            }
-            let _ = app_left_load.emit("webview-split-url-changed", SplitUrlPayload {
-                tab_id: tab_id_left.clone(),
-                pane: "left".to_string(),
-                url: payload.url().as_str().to_string(),
-            });
+    let left_builder = build_pane_webview(
+        app,
+        &left_label,
+        &tab_id,
+        "webview-split-left-title-changed",
+        Some("left"),
+    )?;
+    let right_builder = build_pane_webview(
+        app,
+        &right_label,
+        &tab_id,
+        "webview-split-right-title-changed",
+        Some("right"),
+    )?;
 
-            if payload.event() == tauri::webview::PageLoadEvent::Started {
-                let _ = app_left_load.emit(
-                    "webview-load-progress",
-                    WebviewLoadProgressPayload {
-                        tab_id: format!("{}_left", tab_id_left),
-                        progress: 0.12,
-                        status: "started".to_string(),
-                    },
-                );
-                let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_left);
-                let _ = app_left_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
-                    tab_id: root_tab,
-                    url: "reset".to_string(),
-                    category: "reset".to_string(),
-                    tab_count: combined_breakdown.total,
-                    total_count: crate::core::shield::get_shield_manager().get_stats().total_blocked,
-                    tab_breakdown: combined_breakdown,
-                });
-            }
+    let left_webview = window
+        .add_child(
+            left_builder,
+            LogicalPosition::new(left_x, top_y),
+            LogicalSize::new(left_width, height),
+        )
+        .map_err(|e| e.to_string())?;
 
-            if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                let _ = app_left_load.emit(
-                    "webview-load-progress",
-                    WebviewLoadProgressPayload {
-                        tab_id: format!("{}_left", tab_id_left),
-                        progress: 1.0,
-                        status: "finished".to_string(),
-                    },
-                );
-                crate::core::shield::inject_page_cosmetics(&webview, &tab_id_left, payload.url().as_str());
-            }
-        });
-
-    let app_right = app.clone();
-    let app_right_load = app.clone();
-    let tab_id_right = tab_id.clone();
-    let right_shield = crate::core::shield::get_shield_injection_script(&right_label);
-    let right_media = get_media_observer_script(&right_label);
-    let right_favicon = get_favicon_observer_script(&right_label);
-    let right_builder = WebviewBuilder::new(&right_label, WebviewUrl::External(blank_url))
-        .initialization_script(&right_shield)
-        .initialization_script(&right_media)
-        .initialization_script(&right_favicon)
-        .on_document_title_changed(move |_webview, title| {
-            if title == "about:blank" || title.is_empty() {
-                return;
-            }
-            use tauri::Emitter;
-            let _ = app_right.emit("webview-split-right-title-changed", title);
-        })
-        .on_page_load(move |webview, payload| {
-            if payload.url().as_str() == "about:blank" {
-                return;
-            }
-            use tauri::Emitter;
-            #[derive(Clone, serde::Serialize)]
-            struct SplitUrlPayload {
-                tab_id: String,
-                pane: String,
-                url: String,
-            }
-            let _ = app_right_load.emit("webview-split-url-changed", SplitUrlPayload {
-                tab_id: tab_id_right.clone(),
-                pane: "right".to_string(),
-                url: payload.url().as_str().to_string(),
-            });
-
-            if payload.event() == tauri::webview::PageLoadEvent::Started {
-                let _ = app_right_load.emit(
-                    "webview-load-progress",
-                    WebviewLoadProgressPayload {
-                        tab_id: format!("{}_right", tab_id_right),
-                        progress: 0.12,
-                        status: "started".to_string(),
-                    },
-                );
-                let (root_tab, combined_breakdown) = crate::core::shield::get_shield_manager().reset_tab(&tab_id_right);
-                let _ = app_right_load.emit("shield-blocked-event", crate::commands::shield::ShieldBlockEvent {
-                    tab_id: root_tab,
-                    url: "reset".to_string(),
-                    category: "reset".to_string(),
-                    tab_count: combined_breakdown.total,
-                    total_count: crate::core::shield::get_shield_manager().get_stats().total_blocked,
-                    tab_breakdown: combined_breakdown,
-                });
-            }
-
-            if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                let _ = app_right_load.emit(
-                    "webview-load-progress",
-                    WebviewLoadProgressPayload {
-                        tab_id: format!("{}_right", tab_id_right),
-                        progress: 1.0,
-                        status: "finished".to_string(),
-                    },
-                );
-                crate::core::shield::inject_page_cosmetics(&webview, &tab_id_right, payload.url().as_str());
-            }
-        });
-
-    let left_webview = window.add_child(
-        left_builder,
-        LogicalPosition::new(left_x, top_y),
-        LogicalSize::new(left_width, height),
-    ).map_err(|e| e.to_string())?;
-
-    let right_webview = window.add_child(
-        right_builder,
-        LogicalPosition::new(right_x, top_y),
-        LogicalSize::new(right_width, height),
-    ).map_err(|e| e.to_string())?;
+    let right_webview = window
+        .add_child(
+            right_builder,
+            LogicalPosition::new(right_x, top_y),
+            LogicalSize::new(right_width, height),
+        )
+        .map_err(|e| e.to_string())?;
 
     configure_native_webview(app, &left_webview, &left_label);
     configure_native_webview(app, &right_webview, &right_label);
@@ -1048,364 +298,4 @@ pub fn spawn_split_views(app: &AppHandle, mut req: SplitViewRequest) -> Result<(
     });
 
     Ok(())
-}
-
-fn get_media_observer_script(tab_id: &str) -> String {
-    let tab_id_escaped = tab_id.replace('\\', "\\\\").replace('"', "\\\"");
-    let target_vol = (crate::core::config::get_saved_media_volume() as f64 / 100.0).clamp(0.0, 1.0);
-    format!(
-        r##"(function() {{
-  if (window.__YOONSPACE_MEDIA_OBSERVER__) return;
-  window.__YOONSPACE_MEDIA_OBSERVER__ = true;
-  const TAB_ID = "{tab_id}";
-  if (typeof window.__YOONSPACE_TARGET_VOLUME__ !== "number") {{
-    window.__YOONSPACE_TARGET_VOLUME__ = {target_vol:.4};
-  }}
-  let lastSnapshot = "";
-  let lastTimeUpdateAt = 0;
-  let lastDetachedMedia = null;
-  const TIMEUPDATE_THROTTLE_MS = 300;
-  const trackedDetachedMedia = new WeakSet();
-
-  const origVolDesc = (() => {{
-    try {{
-      return Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "volume");
-    }} catch (_) {{
-      return null;
-    }}
-  }})();
-
-  function getNativeVolume(m) {{
-    try {{
-      if (origVolDesc && typeof origVolDesc.get === "function") {{
-        return origVolDesc.get.call(m);
-      }}
-      return m.volume;
-    }} catch (_) {{
-      return 1;
-    }}
-  }}
-
-  function setNativeVolume(m, v) {{
-    try {{
-      window.__YOONSPACE_INTERNAL_VOL_CHANGE__ = true;
-      if (origVolDesc && typeof origVolDesc.set === "function") {{
-        origVolDesc.set.call(m, v);
-      }} else {{
-        m.volume = v;
-      }}
-    }} catch (_) {{}} finally {{
-      window.__YOONSPACE_INTERNAL_VOL_CHANGE__ = false;
-    }}
-  }}
-
-  function getTargetVolume() {{
-    return typeof window.__YOONSPACE_TARGET_VOLUME__ === "number"
-      ? Math.max(0, Math.min(1, window.__YOONSPACE_TARGET_VOLUME__))
-      : 1;
-  }}
-
-  function applyRememberedVolume(m) {{
-    if (!m) return;
-    const targetVol = getTargetVolume();
-    const curVol = getNativeVolume(m);
-    if (!Number.isFinite(curVol) || Math.abs(curVol - targetVol) > 0.005) {{
-      setNativeVolume(m, targetVol);
-    }}
-    if (targetVol === 0 && !m.muted) {{
-      try {{ m.muted = true; }} catch (_) {{}}
-    }}
-  }}
-
-  window.__YOONSPACE_SET_VOLUME__ = function(vol) {{
-    const clamped = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 1));
-    window.__YOONSPACE_TARGET_VOLUME__ = clamped;
-    const targets = new Set(document.querySelectorAll("video, audio"));
-    if (lastDetachedMedia && !lastDetachedMedia.isConnected) {{
-      targets.add(lastDetachedMedia);
-    }}
-    targets.forEach((m) => {{
-      setNativeVolume(m, clamped);
-      try {{ m.muted = (clamped === 0); }} catch (_) {{}}
-    }});
-    reportState(true);
-  }};
-
-  // Prevent sites (e.g. YouTube's yt-player-volume restore) from overriding YoonSpace's remembered volume
-  if (origVolDesc && origVolDesc.configurable && typeof origVolDesc.set === "function" && typeof origVolDesc.get === "function") {{
-    try {{
-      Object.defineProperty(HTMLMediaElement.prototype, "volume", {{
-        configurable: true,
-        enumerable: origVolDesc.enumerable,
-        get: function() {{
-          return origVolDesc.get.call(this);
-        }},
-        set: function(val) {{
-          if (window.__YOONSPACE_INTERNAL_VOL_CHANGE__) {{
-            return origVolDesc.set.call(this, val);
-          }}
-          const targetVol = getTargetVolume();
-          return origVolDesc.set.call(this, targetVol);
-        }}
-      }});
-    }} catch (_) {{}}
-  }}
-
-  function pickActiveMedia() {{
-    const list = Array.from(document.querySelectorAll("video, audio"));
-    if (lastDetachedMedia && !lastDetachedMedia.isConnected) {{
-      list.push(lastDetachedMedia);
-    }}
-    if (list.length === 0) return null;
-    const playing = list.find((m) => !m.paused && !m.ended && (m.readyState > 0 || m.currentTime > 0));
-    if (playing) return playing;
-    const withDuration = list.find((m) => Number.isFinite(m.duration) && m.duration > 0);
-    return withDuration || list[0];
-  }}
-
-  function getMetadata() {{
-    let title = "";
-    let artist = "";
-    try {{
-      const ms = navigator.mediaSession && navigator.mediaSession.metadata;
-      if (ms) {{
-        title = ms.title || "";
-        artist = ms.artist || "";
-      }}
-    }} catch (e) {{}}
-    if (!title) {{
-      const ytTitle = document.querySelector("h1.ytd-watch-metadata yt-formatted-string, #title h1 yt-formatted-string");
-      if (ytTitle && ytTitle.textContent) title = ytTitle.textContent.trim();
-    }}
-    if (!title && document.title) {{
-      title = document.title.replace(/^\(\d+\)\s*/, "").replace(/\s*-\s*YouTube$/, "").trim();
-    }}
-    if (!artist) {{
-      const ytChannel = document.querySelector("#owner #channel-name a, ytd-channel-name a");
-      if (ytChannel && ytChannel.textContent) artist = ytChannel.textContent.trim();
-    }}
-    return {{ title, artist }};
-  }}
-
-  function reportState(force) {{
-    try {{
-      const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.media_state;
-      if (!handler) return;
-      const m = pickActiveMedia();
-      if (!m) {{
-        const fallbackVol = typeof window.__YOONSPACE_TARGET_VOLUME__ === "number"
-          ? Math.max(0, Math.min(1, window.__YOONSPACE_TARGET_VOLUME__))
-          : 1;
-        const emptyPayload = {{
-          tabId: TAB_ID,
-          hasMedia: false,
-          isPlaying: false,
-          currentTime: 0,
-          duration: 0,
-          volume: fallbackVol,
-          muted: fallbackVol === 0,
-          title: "",
-          artist: ""
-        }};
-        const key = JSON.stringify(emptyPayload);
-        if (force || key !== lastSnapshot) {{
-          lastSnapshot = key;
-          handler.postMessage(key);
-        }}
-        return;
-      }}
-
-      const meta = getMetadata();
-      const duration = Number.isFinite(m.duration) && m.duration > 0 ? m.duration : 0;
-      const currentTime = Number.isFinite(m.currentTime) && m.currentTime >= 0 ? m.currentTime : 0;
-      const isPlaying = !m.paused && !m.ended;
-      const payload = {{
-        tabId: TAB_ID,
-        hasMedia: true,
-        isPlaying,
-        currentTime,
-        duration,
-        volume: Number.isFinite(m.volume) ? m.volume : 1,
-        muted: Boolean(m.muted),
-        title: meta.title || "",
-        artist: meta.artist || ""
-      }};
-      const key = JSON.stringify(payload);
-      if (force || key !== lastSnapshot) {{
-        lastSnapshot = key;
-        handler.postMessage(key);
-      }}
-    }} catch (e) {{}}
-  }}
-
-  const events = ["play", "playing", "pause", "ended", "emptied", "loadedmetadata", "loadeddata", "canplay", "durationchange", "volumechange", "seeked", "timeupdate"];
-
-  function handleMediaEvent(evt, target) {{
-    if (evt === "timeupdate") {{
-      const now = Date.now();
-      if (now - lastTimeUpdateAt < TIMEUPDATE_THROTTLE_MS) return;
-      lastTimeUpdateAt = now;
-      reportState(false);
-      return;
-    }}
-
-    lastTimeUpdateAt = 0;
-    if (evt !== "pause" && evt !== "ended" && evt !== "emptied" && evt !== "seeked") {{
-      if (target && (target.tagName === "VIDEO" || target.tagName === "AUDIO")) {{
-        applyRememberedVolume(target);
-      }} else {{
-        document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
-      }}
-    }}
-    reportState(true);
-  }}
-
-  function trackDetachedMedia(m) {{
-    if (!m || m.isConnected || trackedDetachedMedia.has(m)) return;
-    trackedDetachedMedia.add(m);
-    events.forEach((evt) => {{
-      m.addEventListener(evt, () => {{
-        if (m.isConnected) return;
-        handleMediaEvent(evt, m);
-      }});
-    }});
-  }}
-
-  // Hook HTMLMediaElement.prototype.play so off-DOM players (e.g. new Audio()) are also tracked
-  try {{
-    const origPlay = HTMLMediaElement.prototype.play;
-    if (typeof origPlay === "function") {{
-      HTMLMediaElement.prototype.play = function() {{
-        applyRememberedVolume(this);
-        if (!this.isConnected) {{
-          lastDetachedMedia = this;
-          trackDetachedMedia(this);
-        }}
-        return origPlay.apply(this, arguments);
-      }};
-    }}
-  }} catch (_) {{}}
-
-  // Hook MediaSession.metadata setter so SPA title/artist updates reflect immediately
-  try {{
-    if (typeof MediaSession !== "undefined") {{
-      const msDesc = Object.getOwnPropertyDescriptor(MediaSession.prototype, "metadata");
-      if (msDesc && msDesc.configurable && typeof msDesc.set === "function" && typeof msDesc.get === "function") {{
-        Object.defineProperty(MediaSession.prototype, "metadata", {{
-          configurable: true,
-          enumerable: msDesc.enumerable,
-          get: function() {{
-            return msDesc.get.call(this);
-          }},
-          set: function(val) {{
-            const res = msDesc.set.call(this, val);
-            queueMicrotask(() => reportState(true));
-            return res;
-          }}
-        }});
-      }}
-    }}
-  }} catch (_) {{}}
-
-  events.forEach((evt) => {{
-    document.addEventListener(evt, (e) => {{
-      handleMediaEvent(evt, e && e.target);
-    }}, true);
-  }});
-
-  window.addEventListener("yt-navigate-finish", () => setTimeout(() => {{
-    document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
-    reportState(true);
-  }}, 250));
-  window.addEventListener("popstate", () => setTimeout(() => {{
-    document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
-    reportState(true);
-  }}, 250));
-  if (document.readyState === "complete" || document.readyState === "interactive") {{
-    document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
-    reportState(true);
-  }} else {{
-    window.addEventListener("DOMContentLoaded", () => {{
-      document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
-      reportState(true);
-    }});
-  }}
-}})();"##,
-        tab_id = tab_id_escaped,
-        target_vol = target_vol
-    )
-}
-
-fn get_favicon_observer_script(tab_id: &str) -> String {
-    let tab_id_escaped = tab_id.replace('\\', "\\\\").replace('"', "\\\"");
-    format!(
-        r##"(function() {{
-  if (window.__YOONSPACE_FAVICON_OBSERVER__) return;
-  window.__YOONSPACE_FAVICON_OBSERVER__ = true;
-  const TAB_ID = "{tab_id}";
-  let lastReportedKey = "";
-
-  function pickBestIconUrl() {{
-    const links = Array.from(document.querySelectorAll('link[rel]'));
-    let bestUrl = "";
-    let bestScore = -1;
-    for (const link of links) {{
-      const rel = (link.getAttribute('rel') || '').toLowerCase();
-      const href = link.href;
-      if (!href) continue;
-      const tokens = rel.split(/\s+/);
-      const isIcon = tokens.includes('icon') || tokens.includes('apple-touch-icon') || tokens.includes('apple-touch-icon-precomposed') || rel === 'shortcut icon';
-      if (!isIcon) continue;
-
-      let score = 10;
-      const lowerHref = href.toLowerCase();
-      const type = (link.getAttribute('type') || '').toLowerCase();
-      const sizes = (link.getAttribute('sizes') || '').toLowerCase();
-      if (lowerHref.includes('.svg') || type.includes('svg')) score += 60;
-      else if (lowerHref.includes('.png') || type.includes('png')) score += 40;
-      if (rel.includes('apple-touch-icon')) score += 35;
-      if (tokens.includes('icon')) score += 25;
-      const sizeMatch = sizes.match(/(\d+)x\d+/);
-      if (sizeMatch) score += Math.min(128, parseInt(sizeMatch[1], 10)) / 2;
-
-      if (score > bestScore) {{
-        bestScore = score;
-        bestUrl = href;
-      }}
-    }}
-    if (!bestUrl && location.origin && location.origin !== 'null') {{
-      bestUrl = location.origin + '/favicon.ico';
-    }}
-    return bestUrl;
-  }}
-
-  function reportFavicon() {{
-    try {{
-      if (!location.href || !/^https?:\/\//i.test(location.href)) return;
-      const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.site_favicon;
-      if (!handler) return;
-      const iconUrl = pickBestIconUrl();
-      const key = location.origin + '|' + iconUrl;
-      if (key === lastReportedKey) return;
-      lastReportedKey = key;
-      handler.postMessage(JSON.stringify({{
-        tabId: TAB_ID,
-        pageUrl: location.href,
-        iconUrl: iconUrl || null,
-        title: document.title || null
-      }}));
-    }} catch (e) {{}}
-  }}
-
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {{
-    setTimeout(reportFavicon, 120);
-  }} else {{
-    window.addEventListener('DOMContentLoaded', () => setTimeout(reportFavicon, 120), {{ once: true }});
-  }}
-  window.addEventListener('load', () => setTimeout(reportFavicon, 200));
-  window.addEventListener('popstate', () => setTimeout(reportFavicon, 200));
-  window.addEventListener('yt-navigate-finish', () => setTimeout(reportFavicon, 250));
-}})();"##,
-        tab_id = tab_id_escaped
-    )
 }

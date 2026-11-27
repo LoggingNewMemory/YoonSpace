@@ -17,7 +17,10 @@
 pub mod builder;
 pub mod cache;
 pub mod gtk_overlay;
+mod native_config;
 pub mod navigation;
+mod popup;
+mod scripts;
 pub mod split;
 
 pub use builder::*;
