@@ -892,6 +892,16 @@ export function createSettingsPage(
     onConfigUpdated(config);
   });
 
+  // Pre-populate Settings sections in the background shortly after startup
+  // so opening Settings the first time has zero layout/text shift.
+  window.setTimeout(() => {
+    renderSearchEngines();
+    renderDownloadSettings();
+    void renderWallpaperSettings();
+    void refreshCacheSize();
+    void refreshVault();
+  }, 250);
+
   let hideTimer: number | null = null;
   let refreshTimer: number | null = null;
   let isVisibleState = false;
@@ -913,6 +923,7 @@ export function createSettingsPage(
 
     renderSearchEngines();
     renderDownloadSettings();
+    void renderWallpaperSettings();
     cacheFeedback.classList.add("hidden");
     cacheFeedback.innerHTML = "";
     cacheNote.classList.remove("hidden");
