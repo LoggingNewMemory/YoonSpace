@@ -904,7 +904,10 @@ fn get_media_observer_script(tab_id: &str) -> String {
     window.__YOONSPACE_TARGET_VOLUME__ = {target_vol:.4};
   }}
   let lastSnapshot = "";
-  let timerId = null;
+  let lastTimeUpdateAt = 0;
+  let lastDetachedMedia = null;
+  const TIMEUPDATE_THROTTLE_MS = 300;
+  const trackedDetachedMedia = new WeakSet();
 
   const origVolDesc = (() => {{
     try {{
@@ -959,7 +962,11 @@ fn get_media_observer_script(tab_id: &str) -> String {
   window.__YOONSPACE_SET_VOLUME__ = function(vol) {{
     const clamped = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 1));
     window.__YOONSPACE_TARGET_VOLUME__ = clamped;
-    document.querySelectorAll("video, audio").forEach((m) => {{
+    const targets = new Set(document.querySelectorAll("video, audio"));
+    if (lastDetachedMedia && !lastDetachedMedia.isConnected) {{
+      targets.add(lastDetachedMedia);
+    }}
+    targets.forEach((m) => {{
       setNativeVolume(m, clamped);
       try {{ m.muted = (clamped === 0); }} catch (_) {{}}
     }});
@@ -988,6 +995,9 @@ fn get_media_observer_script(tab_id: &str) -> String {
 
   function pickActiveMedia() {{
     const list = Array.from(document.querySelectorAll("video, audio"));
+    if (lastDetachedMedia && !lastDetachedMedia.isConnected) {{
+      list.push(lastDetachedMedia);
+    }}
     if (list.length === 0) return null;
     const playing = list.find((m) => !m.paused && !m.ended && (m.readyState > 0 || m.currentTime > 0));
     if (playing) return playing;
@@ -1070,29 +1080,78 @@ fn get_media_observer_script(tab_id: &str) -> String {
     }} catch (e) {{}}
   }}
 
-  function ensurePolling() {{
-    if (timerId !== null) return;
-    timerId = window.setInterval(() => {{
-      const m = pickActiveMedia();
-      if (m && (!m.paused && !m.ended)) {{
-        reportState(false);
+  const events = ["play", "playing", "pause", "ended", "emptied", "loadedmetadata", "loadeddata", "canplay", "durationchange", "volumechange", "seeked", "timeupdate"];
+
+  function handleMediaEvent(evt, target) {{
+    if (evt === "timeupdate") {{
+      const now = Date.now();
+      if (now - lastTimeUpdateAt < TIMEUPDATE_THROTTLE_MS) return;
+      lastTimeUpdateAt = now;
+      reportState(false);
+      return;
+    }}
+
+    lastTimeUpdateAt = 0;
+    if (evt !== "pause" && evt !== "ended" && evt !== "emptied" && evt !== "seeked") {{
+      if (target && (target.tagName === "VIDEO" || target.tagName === "AUDIO")) {{
+        applyRememberedVolume(target);
+      }} else {{
+        document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
       }}
-    }}, 350);
+    }}
+    reportState(true);
   }}
 
-  const events = ["play", "playing", "pause", "ended", "loadedmetadata", "loadeddata", "canplay", "durationchange", "volumechange", "seeked", "timeupdate"];
+  function trackDetachedMedia(m) {{
+    if (!m || m.isConnected || trackedDetachedMedia.has(m)) return;
+    trackedDetachedMedia.add(m);
+    events.forEach((evt) => {{
+      m.addEventListener(evt, () => {{
+        if (m.isConnected) return;
+        handleMediaEvent(evt, m);
+      }});
+    }});
+  }}
+
+  // Hook HTMLMediaElement.prototype.play so off-DOM players (e.g. new Audio()) are also tracked
+  try {{
+    const origPlay = HTMLMediaElement.prototype.play;
+    if (typeof origPlay === "function") {{
+      HTMLMediaElement.prototype.play = function() {{
+        applyRememberedVolume(this);
+        if (!this.isConnected) {{
+          lastDetachedMedia = this;
+          trackDetachedMedia(this);
+        }}
+        return origPlay.apply(this, arguments);
+      }};
+    }}
+  }} catch (_) {{}}
+
+  // Hook MediaSession.metadata setter so SPA title/artist updates reflect immediately
+  try {{
+    if (typeof MediaSession !== "undefined") {{
+      const msDesc = Object.getOwnPropertyDescriptor(MediaSession.prototype, "metadata");
+      if (msDesc && msDesc.configurable && typeof msDesc.set === "function" && typeof msDesc.get === "function") {{
+        Object.defineProperty(MediaSession.prototype, "metadata", {{
+          configurable: true,
+          enumerable: msDesc.enumerable,
+          get: function() {{
+            return msDesc.get.call(this);
+          }},
+          set: function(val) {{
+            const res = msDesc.set.call(this, val);
+            queueMicrotask(() => reportState(true));
+            return res;
+          }}
+        }});
+      }}
+    }}
+  }} catch (_) {{}}
+
   events.forEach((evt) => {{
     document.addEventListener(evt, (e) => {{
-      if (evt !== "timeupdate" && evt !== "pause" && evt !== "ended" && evt !== "seeked") {{
-        const target = e && e.target;
-        if (target && (target.tagName === "VIDEO" || target.tagName === "AUDIO")) {{
-          applyRememberedVolume(target);
-        }} else {{
-          document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
-        }}
-      }}
-      reportState(evt !== "timeupdate");
-      ensurePolling();
+      handleMediaEvent(evt, e && e.target);
     }}, true);
   }});
 
@@ -1107,12 +1166,10 @@ fn get_media_observer_script(tab_id: &str) -> String {
   if (document.readyState === "complete" || document.readyState === "interactive") {{
     document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
     reportState(true);
-    ensurePolling();
   }} else {{
     window.addEventListener("DOMContentLoaded", () => {{
       document.querySelectorAll("video, audio").forEach(applyRememberedVolume);
       reportState(true);
-      ensurePolling();
     }});
   }}
 }})();"##,
