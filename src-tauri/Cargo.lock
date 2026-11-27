@@ -5,6 +5,7 @@ version = 4
 [[package]]
 name = "adblock"
 version = "0.13.6"
+source = "git+https://github.com/brave/adblock-rust?branch=master#c4fb340e097c2e261dd6db61bd0b646ad8076b66"
 dependencies = [
  "addr",
  "arrayvec",

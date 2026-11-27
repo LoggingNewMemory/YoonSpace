@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use adblock::cosmetic_filter_cache::UrlSpecificResources;
 use adblock::Engine;
@@ -34,8 +34,49 @@ use serde::{Deserialize, Serialize};
 use crate::core::config::{load_config, save_config, ShieldSettings};
 use super::types::{BlockedItem, ShieldCategory, ShieldState, ShieldStats, SourceIndices, TabBreakdown};
 
-const BRAVE_DATA_DIR: &str = "/home/yamada/CODE/BraveStuffs/adblock-rust/data/brave";
-const EASYPRIVACY_PATH: &str = "/home/yamada/CODE/BraveStuffs/adblock-rust/data/easylist.to/easylist/easyprivacy.txt";
+static SHIELD_RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
+static SHIELD_STATE: OnceLock<Mutex<ShieldState>> = OnceLock::new();
+static SHIELD_MANAGER: OnceLock<Arc<ShieldManager>> = OnceLock::new();
+
+pub fn set_shield_resource_dir(resource_dir: PathBuf) {
+    let _ = SHIELD_RESOURCE_DIR.set(resource_dir);
+}
+
+fn resolve_shield_data_dir() -> PathBuf {
+    let user_override = crate::core::user_data::get_user_data_dir().join("shield");
+    if user_override.join("brave-main-list.txt").exists()
+        && user_override.join("brave-resources.json").exists()
+    {
+        return user_override;
+    }
+
+    if let Some(res_dir) = SHIELD_RESOURCE_DIR.get() {
+        let nested = res_dir.join("resources").join("shield");
+        if nested.join("brave-main-list.txt").exists() {
+            return nested;
+        }
+        let direct = res_dir.join("shield");
+        if direct.join("brave-main-list.txt").exists() {
+            return direct;
+        }
+        if res_dir.join("brave-main-list.txt").exists() {
+            return res_dir.clone();
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let beside_exe = exe_dir.join("resources").join("shield");
+            if beside_exe.join("brave-main-list.txt").exists() {
+                return beside_exe;
+            }
+        }
+    }
+
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("shield")
+}
 
 #[derive(Serialize, Deserialize)]
 struct ShieldExtrasCache {
@@ -52,9 +93,6 @@ pub struct ShieldManager {
     yt_scriptlet: String,
     yt_hide_selectors: Vec<String>,
 }
-
-static SHIELD_STATE: OnceLock<Mutex<ShieldState>> = OnceLock::new();
-static SHIELD_MANAGER: OnceLock<Arc<ShieldManager>> = OnceLock::new();
 
 fn shared_shield_state() -> &'static Mutex<ShieldState> {
     SHIELD_STATE.get_or_init(|| {
@@ -190,21 +228,15 @@ pub fn classify_url(url: &str, req_type: &str) -> ShieldCategory {
 
 impl ShieldManager {
     pub fn new() -> Self {
-        eprintln!("[YoonSpace Shield] Loading Brave adblock-rust from: {}", BRAVE_DATA_DIR);
+        let data_dir = resolve_shield_data_dir();
+        eprintln!("[YoonSpace Shield] Loading Brave adblock-rust from: {:?}", data_dir);
 
-        let data_dir = Path::new(BRAVE_DATA_DIR);
         let list_path = data_dir.join("brave-main-list.txt");
         let unbreak_path = data_dir.join("brave-unbreak.txt");
         let miners_path = data_dir.join("coin-miners.txt");
         let res_path = data_dir.join("brave-resources.json");
-
-        let privacy_path = Path::new(EASYPRIVACY_PATH);
-        let fallback_privacy = Path::new("/home/yamada/CODE/BraveStuffs/adblock-rust/data/regression-testing/easyprivacy.txt");
-        let privacy_file = if privacy_path.exists() {
-            privacy_path
-        } else {
-            fallback_privacy
-        };
+        let privacy_path = data_dir.join("easyprivacy.txt");
+        let privacy_file = privacy_path.as_path();
 
         // 1. Load resources directly from Brave adblock-rust
         let res_str = fs::read_to_string(&res_path)

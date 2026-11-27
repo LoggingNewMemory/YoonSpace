@@ -84,6 +84,10 @@ pub fn run() {
                 let _ = main_win.show();
             }
 
+            if let Ok(res_dir) = app.path().resource_dir() {
+                crate::core::shield::set_shield_resource_dir(res_dir);
+            }
+
             // Warm up Brave adblock-rust engine in background so initial UI startup is never blocked
             std::thread::spawn(|| {
                 let _ = crate::core::shield::get_shield_manager();
