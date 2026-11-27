@@ -850,9 +850,9 @@ async function handleTabDropOnTab(sourceTabId: string, targetTabId: string) {
 
 // User clicked Home / Workspaces in dock
 async function handleHomeClick() {
+  const wasSettingsOpen = isSettingsOpen;
   if (isSettingsOpen) {
     isSettingsOpen = false;
-    settingsPage?.hide();
   }
   const wasViewOpen = isViewOpen;
   isViewOpen = false;
@@ -871,9 +871,24 @@ async function handleHomeClick() {
     updateShieldForTab(null);
   }
 
-  const mainCanvas = document.getElementById("main-canvas");
-  if (mainCanvas) {
-    mainCanvas.classList.remove("hidden");
+  const showWelcome = () => {
+    const mainCanvas = document.getElementById("main-canvas");
+    if (mainCanvas) {
+      mainCanvas.classList.add("transition-opacity", "duration-200", "ease-out", "opacity-0");
+      mainCanvas.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          mainCanvas.classList.remove("opacity-0");
+          mainCanvas.classList.add("opacity-100");
+        });
+      });
+    }
+  };
+
+  if (wasSettingsOpen) {
+    settingsPage?.hide(showWelcome);
+  } else {
+    showWelcome();
   }
 
   setOmnibarText("");
@@ -992,16 +1007,15 @@ async function handleOpenSettings() {
 
   dock.setActiveTabId("settings");
   settingsPage.show();
-  settingsPage.refreshCacheSize().catch(console.error);
 }
 
 async function handleBackFromSettings() {
   if (!isSettingsOpen) return;
 
   isSettingsOpen = false;
-  settingsPage.hide();
 
   if (previousViewBeforeSettings === "tab" && activeTab) {
+    settingsPage.hide(undefined, true);
     isViewOpen = true;
     webBar.show();
     dock.setActiveTabId(activeTab.id);
@@ -1016,11 +1030,20 @@ async function handleBackFromSettings() {
   } else {
     isViewOpen = false;
     webBar.hide();
-    const mainCanvas = document.getElementById("main-canvas");
-    if (mainCanvas) {
-      mainCanvas.classList.remove("hidden");
-    }
     dock.setActiveTabId(null);
+    settingsPage.hide(() => {
+      const mainCanvas = document.getElementById("main-canvas");
+      if (mainCanvas) {
+        mainCanvas.classList.add("transition-opacity", "duration-200", "ease-out", "opacity-0");
+        mainCanvas.classList.remove("hidden");
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            mainCanvas.classList.remove("opacity-0");
+            mainCanvas.classList.add("opacity-100");
+          });
+        });
+      }
+    });
   }
 }
 

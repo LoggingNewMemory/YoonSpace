@@ -26,7 +26,7 @@ import type {
 export interface SettingsPageController {
   element: HTMLElement;
   show: () => void;
-  hide: () => void;
+  hide: (onHidden?: () => void, immediate?: boolean) => void;
   isOpen: () => boolean;
   refreshCacheSize: () => Promise<void>;
   refreshVault: () => Promise<void>;
@@ -40,7 +40,7 @@ export function createSettingsPage(
   const container = document.createElement("div");
   container.id = "settings-page";
   container.className =
-    "hidden w-full max-w-4xl mx-auto flex-1 flex flex-col py-8 px-6 text-[#e5e2e1] gap-8 select-none";
+    "hidden w-full max-w-4xl mx-auto flex-1 flex flex-col py-8 px-6 text-[#e5e2e1] gap-8 select-none transition-opacity duration-200 ease-in-out opacity-0";
 
   let currentEngineId = config.active_search_engine;
 
@@ -892,39 +892,90 @@ export function createSettingsPage(
     onConfigUpdated(config);
   });
 
+  let hideTimer: number | null = null;
+  let refreshTimer: number | null = null;
+  let isVisibleState = false;
+
+  function cancelTimers() {
+    if (hideTimer !== null) {
+      window.clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    if (refreshTimer !== null) {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+
   function show() {
-    tauriIpc
-      .getAppConfig()
-      .then((fresh) => {
-        if (fresh) {
-          Object.assign(config, fresh);
-          currentEngineId = fresh.active_search_engine;
-          renderSearchEngines();
-          renderDownloadSettings();
-          void renderWallpaperSettings();
-        }
-      })
-      .catch(() => {});
+    cancelTimers();
+    isVisibleState = true;
+
     renderSearchEngines();
     renderDownloadSettings();
-    void renderWallpaperSettings();
     cacheFeedback.classList.add("hidden");
     cacheFeedback.innerHTML = "";
     cacheNote.classList.remove("hidden");
-    refreshCacheSize();
-    refreshVault();
-    container.classList.remove("hidden");
+
+    container.classList.remove("hidden", "pointer-events-none", "opacity-100");
+    container.classList.add("opacity-0");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!isVisibleState) return;
+        container.classList.remove("opacity-0");
+        container.classList.add("opacity-100");
+      });
+    });
+
+    // Defer disk/IPC-heavy refreshes until the 150ms GPU-composited transition completes
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = null;
+      if (!isVisibleState) return;
+      void renderWallpaperSettings();
+      void refreshCacheSize();
+      void refreshVault();
+      tauriIpc
+        .getAppConfig()
+        .then((fresh) => {
+          if (fresh && isVisibleState) {
+            Object.assign(config, fresh);
+            currentEngineId = fresh.active_search_engine;
+            renderSearchEngines();
+            renderDownloadSettings();
+            void renderWallpaperSettings();
+          }
+        })
+        .catch(() => {});
+    }, 160);
   }
 
-  function hide() {
-    container.classList.add("hidden");
+  function hide(onHidden?: () => void, immediate = false) {
+    cancelTimers();
+    isVisibleState = false;
+
+    if (immediate || container.classList.contains("hidden")) {
+      container.classList.add("hidden", "opacity-0");
+      container.classList.remove("opacity-100", "pointer-events-none");
+      onHidden?.();
+      return;
+    }
+
+    container.classList.remove("opacity-100");
+    container.classList.add("opacity-0", "pointer-events-none");
+    hideTimer = window.setTimeout(() => {
+      hideTimer = null;
+      if (isVisibleState) return;
+      container.classList.add("hidden");
+      container.classList.remove("pointer-events-none");
+      onHidden?.();
+    }, 200);
   }
 
   return {
     element: container,
     show,
     hide,
-    isOpen: () => !container.classList.contains("hidden"),
+    isOpen: () => isVisibleState,
     refreshCacheSize,
     refreshVault,
   };
