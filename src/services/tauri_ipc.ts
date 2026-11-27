@@ -147,6 +147,14 @@ export const tauriIpc = {
     }
   },
 
+  async getSearchSuggestions(query: string, engineId: string): Promise<string[]> {
+    try {
+      return await invoke<string[]>("get_search_suggestions", { query, engineId });
+    } catch {
+      return [];
+    }
+  },
+
   // WebViews
   async spawnSingleView(url: string, bounds: SplitBounds, tabId?: string): Promise<void> {
     try {

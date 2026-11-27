@@ -15,6 +15,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import type { AppConfig } from "../types";
+import {
+  attachSearchAutocomplete,
+  type AutocompleteContext,
+} from "./search_autocomplete";
 
 export interface WelcomeScreenElement extends HTMLDivElement {
   refreshEngines: (updatedConfig: AppConfig) => void;
@@ -31,7 +35,8 @@ const escapeChipHtml = (str: string) =>
 export function createWelcomeScreen(
   config: AppConfig,
   onSearch: (query: string, engineId: string) => void,
-  onSelectEngine: (engineId: string) => void
+  onSelectEngine: (engineId: string) => void,
+  autocompleteContext?: AutocompleteContext
 ): WelcomeScreenElement {
   const container = document.createElement("div") as WelcomeScreenElement;
   container.className = "w-full max-w-3xl flex flex-col items-center gap-7 mx-auto";
@@ -195,8 +200,27 @@ export function createWelcomeScreen(
     e.preventDefault();
     const query = input.value.trim();
     if (query) {
+      input.value = query;
+      input.setSelectionRange(query.length, query.length);
+      autocomplete.close();
+      input.blur();
       onSearch(query, activeEngine);
     }
+  });
+
+  const autocomplete = attachSearchAutocomplete({
+    input,
+    anchor: omniSearchBox || form,
+    context: {
+      ...autocompleteContext,
+      getEngineId: () => activeEngine,
+    },
+    onSelect: (value) => {
+      if (value.trim()) {
+        onSearch(value.trim(), activeEngine);
+      }
+    },
+    onSyncClear: updateOmniClear,
   });
 
   // Hacker/Terminal Scramble & Typewriter Decoder Effect

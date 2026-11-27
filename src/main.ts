@@ -41,6 +41,7 @@ import {
   onFaviconCached,
   setCachedFaviconDataUrl,
 } from "./utils/favicon";
+import { recordSearchHistory } from "./utils/autocomplete";
 import {
   createDragSplitOverlay,
   type DragSplitOverlayController,
@@ -210,6 +211,7 @@ async function handleSearch(query: string, engineId: string) {
   }
   const targetUrl = normalizeUrl(query, engineId);
   const displayTitle = deriveTitleFromInput(query);
+  recordSearchHistory(query, targetUrl, displayTitle);
 
   // If a single tab is currently active and open, navigate it in-place instead of creating a new tab!
   if (isViewOpen && activeTab && !activeTab.isSplit) {
@@ -342,7 +344,6 @@ async function handleCloseTab(tabId: string) {
     if (welcomeInput) {
       welcomeInput.value = "";
       welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
-      welcomeInput.focus();
     }
 
     dock.setActiveTabId(null);
@@ -853,7 +854,11 @@ async function handleHomeClick() {
     isSettingsOpen = false;
     settingsPage?.hide();
   }
-  if (isViewOpen) {
+  const wasViewOpen = isViewOpen;
+  isViewOpen = false;
+  activeTab = null;
+
+  if (wasViewOpen) {
     try {
       await tauriIpc.hideWebviews();
       setTimeout(refreshTelemetry, 100);
@@ -862,32 +867,23 @@ async function handleHomeClick() {
       console.error("Failed to hide webviews on workspace click:", e);
     }
 
-    isViewOpen = false;
     webBar.hide();
-
     updateShieldForTab(null);
-
-    const mainCanvas = document.getElementById("main-canvas");
-    if (mainCanvas) {
-      mainCanvas.classList.remove("hidden");
-    }
-
-    setOmnibarText("");
-    const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
-    if (welcomeInput) {
-      welcomeInput.value = "";
-      welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
-      welcomeInput.focus();
-    }
-
-    dock.setActiveTabId(null);
-  } else {
-    const mainCanvas = document.getElementById("main-canvas");
-    if (mainCanvas) {
-      mainCanvas.classList.remove("hidden");
-    }
-    dock.setActiveTabId(null);
   }
+
+  const mainCanvas = document.getElementById("main-canvas");
+  if (mainCanvas) {
+    mainCanvas.classList.remove("hidden");
+  }
+
+  setOmnibarText("");
+  const welcomeInput = document.getElementById("engineerOmniInput") as HTMLInputElement | null;
+  if (welcomeInput) {
+    welcomeInput.value = "";
+    welcomeInput.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  dock.setActiveTabId(null);
 }
 
 // Open a bookmarked URL in a dedicated new tab (or switch to Settings off first)
@@ -904,6 +900,7 @@ async function handleOpenBookmark(rawUrl: string, title?: string) {
 
   const targetUrl = normalizeUrlForCache(rawUrl);
   const displayTitle = title?.trim() || deriveTitleFromInput(targetUrl);
+  recordSearchHistory(targetUrl, targetUrl, displayTitle);
   const tabId = "tab-" + Date.now();
 
   activeTab = {
@@ -1154,7 +1151,19 @@ async function init() {
     handleReload,
     handleShieldToggle,
     handleDownloadToggle,
-    handleOpenSettings
+    handleOpenSettings,
+    {
+      getBookmarks: () => bookmarksController?.getBookmarks() || [],
+      getTabs: () => dock?.getTabs() || [],
+      getEngineId: () => currentConfig.active_search_engine,
+      canShowDropdown: () => !isViewOpen || isSettingsOpen,
+      onSelectTab: (tabId) => {
+        const tab = dock.getTab(tabId);
+        if (tab) {
+          void handleRestoreTab(tab);
+        }
+      },
+    }
   );
   app.appendChild(titlebar);
 
@@ -1376,6 +1385,17 @@ async function init() {
     async (engineId) => {
       currentConfig.active_search_engine = engineId;
       await tauriIpc.updateAppConfig(currentConfig);
+    },
+    {
+      getBookmarks: () => bookmarksController?.getBookmarks() || [],
+      getTabs: () => dock?.getTabs() || [],
+      getEngineId: () => currentConfig.active_search_engine,
+      onSelectTab: (tabId) => {
+        const tab = dock.getTab(tabId);
+        if (tab) {
+          void handleRestoreTab(tab);
+        }
+      },
     }
   );
 
@@ -1479,11 +1499,19 @@ async function init() {
   // 6. Real-time URL synchronization (In-page link clicks, redirects, history navigation)
   tauriIpc.listen<{ tab_id: string; url: string }>("webview-url-changed", (event) => {
     const { tab_id, url } = event.payload;
+    if (url && /^https?:\/\//i.test(url)) {
+      const isSearchResultUrl = currentConfig.search_engines.some((eng) =>
+        url.startsWith(eng.query_url)
+      );
+      if (!isSearchResultUrl) {
+        recordSearchHistory(url, url);
+      }
+    }
     const tab = dock.getTab(tab_id);
     if (tab) {
       tab.url = url;
     }
-    if (activeTab && activeTab.id === tab_id) {
+    if (isViewOpen && activeTab && activeTab.id === tab_id) {
       activeTab.url = url;
       const omnibarInput = document.getElementById("global-omnibar-input") as HTMLInputElement | null;
       if (omnibarInput && document.activeElement !== omnibarInput) {
@@ -1500,7 +1528,7 @@ async function init() {
       if (pane === "left") tab.leftUrl = url;
       if (pane === "right") tab.rightUrl = url;
     }
-    if (activeTab && activeTab.id === tab_id) {
+    if (isViewOpen && activeTab && activeTab.id === tab_id) {
       if (pane === "left") activeTab.leftUrl = url;
       if (pane === "right") activeTab.rightUrl = url;
       updateShieldForTab(activeTab);

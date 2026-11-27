@@ -33,3 +33,56 @@ pub fn update_app_config(mut config: AppConfig) -> Result<(), String> {
 pub fn set_media_volume(volume: u8, persist: bool) -> Result<(), String> {
     set_saved_media_volume(volume, persist)
 }
+
+#[tauri::command]
+pub async fn get_search_suggestions(query: String, engine_id: String) -> Vec<String> {
+    let trimmed = query.trim().to_string();
+    if trimmed.is_empty() || trimmed.len() > 200 {
+        return Vec::new();
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let encoded: String = url::form_urlencoded::byte_serialize(trimmed.as_bytes()).collect();
+        let endpoint = match engine_id.as_str() {
+            "duckduckgo" => format!("https://duckduckgo.com/ac/?q={}&type=list", encoded),
+            "brave" => format!("https://search.brave.com/api/suggest?q={}", encoded),
+            _ => format!(
+                "https://suggestqueries.google.com/complete/search?client=firefox&q={}",
+                encoded
+            ),
+        };
+
+        let output = match std::process::Command::new("curl")
+            .args([
+                "-fsSL",
+                "--max-time",
+                "2",
+                "--connect-timeout",
+                "1",
+                "-A",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                &endpoint,
+            ])
+            .output()
+        {
+            Ok(out) if out.status.success() => out,
+            _ => return Vec::new(),
+        };
+
+        let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+            return Vec::new();
+        };
+
+        let Some(arr) = json.as_array().and_then(|root| root.get(1)).and_then(|v| v.as_array()) else {
+            return Vec::new();
+        };
+
+        arr.iter()
+            .filter_map(|item| item.as_str().map(|s| s.trim().to_string()))
+            .filter(|s| !s.is_empty())
+            .take(6)
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}

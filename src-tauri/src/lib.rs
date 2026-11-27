@@ -130,6 +130,7 @@ pub fn run() {
             commands::config::get_app_config,
             commands::config::update_app_config,
             commands::config::set_media_volume,
+            commands::config::get_search_suggestions,
             commands::bookmarks::list_bookmarks,
             commands::bookmarks::add_bookmark,
             commands::bookmarks::update_bookmark,

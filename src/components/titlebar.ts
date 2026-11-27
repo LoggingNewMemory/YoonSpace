@@ -17,6 +17,10 @@
 import { tauriIpc } from "../services/tauri_ipc";
 import { initShieldUI, type ShieldController } from "./shield";
 import { initDownloadsUI, type DownloadController } from "./downloads";
+import {
+  attachSearchAutocomplete,
+  type AutocompleteContext,
+} from "./search_autocomplete";
 
 export interface TitlebarElement extends HTMLElement {
   shieldController?: ShieldController;
@@ -34,7 +38,8 @@ export function createTitlebar(
   onReload?: () => void,
   onShieldToggle?: (isOpen: boolean) => void,
   onDownloadToggle?: (isOpen: boolean) => void,
-  onOpenSettings?: () => void
+  onOpenSettings?: () => void,
+  autocompleteContext?: AutocompleteContext
 ) {
   const container = document.createElement("header");
   container.className =
@@ -420,8 +425,24 @@ export function createTitlebar(
     e.preventDefault();
     const query = input.value.trim();
     if (query) {
+      input.value = query;
+      input.setSelectionRange(query.length, query.length);
+      autocomplete.close();
+      input.blur();
       onNavigate(query);
     }
+  });
+
+  const autocomplete = attachSearchAutocomplete({
+    input,
+    anchor: box || form,
+    context: autocompleteContext,
+    onSelect: (value) => {
+      if (value.trim()) {
+        onNavigate(value.trim());
+      }
+    },
+    onSyncClear: updateClearButton,
   });
 
   // Initialize YoonSpace Shields UI (Powered by Brave adblock-rust)
