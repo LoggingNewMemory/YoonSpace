@@ -112,9 +112,7 @@ pub(super) fn attach_popup_handler(
             win_close.close();
         });
 
-        // Apply Shield & HTTPS upgrade rules inside the popup too
-        let app_inner = app_popup.clone();
-        let tab_inner = tab_id_popup.clone();
+        // Apply HTTPS upgrade inside the popup (matching main webview NavigationAction behavior)
         popup_wv.connect_decide_policy(move |pv, decision, decision_type| {
             if decision_type == webkit2gtk::PolicyDecisionType::NavigationAction {
                 if let Some(nav_dec) =
@@ -129,30 +127,16 @@ pub(super) fn attach_popup_handler(
                         if let Some(uri) = req.uri() {
                             let uri_str = uri.as_str();
                             let manager = crate::core::shield::get_shield_manager();
-                            if manager.is_enabled() {
-                                if manager.is_upgrade_https()
-                                    && uri_str.starts_with("http://")
-                                    && !uri_str.starts_with("http://localhost")
-                                    && !uri_str.starts_with("http://127.0.0.1")
-                                {
-                                    let upgraded = format!("https://{}", &uri_str[7..]);
-                                    decision.ignore();
-                                    pv.load_uri(&upgraded);
-                                    return true;
-                                }
-                                let (should_block, category) =
-                                    manager.check_url_categorized(uri_str, "", "subdocument");
-                                if should_block {
-                                    decision.ignore();
-                                    crate::commands::shield::record_and_emit_block(
-                                        &app_inner,
-                                        &tab_inner,
-                                        uri_str,
-                                        Some(category),
-                                        1,
-                                    );
-                                    return true;
-                                }
+                            if manager.is_enabled()
+                                && manager.is_upgrade_https()
+                                && uri_str.starts_with("http://")
+                                && !uri_str.starts_with("http://localhost")
+                                && !uri_str.starts_with("http://127.0.0.1")
+                            {
+                                let upgraded = format!("https://{}", &uri_str[7..]);
+                                decision.ignore();
+                                pv.load_uri(&upgraded);
+                                return true;
                             }
                         }
                     }
