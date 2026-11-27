@@ -18,18 +18,6 @@ import type { SplitPreset } from "../types";
 import { deriveTitleFromInput } from "../utils/url";
 import { escapeHtml } from "./dock_context_menu";
 
-const SPLIT_ICONS = [
-  "view_column",
-  "splitscreen",
-  "code",
-  "terminal",
-  "troubleshoot",
-  "school",
-  "article",
-  "chat",
-  "language",
-] as const;
-
 function normalizeSplitUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed || /\s/.test(trimmed)) {
@@ -49,10 +37,6 @@ function normalizeSplitUrl(raw: string): string | null {
   }
 }
 
-function formatDisplayUrl(url: string): string {
-  return url.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-}
-
 export function createSplitPresetsSection(
   initialPresets: SplitPreset[],
   onSpawn: (preset: SplitPreset) => void,
@@ -63,8 +47,9 @@ export function createSplitPresetsSection(
 
   let presets: SplitPreset[] = [...initialPresets];
   let isAdding = false;
-  let selectedIcon: string = SPLIT_ICONS[0];
+  let editingId: string | null = null;
   let errorMessage = "";
+  let editErrorMessage = "";
 
   const render = () => {
     section.innerHTML = `
@@ -117,40 +102,15 @@ export function createSplitPresetsSection(
               </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
-              <div class="flex flex-col gap-1">
-                <label for="split-title" class="text-[11px] font-medium text-[#e2bfb4]">Title <span class="text-[#8e8a88] font-normal">(optional)</span></label>
-                <input
-                  id="split-title"
-                  type="text"
-                  placeholder="e.g. GitHub | Docs"
-                  autocomplete="off"
-                  class="w-full px-3 py-2 rounded-lg bg-[#121214] border border-[#353535] focus:border-[#f85e2a] focus:ring-1 focus:ring-[#f85e2a] text-xs text-[#e5e2e1] placeholder-[#78655e] outline-none transition-colors"
-                />
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <span class="text-[11px] font-medium text-[#e2bfb4]">Icon</span>
-                <div class="flex items-center gap-1 flex-wrap">
-                  ${SPLIT_ICONS.map((icon) => {
-                    const active = icon === selectedIcon;
-                    return `
-                      <button
-                        type="button"
-                        data-split-icon="${icon}"
-                        title="${icon}"
-                        class="split-icon-option w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
-                          active
-                            ? "bg-[#f85e2a]/20 border-[#f85e2a] text-[#ffb59e]"
-                            : "bg-[#121214] border-[#353535] text-[#8e8a88] hover:text-[#e5e2e1] hover:border-[#525252]"
-                        }"
-                      >
-                        <span class="material-symbols-outlined text-[16px]">${icon}</span>
-                      </button>
-                    `;
-                  }).join("")}
-                </div>
-              </div>
+            <div class="flex flex-col gap-1">
+              <label for="split-title" class="text-[11px] font-medium text-[#e2bfb4]">Title <span class="text-[#8e8a88] font-normal">(optional)</span></label>
+              <input
+                id="split-title"
+                type="text"
+                placeholder="e.g. GitHub | Docs"
+                autocomplete="off"
+                class="w-full px-3 py-2 rounded-lg bg-[#121214] border border-[#353535] focus:border-[#f85e2a] focus:ring-1 focus:ring-[#f85e2a] text-xs text-[#e5e2e1] placeholder-[#78655e] outline-none transition-colors"
+              />
             </div>
 
             ${
@@ -190,9 +150,8 @@ export function createSplitPresetsSection(
                 <div class="w-9 h-9 rounded-lg bg-[#141416] border border-[#353535]/70 flex items-center justify-center text-[#8e8a88]">
                   <span class="material-symbols-outlined text-[18px]">splitscreen</span>
                 </div>
-                <div class="flex flex-col">
+                <div class="flex items-center">
                   <span class="text-xs font-medium text-[#e5e2e1]">No split view tabs yet</span>
-                  <span class="text-[11px] text-[#8e8a88]">Add two URLs to launch them side-by-side in one click.</span>
                 </div>
               </div>
               ${
@@ -213,26 +172,95 @@ export function createSplitPresetsSection(
           `
               : presets
                   .map((preset) => {
+                    if (editingId === preset.id) {
+                      return `
+                  <form
+                    data-edit-preset-id="${escapeHtml(preset.id)}"
+                    class="edit-split-form p-4 rounded-xl bg-[#1c1c1e] border border-[#f85e2a]/60 shadow-lg flex flex-col gap-3"
+                  >
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div class="flex flex-col gap-1">
+                        <label class="text-[11px] font-medium text-[#e2bfb4]">Left URL <span class="text-[#f85e2a]">*</span></label>
+                        <input
+                          type="text"
+                          name="leftUrl"
+                          value="${escapeHtml(preset.left_url)}"
+                          autocomplete="off"
+                          spellcheck="false"
+                          class="edit-split-left w-full px-3 py-2 rounded-lg bg-[#121214] border border-[#353535] focus:border-[#f85e2a] focus:ring-1 focus:ring-[#f85e2a] text-xs text-[#e5e2e1] placeholder-[#78655e] outline-none transition-colors"
+                        />
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <label class="text-[11px] font-medium text-[#e2bfb4]">Right URL <span class="text-[#f85e2a]">*</span></label>
+                        <input
+                          type="text"
+                          name="rightUrl"
+                          value="${escapeHtml(preset.right_url)}"
+                          autocomplete="off"
+                          spellcheck="false"
+                          class="edit-split-right w-full px-3 py-2 rounded-lg bg-[#121214] border border-[#353535] focus:border-[#f85e2a] focus:ring-1 focus:ring-[#f85e2a] text-xs text-[#e5e2e1] placeholder-[#78655e] outline-none transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="flex flex-col gap-1">
+                      <label class="text-[11px] font-medium text-[#e2bfb4]">Title <span class="text-[#8e8a88] font-normal">(optional)</span></label>
+                      <input
+                        type="text"
+                        name="title"
+                        value="${escapeHtml(preset.title)}"
+                        placeholder="e.g. GitHub | Docs"
+                        autocomplete="off"
+                        class="edit-split-title w-full px-3 py-2 rounded-lg bg-[#121214] border border-[#353535] focus:border-[#f85e2a] focus:ring-1 focus:ring-[#f85e2a] text-xs text-[#e5e2e1] placeholder-[#78655e] outline-none transition-colors"
+                      />
+                    </div>
+
+                    ${
+                      editErrorMessage
+                        ? `<p class="text-[11px] text-red-400 font-medium">${escapeHtml(editErrorMessage)}</p>`
+                        : ""
+                    }
+
+                    <div class="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        class="btn-cancel-edit-split px-3 py-1.5 rounded-lg bg-[#2a2a2e] hover:bg-[#35353a] text-[#e5e2e1] text-xs font-medium transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        class="px-3.5 py-1.5 rounded-lg bg-[#f85e2a] hover:bg-[#ff7345] text-[#521300] text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      >
+                        <span class="material-symbols-outlined text-[15px]">check</span>
+                        <span>Save Changes</span>
+                      </button>
+                    </div>
+                  </form>
+                `;
+                    }
+
                     return `
                   <div
                     data-preset-id="${escapeHtml(preset.id)}"
                     class="preset-card flex items-center justify-between p-3.5 rounded-xl bg-[#202020] hover:bg-[#2a2a2a] border border-[#353535]/40 transition-all cursor-pointer shadow-sm group"
                   >
-                    <div class="flex items-center gap-3.5 min-w-0">
-                      <div class="w-10 h-10 rounded-lg bg-[#0e0e0e] border border-[#353535] flex items-center justify-center text-[#ffb59e] group-hover:scale-105 group-hover:text-[#f85e2a] transition-all shrink-0">
-                        <span class="material-symbols-outlined text-[20px]">${escapeHtml(preset.icon || "splitscreen")}</span>
-                      </div>
-                      <div class="flex flex-col min-w-0">
-                        <span class="text-sm font-semibold text-[#e5e2e1] group-hover:text-white transition-colors truncate">
-                          ${escapeHtml(preset.title)}
-                        </span>
-                        <span class="text-[11px] text-[#aa8a80] truncate">
-                          ${escapeHtml(formatDisplayUrl(preset.left_url))} &nbsp;|&nbsp; ${escapeHtml(formatDisplayUrl(preset.right_url))}
-                        </span>
-                      </div>
+                    <div class="flex items-center min-w-0">
+                      <span class="text-sm font-semibold text-[#e5e2e1] group-hover:text-white transition-colors truncate">
+                        ${escapeHtml(preset.title)}
+                      </span>
                     </div>
 
-                    <div class="flex items-center gap-2 shrink-0 ml-3">
+                    <div class="flex items-center gap-1.5 shrink-0 ml-3">
+                      <button
+                        type="button"
+                        data-edit-preset-id="${escapeHtml(preset.id)}"
+                        title="Customize split view"
+                        aria-label="Customize split view"
+                        class="btn-edit-preset w-8 h-8 rounded-lg flex items-center justify-center text-[#8e8a88] hover:text-[#ffb59e] hover:bg-[#353535]/70 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all cursor-pointer"
+                      >
+                        <span class="material-symbols-outlined text-[16px]">edit</span>
+                      </button>
                       <button
                         type="button"
                         data-delete-preset-id="${escapeHtml(preset.id)}"
@@ -282,23 +310,6 @@ export function createSplitPresetsSection(
       render();
     });
 
-    // Icon selection
-    section.querySelectorAll(".split-icon-option").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const icon = btn.getAttribute("data-split-icon");
-        if (!icon) return;
-        selectedIcon = icon;
-        section.querySelectorAll(".split-icon-option").forEach((opt) => {
-          const isSelected = opt.getAttribute("data-split-icon") === selectedIcon;
-          opt.className = `split-icon-option w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
-            isSelected
-              ? "bg-[#f85e2a]/20 border-[#f85e2a] text-[#ffb59e]"
-              : "bg-[#121214] border-[#353535] text-[#8e8a88] hover:text-[#e5e2e1] hover:border-[#525252]"
-          }`;
-        });
-      });
-    });
-
     // Form submit
     const form = section.querySelector("#add-split-form") as HTMLFormElement | null;
     form?.addEventListener("submit", async (e) => {
@@ -327,7 +338,7 @@ export function createSplitPresetsSection(
       const newPreset: SplitPreset = {
         id: `split_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         title: titleInput || derivedTitle,
-        icon: selectedIcon,
+        icon: "splitscreen",
         left_url: leftUrl,
         right_url: rightUrl,
       };
@@ -335,7 +346,6 @@ export function createSplitPresetsSection(
       presets = [...presets, newPreset];
       isAdding = false;
       errorMessage = "";
-      selectedIcon = SPLIT_ICONS[0];
       render();
       await onPresetsChange(presets);
     });
@@ -351,12 +361,81 @@ export function createSplitPresetsSection(
       });
     });
 
+    // Attach click listeners to edit buttons
+    section.querySelectorAll(".btn-edit-preset").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-edit-preset-id");
+        if (!id) return;
+        editingId = id;
+        editErrorMessage = "";
+        isAdding = false;
+        render();
+        (section.querySelector(".edit-split-left") as HTMLInputElement | null)?.focus();
+      });
+    });
+
+    // Attach edit form submit & cancel
+    const editForm = section.querySelector(".edit-split-form") as HTMLFormElement | null;
+    editForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const targetId = editForm.getAttribute("data-edit-preset-id");
+      if (!targetId) return;
+
+      const leftInput = (editForm.querySelector(".edit-split-left") as HTMLInputElement | null)?.value ?? "";
+      const rightInput = (editForm.querySelector(".edit-split-right") as HTMLInputElement | null)?.value ?? "";
+      const titleInput = (editForm.querySelector(".edit-split-title") as HTMLInputElement | null)?.value.trim() ?? "";
+
+      const leftUrl = normalizeSplitUrl(leftInput);
+      const rightUrl = normalizeSplitUrl(rightInput);
+
+      if (!leftUrl || !rightUrl) {
+        editErrorMessage = "Please enter valid URLs for both the left and right panes.";
+        render();
+        const freshForm = section.querySelector(".edit-split-form") as HTMLFormElement | null;
+        const leftEl = freshForm?.querySelector(".edit-split-left") as HTMLInputElement | null;
+        const rightEl = freshForm?.querySelector(".edit-split-right") as HTMLInputElement | null;
+        const titleEl = freshForm?.querySelector(".edit-split-title") as HTMLInputElement | null;
+        if (leftEl) leftEl.value = leftInput;
+        if (rightEl) rightEl.value = rightInput;
+        if (titleEl) titleEl.value = titleInput;
+        (!leftUrl ? leftEl : rightEl)?.focus();
+        return;
+      }
+
+      const derivedTitle = `${deriveTitleFromInput(leftUrl)} | ${deriveTitleFromInput(rightUrl)}`;
+      presets = presets.map((p) =>
+        p.id === targetId
+          ? {
+              ...p,
+              title: titleInput || derivedTitle,
+              icon: "splitscreen",
+              left_url: leftUrl,
+              right_url: rightUrl,
+            }
+          : p
+      );
+      editingId = null;
+      editErrorMessage = "";
+      render();
+      await onPresetsChange(presets);
+    });
+
+    section.querySelector(".btn-cancel-edit-split")?.addEventListener("click", () => {
+      editingId = null;
+      editErrorMessage = "";
+      render();
+    });
+
     // Attach click listeners to delete buttons
     section.querySelectorAll(".btn-delete-preset").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute("data-delete-preset-id");
         if (!id) return;
+        if (editingId === id) {
+          editingId = null;
+        }
         presets = presets.filter((p) => p.id !== id);
         render();
         await onPresetsChange(presets);
