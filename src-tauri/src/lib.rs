@@ -19,11 +19,55 @@ use tauri::Manager;
 pub mod commands;
 pub mod core;
 
+fn respond_wallpaper_request(
+    request: &tauri::http::Request<Vec<u8>>,
+    responder: tauri::UriSchemeResponder,
+) {
+    let path_opt = request.uri().query().and_then(|q| {
+        url::form_urlencoded::parse(q.as_bytes())
+            .find(|(k, _)| k == "path")
+            .map(|(_, v)| v.into_owned())
+    });
+
+    let Some(file_path) = path_opt else {
+        responder.respond(
+            tauri::http::Response::builder()
+                .status(tauri::http::StatusCode::BAD_REQUEST)
+                .header("Access-Control-Allow-Origin", "*")
+                .body(b"missing path".to_vec())
+                .unwrap(),
+        );
+        return;
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let response = match crate::core::wallpaper::read_wallpaper_bytes(&file_path) {
+            Ok((mime, bytes)) => tauri::http::Response::builder()
+                .status(tauri::http::StatusCode::OK)
+                .header("Content-Type", mime)
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Cache-Control", "private, max-age=3600")
+                .body(bytes)
+                .unwrap(),
+            Err(err) => tauri::http::Response::builder()
+                .status(tauri::http::StatusCode::NOT_FOUND)
+                .header("Content-Type", "text/plain")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(err.into_bytes())
+                .unwrap(),
+        };
+        responder.respond(response);
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     crate::core::webview::gtk_overlay::setup_glib_log_handler();
 
     tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol("wallpaper", |_ctx, request, responder| {
+            respond_wallpaper_request(&request, responder);
+        })
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -39,6 +83,11 @@ pub fn run() {
             if let Some(main_win) = app.get_window("main") {
                 let _ = main_win.show();
             }
+
+            // Warm up Brave adblock-rust engine in background so initial UI startup is never blocked
+            std::thread::spawn(|| {
+                let _ = crate::core::shield::get_shield_manager();
+            });
 
             Ok(())
         })

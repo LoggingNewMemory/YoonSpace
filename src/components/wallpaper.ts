@@ -186,12 +186,30 @@ export function createHomepageWallpaper(
     surfaceB.style.backgroundImage = "";
   }
 
-  async function preloadImage(dataUrl: string): Promise<void> {
-    const probe = new Image();
-    probe.src = dataUrl;
-    if (typeof probe.decode === "function") {
-      await probe.decode().catch(() => {});
-    }
+  function buildWallpaperProtocolUrl(filePath: string): string {
+    return `wallpaper://localhost/?path=${encodeURIComponent(filePath)}`;
+  }
+
+  async function preloadImage(imageUrl: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const probe = new Image();
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (!settled) {
+          settled = true;
+          resolve(ok);
+        }
+      };
+      probe.onload = () => {
+        if (typeof probe.decode === "function") {
+          probe.decode().then(() => finish(true)).catch(() => finish(true));
+        } else {
+          finish(true);
+        }
+      };
+      probe.onerror = () => finish(false);
+      probe.src = imageUrl;
+    });
   }
 
   async function showImageAt(index: number) {
@@ -211,14 +229,18 @@ export function createHomepageWallpaper(
     const targetPath = imagePaths[normalizedIdx];
 
     try {
-      const dataUrl = await tauriIpc.loadWallpaperImage(targetPath);
-      await preloadImage(dataUrl);
+      let imageUrl = buildWallpaperProtocolUrl(targetPath);
+      const protocolOk = await preloadImage(imageUrl);
+      if (!protocolOk) {
+        imageUrl = await tauriIpc.loadWallpaperImage(targetPath);
+        await preloadImage(imageUrl);
+      }
       if (seq !== loadSeq) return;
 
       const incoming = activeSurface === "A" ? surfaceB : surfaceA;
       const outgoing = activeSurface === "A" ? surfaceA : surfaceB;
 
-      incoming.style.backgroundImage = `url("${dataUrl}")`;
+      incoming.style.backgroundImage = `url("${imageUrl.replace(/"/g, '\\"')}")`;
       layerElement.classList.remove("hidden");
       controlsElement.classList.remove("hidden");
       if (imagePaths.length > 1) {

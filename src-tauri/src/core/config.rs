@@ -17,10 +17,12 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 static SAVED_MEDIA_VOLUME: AtomicU8 = AtomicU8::new(100);
 static SAVED_MEDIA_VOLUME_INIT: AtomicBool = AtomicBool::new(false);
+static CONFIG_CACHE: Mutex<Option<AppConfig>> = Mutex::new(None);
 
 fn default_media_volume() -> u8 {
     100
@@ -227,31 +229,48 @@ pub fn get_config_path() -> PathBuf {
 }
 
 pub fn load_config() -> AppConfig {
-    let path = get_config_path();
-    if let Ok(content) = fs::read_to_string(&path) {
-        if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&content) {
-            let mut merged = false;
-            for default_engine in AppConfig::default().search_engines {
-                if !cfg.search_engines.iter().any(|e| e.id == default_engine.id) {
-                    cfg.search_engines.push(default_engine);
-                    merged = true;
-                }
-            }
-            cfg.media_volume = cfg.media_volume.min(100);
-            SAVED_MEDIA_VOLUME.store(cfg.media_volume, Ordering::SeqCst);
-            SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
-            if merged {
-                let _ = save_config(&cfg);
-            }
-            return cfg;
+    if let Ok(guard) = CONFIG_CACHE.lock() {
+        if let Some(ref cached) = *guard {
+            return cached.clone();
         }
     }
 
-    let default_cfg = AppConfig::default();
-    SAVED_MEDIA_VOLUME.store(default_cfg.media_volume.min(100), Ordering::SeqCst);
-    SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
-    let _ = save_config(&default_cfg);
-    default_cfg
+    let path = get_config_path();
+    let cfg = if let Ok(content) = fs::read_to_string(&path) {
+        if let Ok(mut parsed) = serde_json::from_str::<AppConfig>(&content) {
+            let mut merged = false;
+            for default_engine in AppConfig::default().search_engines {
+                if !parsed.search_engines.iter().any(|e| e.id == default_engine.id) {
+                    parsed.search_engines.push(default_engine);
+                    merged = true;
+                }
+            }
+            parsed.media_volume = parsed.media_volume.min(100);
+            SAVED_MEDIA_VOLUME.store(parsed.media_volume, Ordering::SeqCst);
+            SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
+            if merged {
+                let _ = save_config(&parsed);
+            }
+            parsed
+        } else {
+            let default_cfg = AppConfig::default();
+            SAVED_MEDIA_VOLUME.store(default_cfg.media_volume.min(100), Ordering::SeqCst);
+            SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
+            let _ = save_config(&default_cfg);
+            default_cfg
+        }
+    } else {
+        let default_cfg = AppConfig::default();
+        SAVED_MEDIA_VOLUME.store(default_cfg.media_volume.min(100), Ordering::SeqCst);
+        SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
+        let _ = save_config(&default_cfg);
+        default_cfg
+    };
+
+    if let Ok(mut guard) = CONFIG_CACHE.lock() {
+        *guard = Some(cfg.clone());
+    }
+    cfg
 }
 
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
@@ -261,5 +280,9 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
     SAVED_MEDIA_VOLUME_INIT.store(true, Ordering::SeqCst);
     let path = get_config_path();
     let json = serde_json::to_string_pretty(&sanitized).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())
+    fs::write(path, json).map_err(|e| e.to_string())?;
+    if let Ok(mut guard) = CONFIG_CACHE.lock() {
+        *guard = Some(sanitized);
+    }
+    Ok(())
 }

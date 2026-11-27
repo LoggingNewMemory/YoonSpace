@@ -22,11 +22,19 @@ pub fn select_wallpaper_dir(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub fn list_wallpaper_images(folder_path: String) -> Result<Vec<String>, String> {
-    crate::core::wallpaper::list_wallpaper_images(&folder_path)
+pub async fn list_wallpaper_images(folder_path: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::core::wallpaper::list_wallpaper_images(&folder_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn load_wallpaper_image(file_path: String) -> Result<String, String> {
-    crate::core::wallpaper::load_wallpaper_data_url(&file_path)
+pub async fn load_wallpaper_image(file_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::core::wallpaper::load_wallpaper_data_url(&file_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

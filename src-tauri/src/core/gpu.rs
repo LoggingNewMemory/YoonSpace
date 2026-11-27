@@ -14,6 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::sync::OnceLock;
+
+static DETECTED_GPU_NAME: OnceLock<String> = OnceLock::new();
+
 /// Configure GPU preferences at application startup.
 /// By default, Linux runs on the integrated GPU with standard zero-copy DMA-BUF.
 /// If the user opts into discrete GPU via YOONSPACE_USE_DGPU, PRIME offload is enabled.
@@ -38,6 +42,10 @@ pub fn configure_universal_igpu() {
 
 /// Identifies the active GPU render node currently opened by the process for telemetry.
 pub fn get_active_gpu_name() -> String {
+    if let Some(cached) = DETECTED_GPU_NAME.get() {
+        return cached.clone();
+    }
+
     let pid = std::process::id();
     let fd_dir = format!("/proc/{}/fd", pid);
     if let Ok(entries) = std::fs::read_dir(fd_dir) {
@@ -51,15 +59,17 @@ pub fn get_active_gpu_name() -> String {
                     let vendor = std::fs::read_to_string(dev_vendor_path)
                         .map(|v| v.trim().to_lowercase())
                         .unwrap_or_default();
-                    if vendor == "0x8086" {
-                        return format!("Intel Iris/UHD iGPU ({})", render_name);
+                    let detected = if vendor == "0x8086" {
+                        format!("Intel Iris/UHD iGPU ({})", render_name)
                     } else if vendor == "0x1002" {
-                        return format!("AMD Radeon GPU ({})", render_name);
+                        format!("AMD Radeon GPU ({})", render_name)
                     } else if vendor == "0x10de" {
-                        return format!("NVIDIA GeForce GPU ({})", render_name);
+                        format!("NVIDIA GeForce GPU ({})", render_name)
                     } else {
-                        return format!("GPU ({})", render_name);
-                    }
+                        format!("GPU ({})", render_name)
+                    };
+                    let _ = DETECTED_GPU_NAME.set(detected.clone());
+                    return detected;
                 }
             }
         }

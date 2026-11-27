@@ -16,7 +16,12 @@
 
 use tauri::{command, AppHandle, Emitter, Manager};
 use crate::core::config::ShieldSettings;
-use crate::core::shield::{get_shield_manager, ShieldCategory, ShieldStats, TabBreakdown};
+use crate::core::shield::{
+    get_shield_manager, get_shield_stats_fast, get_tab_breakdown_fast, get_tab_count_fast,
+    set_shield_aggressive_sandbox_fast, set_shield_block_trackers_fast, set_shield_enabled_fast,
+    set_shield_upgrade_https_fast, update_shield_settings_fast, ShieldCategory, ShieldStats,
+    TabBreakdown,
+};
 
 fn broadcast_shield_state(app: &AppHandle, settings: &ShieldSettings) {
     let eval_code = format!(
@@ -62,45 +67,40 @@ fn broadcast_shield_state(app: &AppHandle, settings: &ShieldSettings) {
 
 #[command]
 pub fn get_shield_stats() -> ShieldStats {
-    get_shield_manager().get_stats()
+    get_shield_stats_fast()
 }
 
 #[command]
 pub fn update_shield_settings(app: AppHandle, settings: ShieldSettings) -> ShieldStats {
-    let manager = get_shield_manager();
-    let new_settings = manager.update_settings(settings);
+    let new_settings = update_shield_settings_fast(settings);
     broadcast_shield_state(&app, &new_settings);
-    manager.get_stats()
+    get_shield_stats_fast()
 }
 
 #[command]
 pub fn toggle_shield(app: AppHandle, enabled: bool) -> bool {
-    let manager = get_shield_manager();
-    let settings = manager.set_enabled(enabled);
+    let settings = set_shield_enabled_fast(enabled);
     broadcast_shield_state(&app, &settings);
     settings.enabled
 }
 
 #[command]
 pub fn toggle_shield_trackers(app: AppHandle, enabled: bool) -> bool {
-    let manager = get_shield_manager();
-    let settings = manager.set_block_trackers(enabled);
+    let settings = set_shield_block_trackers_fast(enabled);
     broadcast_shield_state(&app, &settings);
     settings.block_trackers
 }
 
 #[command]
 pub fn toggle_shield_https(app: AppHandle, enabled: bool) -> bool {
-    let manager = get_shield_manager();
-    let settings = manager.set_upgrade_https(enabled);
+    let settings = set_shield_upgrade_https_fast(enabled);
     broadcast_shield_state(&app, &settings);
     settings.upgrade_https
 }
 
 #[command]
 pub fn toggle_shield_sandbox(app: AppHandle, enabled: bool) -> bool {
-    let manager = get_shield_manager();
-    let settings = manager.set_aggressive_sandbox(enabled);
+    let settings = set_shield_aggressive_sandbox_fast(enabled);
     broadcast_shield_state(&app, &settings);
     settings.aggressive_sandbox
 }
@@ -158,19 +158,21 @@ pub fn record_shield_block(app: AppHandle, tab_id: String, url: String, category
 
 #[command]
 pub fn get_tab_shield_count(tab_id: String) -> u64 {
-    get_shield_manager().get_tab_count(&tab_id)
+    get_tab_count_fast(&tab_id)
 }
 
 #[command]
 pub fn get_tab_shield_breakdown(tab_id: String) -> TabBreakdown {
-    get_shield_manager().get_tab_breakdown(&tab_id)
+    get_tab_breakdown_fast(&tab_id)
 }
 
 #[command]
-pub fn check_shield_url(url: String, source_url: Option<String>, req_type: Option<String>) -> bool {
+pub async fn check_shield_url(url: String, source_url: Option<String>, req_type: Option<String>) -> bool {
     let source = source_url.unwrap_or_else(|| url.clone());
     let rtype = req_type.unwrap_or_else(|| "other".to_string());
-    get_shield_manager().check_url(&url, &source, &rtype)
+    tauri::async_runtime::spawn_blocking(move || get_shield_manager().check_url(&url, &source, &rtype))
+        .await
+        .unwrap_or(false)
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -181,11 +183,19 @@ pub struct CosmeticResourcesResponse {
 }
 
 #[command]
-pub fn get_cosmetic_resources(url: String) -> CosmeticResourcesResponse {
-    let res = get_shield_manager().url_cosmetic_resources(&url);
-    CosmeticResourcesResponse {
-        hide_selectors: res.hide_selectors.into_iter().collect(),
-        injected_script: res.injected_script,
-        generichide: res.generichide,
-    }
+pub async fn get_cosmetic_resources(url: String) -> CosmeticResourcesResponse {
+    tauri::async_runtime::spawn_blocking(move || {
+        let res = get_shield_manager().url_cosmetic_resources(&url);
+        CosmeticResourcesResponse {
+            hide_selectors: res.hide_selectors.into_iter().collect(),
+            injected_script: res.injected_script,
+            generichide: res.generichide,
+        }
+    })
+    .await
+    .unwrap_or(CosmeticResourcesResponse {
+        hide_selectors: Vec::new(),
+        injected_script: String::new(),
+        generichide: false,
+    })
 }

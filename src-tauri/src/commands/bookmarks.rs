@@ -29,8 +29,10 @@ use crate::core::favicon_cache::{
 };
 
 #[tauri::command]
-pub fn list_bookmarks() -> Vec<BookmarkItem> {
-    core_list_bookmarks()
+pub async fn list_bookmarks() -> Result<Vec<BookmarkItem>, String> {
+    tauri::async_runtime::spawn_blocking(core_list_bookmarks)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

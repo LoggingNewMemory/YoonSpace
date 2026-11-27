@@ -424,24 +424,6 @@ export function createTitlebar(
     }
   });
 
-  // Query actual RAM immediately so it shows real memory usage on startup
-  tauriIpc
-    .getTelemetry()
-    .then((stats) => {
-      const ramBadge = container.querySelector("#telemetry-ram");
-      const badgeContainer = container.querySelector("#telemetry-badge") as HTMLElement | null;
-      if (ramBadge && stats) {
-        ramBadge.textContent = `${stats.resident_mb.toFixed(0)} MB RAM`;
-      }
-      if (badgeContainer && stats) {
-        const gpuInfo = stats.gpu_renderer ? `\nGPU: ${stats.gpu_renderer}` : "";
-        badgeContainer.title = `Private RAM: ${stats.resident_mb} MB\nTotal RSS: ${stats.total_rss_mb} MB (incl. shared OS libs)\nShared Libs: ${stats.shared_mb} MB${gpuInfo}`;
-      }
-    })
-    .catch((err) => {
-      console.warn("Failed to get initial RAM telemetry:", err);
-    });
-
   // Initialize YoonSpace Shields UI (Powered by Brave adblock-rust)
   const shieldBtn = container.querySelector("#omnibar-shield-btn") as HTMLButtonElement | null;
   const shieldBadge = container.querySelector("#shield-count-badge") as HTMLElement | null;

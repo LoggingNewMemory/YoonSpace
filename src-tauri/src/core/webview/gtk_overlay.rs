@@ -884,22 +884,48 @@ pub fn cleanup_overlay(app: &AppHandle) -> Result<(), String> {
     })
 }
 
+static GLIB_LOG_INIT: std::sync::Once = std::sync::Once::new();
+
 pub fn setup_glib_log_handler() {
-    gtk::glib::log_set_default_handler(|log_domain, log_level, message| {
-        if message.contains("WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND")
-            || message.contains("gtk_window_set_titlebar() called on a realized window")
-            || message.contains("webkit_settings_set_enable_dns_prefetching")
-            || message.contains("webkit_settings_set_enable_offline_web_application_cache")
-        {
-            return;
-        }
-        gtk::glib::log_default_handler(log_domain, log_level, Some(message));
+    GLIB_LOG_INIT.call_once(|| {
+        gtk::glib::log_set_default_handler(|log_domain, log_level, message| {
+            if message.contains("WEBKIT_HARDWARE_ACCELERATION_POLICY_ON_DEMAND")
+                || message.contains("gtk_window_set_titlebar() called on a realized window")
+                || message.contains("webkit_settings_set_enable_dns_prefetching")
+                || message.contains("webkit_settings_set_enable_offline_web_application_cache")
+            {
+                return;
+            }
+            gtk::glib::log_default_handler(log_domain, log_level, Some(message));
+        });
     });
+}
+
+fn ensure_overlay_on_current_thread(app: &AppHandle) -> Result<(), String> {
+    let window = app.get_window("main").ok_or("Main window not found")?;
+    let vbox = window.default_vbox().map_err(|e| e.to_string())?;
+    let children = vbox.children();
+    let has_overlay = children.iter().any(|c| c.is::<gtk::Overlay>());
+    if !has_overlay && !children.is_empty() {
+        let main_widget = &children[0];
+        let overlay = gtk::Overlay::new();
+        vbox.remove(main_widget);
+        overlay.add(main_widget);
+        vbox.pack_start(&overlay, true, true, 0);
+        overlay.show_all();
+    }
+
+    if let Some(overlay) = vbox.children().into_iter().find_map(|c| c.dynamic_cast::<gtk::Overlay>().ok()) {
+        crate::core::overlay::ensure_overlay_layer(&overlay);
+    }
+
+    Ok(())
 }
 
 pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
     setup_glib_log_handler();
 
+    let app_handle = app.clone();
     let (tx, rx) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
         use gtk::prelude::*;
@@ -937,11 +963,10 @@ pub fn init_gtk_overlay(app: &AppHandle) -> Result<(), String> {
             context.set_cache_model(webkit2gtk::CacheModel::WebBrowser);
         }
 
-        let _ = tx.send(());
+        let res = ensure_overlay_on_current_thread(&app_handle);
+        let _ = tx.send(res);
     }).map_err(|e| e.to_string())?;
-    let _ = rx.recv();
-
-    ensure_overlay(app)
+    rx.recv().map_err(|e| e.to_string())?
 }
 
 /// Called on the GTK main thread when a WebKitWebView emits `enter-fullscreen`.

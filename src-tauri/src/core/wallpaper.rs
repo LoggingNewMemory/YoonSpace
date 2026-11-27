@@ -157,7 +157,7 @@ pub fn list_wallpaper_images(folder_path: &str) -> Result<Vec<String>, String> {
     Ok(images)
 }
 
-pub fn load_wallpaper_data_url(file_path: &str) -> Result<String, String> {
+pub fn read_wallpaper_bytes(file_path: &str) -> Result<(&'static str, Vec<u8>), String> {
     let path = expand_tilde(file_path);
     if !path.is_file() {
         return Err("Wallpaper image file does not exist".to_string());
@@ -175,6 +175,11 @@ pub fn load_wallpaper_data_url(file_path: &str) -> Result<String, String> {
     let bytes = fs::read(&path)
         .map_err(|e| format!("Failed to read wallpaper image: {}", e))?;
 
+    Ok((mime, bytes))
+}
+
+pub fn load_wallpaper_data_url(file_path: &str) -> Result<String, String> {
+    let (mime, bytes) = read_wallpaper_bytes(file_path)?;
     Ok(format!("data:{};base64,{}", mime, encode_base64(&bytes)))
 }
 

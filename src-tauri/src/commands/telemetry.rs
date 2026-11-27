@@ -17,6 +17,8 @@
 use crate::core::telemetry::{get_process_memory, MemoryStats};
 
 #[tauri::command]
-pub fn get_telemetry() -> MemoryStats {
-    get_process_memory()
+pub async fn get_telemetry() -> Result<MemoryStats, String> {
+    tauri::async_runtime::spawn_blocking(get_process_memory)
+        .await
+        .map_err(|e| e.to_string())
 }
