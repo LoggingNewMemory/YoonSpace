@@ -253,13 +253,13 @@ export function createSettingsPage(
             </div>
           </div>
 
-          <div id="settings-cache-disk-usage" class="flex items-center gap-2 text-xs">
-            <span class="text-[#8e8d91] uppercase tracking-wider text-[11px] font-medium">Total Usage</span>
+          <div id="settings-cache-disk-usage" class="flex items-center gap-2 text-xs shrink-0">
+            <span class="text-[#8e8d91] uppercase tracking-wider text-[11px] font-medium whitespace-nowrap">Total Usage</span>
             <span
               id="settings-page-cache-size"
-              class="px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold text-[#ffb59e] shadow-inner"
+              class="min-w-[96px] text-center px-2.5 py-1 rounded-lg bg-[#222227] border border-[#34343d] text-xs font-mono font-bold tabular-nums whitespace-nowrap text-[#ffb59e] shadow-inner"
             >
-              Calculating...
+              ...
             </span>
           </div>
         </div>
