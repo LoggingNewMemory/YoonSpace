@@ -15,7 +15,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import type { SplitPreset } from "../types";
-import { deriveTitleFromInput } from "../utils/url";
 import { escapeHtml } from "./dock_context_menu";
 
 function normalizeSplitUrl(raw: string): string | null {
@@ -103,7 +102,7 @@ export function createSplitPresetsSection(
             </div>
 
             <div class="flex flex-col gap-1">
-              <label for="split-title" class="text-[11px] font-medium text-[#e2bfb4]">Title <span class="text-[#8e8a88] font-normal">(optional)</span></label>
+              <label for="split-title" class="text-[11px] font-medium text-[#e2bfb4]">Title</label>
               <input
                 id="split-title"
                 type="text"
@@ -204,7 +203,7 @@ export function createSplitPresetsSection(
                     </div>
 
                     <div class="flex flex-col gap-1">
-                      <label class="text-[11px] font-medium text-[#e2bfb4]">Title <span class="text-[#8e8a88] font-normal">(optional)</span></label>
+                      <label class="text-[11px] font-medium text-[#e2bfb4]">Title</label>
                       <input
                         type="text"
                         name="title"
@@ -321,8 +320,10 @@ export function createSplitPresetsSection(
       const leftUrl = normalizeSplitUrl(leftInput);
       const rightUrl = normalizeSplitUrl(rightInput);
 
-      if (!leftUrl || !rightUrl) {
-        errorMessage = "Please enter valid URLs for both the left and right panes.";
+      if (!leftUrl || !rightUrl || !titleInput) {
+        errorMessage = !leftUrl || !rightUrl
+          ? "Please enter valid URLs for both the left and right panes."
+          : "Please enter a title for the split view.";
         render();
         const leftEl = section.querySelector("#split-left-url") as HTMLInputElement | null;
         const rightEl = section.querySelector("#split-right-url") as HTMLInputElement | null;
@@ -330,14 +331,13 @@ export function createSplitPresetsSection(
         if (leftEl) leftEl.value = leftInput;
         if (rightEl) rightEl.value = rightInput;
         if (titleEl) titleEl.value = titleInput;
-        (!leftUrl ? leftEl : rightEl)?.focus();
+        (!leftUrl ? leftEl : !rightUrl ? rightEl : titleEl)?.focus();
         return;
       }
 
-      const derivedTitle = `${deriveTitleFromInput(leftUrl)} | ${deriveTitleFromInput(rightUrl)}`;
       const newPreset: SplitPreset = {
         id: `split_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        title: titleInput || derivedTitle,
+        title: titleInput,
         icon: "splitscreen",
         left_url: leftUrl,
         right_url: rightUrl,
@@ -389,8 +389,10 @@ export function createSplitPresetsSection(
       const leftUrl = normalizeSplitUrl(leftInput);
       const rightUrl = normalizeSplitUrl(rightInput);
 
-      if (!leftUrl || !rightUrl) {
-        editErrorMessage = "Please enter valid URLs for both the left and right panes.";
+      if (!leftUrl || !rightUrl || !titleInput) {
+        editErrorMessage = !leftUrl || !rightUrl
+          ? "Please enter valid URLs for both the left and right panes."
+          : "Please enter a title for the split view.";
         render();
         const freshForm = section.querySelector(".edit-split-form") as HTMLFormElement | null;
         const leftEl = freshForm?.querySelector(".edit-split-left") as HTMLInputElement | null;
@@ -399,16 +401,15 @@ export function createSplitPresetsSection(
         if (leftEl) leftEl.value = leftInput;
         if (rightEl) rightEl.value = rightInput;
         if (titleEl) titleEl.value = titleInput;
-        (!leftUrl ? leftEl : rightEl)?.focus();
+        (!leftUrl ? leftEl : !rightUrl ? rightEl : titleEl)?.focus();
         return;
       }
 
-      const derivedTitle = `${deriveTitleFromInput(leftUrl)} | ${deriveTitleFromInput(rightUrl)}`;
       presets = presets.map((p) =>
         p.id === targetId
           ? {
               ...p,
-              title: titleInput || derivedTitle,
+              title: titleInput,
               icon: "splitscreen",
               left_url: leftUrl,
               right_url: rightUrl,

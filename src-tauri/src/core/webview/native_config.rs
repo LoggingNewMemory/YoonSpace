@@ -54,17 +54,16 @@ pub(super) fn configure_native_webview(app: &AppHandle, webview: &tauri::Webview
             context.set_cache_model(webkit2gtk::CacheModel::WebBrowser);
         }
         if let Some(data_manager) = inner_wv.website_data_manager() {
+            // Disable ITP so cross-origin OAuth/SSO handshakes (e.g. Google Sign-In) are not blocked
+            data_manager.set_itp_enabled(false);
             if let Some(cookie_mgr) = data_manager.cookie_manager() {
                 let cookie_path = crate::core::user_data::get_cookies_db_path();
                 if let Some(path_str) = cookie_path.to_str() {
                     cookie_mgr.set_persistent_storage(path_str, webkit2gtk::CookiePersistentStorage::Sqlite);
                 }
-                let manager = crate::core::shield::get_shield_manager();
-                if manager.is_enabled() && manager.is_block_trackers() {
-                    cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::NoThirdParty);
-                } else {
-                    cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::Always);
-                }
+                // Allow third-party cookies so OAuth/SSO (e.g. accounts.google.com on x.com) works;
+                // actual trackers are blocked at the network/script level by Brave adblock-rust.
+                cookie_mgr.set_accept_policy(webkit2gtk::CookieAcceptPolicy::Always);
             }
         }
 
