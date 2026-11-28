@@ -97,14 +97,6 @@ export function createWelcomeScreen(
               >
                 <span class="material-symbols-outlined text-[14px]">close</span>
               </button>
-              <button
-                id="engineerOmniEnterBtn"
-                type="submit"
-                title="Search (Enter)"
-                class="hidden sm:flex items-center gap-1 bg-[#0e0e0e] hover:bg-[#1a1a1a] px-2 py-1 rounded text-[#aa8a80] hover:text-[#e5e2e1] text-[11px] font-medium shadow-inner border border-[#353535] select-none cursor-pointer transition-colors"
-              >
-                <span class="text-[#e5e2e1] font-bold">ENTER</span>
-              </button>
             </div>
           </div>
         </form>
